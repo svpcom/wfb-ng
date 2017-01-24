@@ -22,5 +22,5 @@ To decode:
 ```
 
 
-Supported WiFi hardware:  Ralink RT2800. Was tested with ALPHA AWUS05NH v2 in 5GHz mode. To disable ieee80211 autospeed and maximize output power you
+Supported WiFi hardware:  Ralink RT2800. Was tested with ALPHA AWUS051NH v2 in 5GHz mode. To disable ieee80211 autospeed and maximize output power you
 need to apply kernel patches from ``patches`` directory. See https://github.com/bortek/EZ-WifiBroadcast/wiki for details.
