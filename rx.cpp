@@ -55,9 +55,9 @@ Receiver::Receiver(const char *wlan, int radio_port, Aggregator *agg) : agg(agg)
         throw runtime_error(string_format("Unable to open interface %s in pcap: %s\n", wlan, errbuf));
     }
 
-    if (pcap_set_snaplen(ppcap, 2048) !=0) throw runtime_error("set_snaplen failed");
+    if (pcap_set_snaplen(ppcap, 4096) !=0) throw runtime_error("set_snaplen failed");
     if (pcap_set_promisc(ppcap, 1) != 0) throw runtime_error("set_promisc failed");
-    if (pcap_set_rfmon(ppcap, 1) !=0) throw runtime_error("set_rfmon failed");
+    //if (pcap_set_rfmon(ppcap, 1) !=0) throw runtime_error("set_rfmon failed");
     if (pcap_set_timeout(ppcap, -1) !=0) throw runtime_error("set_timeout failed");
     //if (pcap_set_buffer_size(ppcap, 2048) !=0) throw runtime_error("set_buffer_size failed");
     if (pcap_activate(ppcap) !=0) throw runtime_error(string_format("pcap_activate failed: %s", pcap_geterr(ppcap)));

@@ -49,9 +49,9 @@ Transmitter::Transmitter(const char *wlan, int k, int n, uint8_t radio_rate, uin
     if (ppcap == NULL){
         throw runtime_error(string_format("Unable to open interface %s in pcap: %s", wlan, errbuf));
     }
-    if (pcap_set_snaplen(ppcap, 1024) !=0) throw runtime_error("set_snaplen failed");
+    if (pcap_set_snaplen(ppcap, 4096) !=0) throw runtime_error("set_snaplen failed");
     if (pcap_set_promisc(ppcap, 1) != 0) throw runtime_error("set_promisc failed");
-    if (pcap_set_rfmon(ppcap, 1) !=0) throw runtime_error("set_rfmon failed");
+    //if (pcap_set_rfmon(ppcap, 1) !=0) throw runtime_error("set_rfmon failed");
     if (pcap_set_timeout(ppcap, -1) !=0) throw runtime_error("set_timeout failed");
     //if (pcap_set_buffer_size(ppcap, 2048) !=0) throw runtime_error("set_buffer_size failed");
     if (pcap_activate(ppcap) !=0) throw runtime_error(string_format("pcap_activate failed: %s", pcap_geterr(ppcap)));
