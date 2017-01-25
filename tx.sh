@@ -1,8 +1,8 @@
 #!/bin/bash
 
 WLAN=$1
-CHANNEL5G="6"
-#CHANNEL5G="149"
+#CHANNEL5G="6"
+CHANNEL5G="149"
 
 echo "Setting $WLAN to channel $CHANNEL5G"
 ifconfig $WLAN down
