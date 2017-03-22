@@ -1,6 +1,6 @@
 
 LDFLAGS=-lrt -lpcap
-CPPFLAGS=-Wall 
+CPPFLAGS=-Wall
 
 all: rx tx
 
@@ -10,11 +10,11 @@ all: rx tx
 %.o: %.cpp *.hpp *.h
 	g++ -std=c++11 -c -o $@ $< $(CPPFLAGS)
 
-rx: rx.o radiotap.o fec.o
+rx: rx.o radiotap.o fec.o wifibroadcast.o
 	g++ -o $@ $^ $(LDFLAGS)
 
 
-tx: tx.o fec.o
+tx: tx.o fec.o wifibroadcast.o
 	g++ -o $@ $^ $(LDFLAGS)
 
 

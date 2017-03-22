@@ -18,22 +18,64 @@
  *   51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
  */
 
-#define sizeof_ieee80211_header 24
+
+typedef enum {
+    LOCAL,
+    FORWARDER,
+    AGGREGATOR
+} rx_mode_t;
 
 class Aggregator
 {
 public:
-    Aggregator(const string &client_addr, int client_port, int k, int n);
-    ~Aggregator();
-    void process_packet(const uint8_t *buf, size_t size);
+    virtual void process_packet(const uint8_t *buf, size_t size) = 0;
+
+protected:
+    int open_udp_socket(const string &client_addr, int client_port)
+    {
+        struct sockaddr_in saddr;
+        int fd = socket(AF_INET, SOCK_DGRAM, 0);
+        if (fd < 0) throw runtime_error(string_format("Error opening socket: %s", strerror(errno)));
+
+        bzero((char *) &saddr, sizeof(saddr));
+        saddr.sin_family = AF_INET;
+        saddr.sin_addr.s_addr = inet_addr(client_addr.c_str());
+        saddr.sin_port = htons((unsigned short)client_port);
+
+        if (connect(fd, (struct sockaddr *) &saddr, sizeof(saddr)) < 0)
+        {
+            throw runtime_error(string_format("Connect error: %s", strerror(errno)));
+        }
+        return fd;
+    }
+};
+
+
+class RemoteAggregator : public Aggregator
+{
+public:
+    RemoteAggregator(const string &client_addr, int client_port);
+    ~RemoteAggregator();
+    virtual void process_packet(const uint8_t *buf, size_t size);
+
 private:
-    int open_udp_socket(const string &client_addr, int client_port);
-    void apply_fec(void);
-    void send_packet(int idx);
     int sockfd;
+};
+
+
+class LocalAggregator : public Aggregator
+{
+public:
+    LocalAggregator(const string &client_addr, int client_port, int k, int n);
+    ~LocalAggregator();
+    virtual void process_packet(const uint8_t *buf, size_t size);
+private:
+    void send_packet(int idx);
+    void apply_fec(void);
     fec_t* fec_p;
     int fec_k;  // RS number of primary fragments in block
     int fec_n;  // RS total number of fragments in block
+    int sockfd;
     uint8_t block_idx;
     uint8_t send_fragment_idx;
     uint32_t seq;

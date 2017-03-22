@@ -180,9 +180,9 @@ void Receiver::loop_iter(void)
 
     //printf("%d mbit/s ant %d %ddBm size:%d\n", pkt_rate, antenna, pwr, pktlen);
 
-    if (pktlen > sizeof_ieee80211_header)
+    if (pktlen > sizeof(ieee80211_header))
     {
-        agg->process_packet(pkt + sizeof_ieee80211_header, pktlen - sizeof_ieee80211_header);
+        agg->process_packet(pkt + sizeof(ieee80211_header), pktlen - sizeof(ieee80211_header));
     } else {
         fprintf(stderr, "short packet (ieee header)\n");
         return;
@@ -190,7 +190,7 @@ void Receiver::loop_iter(void)
 }
 
 
-Aggregator::Aggregator(const string &client_addr, int client_port, int k, int n) : fec_k(k), fec_n(n), block_idx(0), send_fragment_idx(0), seq(0), has_fragments(0), fragment_lost(false)
+LocalAggregator::LocalAggregator(const string &client_addr, int client_port, int k, int n) : fec_k(k), fec_n(n), block_idx(0), send_fragment_idx(0), seq(0), has_fragments(0), fragment_lost(false)
 {
     sockfd = open_udp_socket(client_addr, client_port);
     fec_p = fec_new(fec_k, fec_n);
@@ -206,7 +206,7 @@ Aggregator::Aggregator(const string &client_addr, int client_port, int k, int n)
 }
 
 
-Aggregator::~Aggregator()
+LocalAggregator::~LocalAggregator()
 {
     delete fragment_map;
 
@@ -220,26 +220,25 @@ Aggregator::~Aggregator()
 }
 
 
-int Aggregator::open_udp_socket(const string &client_addr, int client_port)
+RemoteAggregator::RemoteAggregator(const string &client_addr, int client_port)
 {
-    struct sockaddr_in saddr;
-    int fd = socket(AF_INET, SOCK_DGRAM, 0);
-    if (fd < 0) throw runtime_error(string_format("Error opening socket: %s", strerror(errno)));
-
-    bzero((char *) &saddr, sizeof(saddr));
-    saddr.sin_family = AF_INET;
-    saddr.sin_addr.s_addr = inet_addr(client_addr.c_str());
-    saddr.sin_port = htons((unsigned short)client_port);
-
-    if (connect(fd, (struct sockaddr *) &saddr, sizeof(saddr)) < 0)
-    {
-        throw runtime_error(string_format("Connect error: %s", strerror(errno)));
-    }
-    return fd;
+    sockfd = open_udp_socket(client_addr, client_port);
 }
 
 
-void Aggregator::process_packet(const uint8_t *buf, size_t size)
+void RemoteAggregator::process_packet(const uint8_t *buf, size_t size)
+{
+    send(sockfd, buf, size, 0);
+}
+
+
+RemoteAggregator::~RemoteAggregator()
+{
+    close(sockfd);
+}
+
+
+void LocalAggregator::process_packet(const uint8_t *buf, size_t size)
 {
     if(size < sizeof(wblock_hdr_t) + sizeof(wpacket_hdr_t))
     {
@@ -299,7 +298,7 @@ void Aggregator::process_packet(const uint8_t *buf, size_t size)
     }
 }
 
-void Aggregator::send_packet(int idx)
+void LocalAggregator::send_packet(int idx)
 {
     wpacket_hdr_t* packet_hdr = (wpacket_hdr_t*)(fragments[idx]);
     uint8_t *payload = (fragments[idx]) + sizeof(wpacket_hdr_t);
@@ -319,7 +318,7 @@ void Aggregator::send_packet(int idx)
     }
 }
 
-void Aggregator::apply_fec(void)
+void LocalAggregator::apply_fec(void)
 {
     unsigned index[fec_k];
     uint8_t *in_blocks[fec_k];
@@ -356,10 +355,19 @@ int main(int argc, char* const *argv)
     int opt;
     uint8_t k=8, n=12, radio_port=1;
     int client_port=5600;
+    int srv_port=0;
     string client_addr="127.0.0.1";
+    rx_mode_t rx_mode = LOCAL;
 
-    while ((opt = getopt(argc, argv, "k:n:c:u:p:")) != -1) {
+    while ((opt = getopt(argc, argv, "fa:k:n:c:u:p:")) != -1) {
         switch (opt) {
+        case 'f':
+            rx_mode = FORWARDER;
+            break;
+        case 'a':
+            rx_mode = AGGREGATOR;
+            srv_port = atoi(optarg);
+            break;
         case 'k':
             k = atoi(optarg);
             break;
@@ -377,49 +385,72 @@ int main(int argc, char* const *argv)
             break;
         default: /* '?' */
         show_usage:
-            fprintf(stderr, "Usage: %s [-k RS_K] [-n RS_N] [-c client_addr] [-u client_port] [-p radio_port] interface1 [interface2] ...\n",
-                    argv[0]);
+            fprintf(stderr, "Local receiver: %s [-k RS_K] [-n RS_N] [-c client_addr] [-u client_port] [-p radio_port] interface1 [interface2] ...\n", argv[0]);
+            fprintf(stderr, "Remote (forwarder): %s -f [-c client_addr] [-u client_port] [-p radio_port] interface1 [interface2] ...\n", argv[0]);
+            fprintf(stderr, "Remote (aggregator): %s -a server_port [-k RS_K] [-n RS_N] [-c client_addr] [-u client_port]\n", argv[0]);
             fprintf(stderr, "Default: k=%d, n=%d, connect=%s:%d, radio_port=%d\n", k, n, client_addr.c_str(), client_port, radio_port);
             exit(1);
         }
     }
 
-    if (optind >= argc) {
-        goto show_usage;
-    }
-
-    int nfds = min(argc - optind, MAX_RX_INTERFACES);
-    struct pollfd fds[MAX_RX_INTERFACES];
-    Receiver* rx[MAX_RX_INTERFACES];
-
     try
     {
-        Aggregator agg(client_addr, client_port, k, n);
-
-        memset(fds, '\0', sizeof(fds));
-
-        for(int i = 0; i < nfds; i++)
+        if (rx_mode == LOCAL || rx_mode == FORWARDER)
         {
-            rx[i] = new Receiver(argv[optind + i], radio_port, &agg);
-            fds[i].fd = rx[i]->getfd();
-            fds[i].events = POLLIN;
-        }
+            if (optind >= argc) goto show_usage;
 
-        while(1)
-        {
-            int rc = poll(fds, nfds, 1000);
-            if (rc < 0) throw runtime_error(string_format("Poll error: %s", strerror(errno)));
-            for(int i = 0; rc > 0 && i < nfds; i++)
+            int nfds = min(argc - optind, MAX_RX_INTERFACES);
+            struct pollfd fds[MAX_RX_INTERFACES];
+            Receiver* rx[MAX_RX_INTERFACES];
+
+            shared_ptr<Aggregator> agg;
+            if(rx_mode == LOCAL){
+                agg = shared_ptr<LocalAggregator>(new LocalAggregator(client_addr, client_port, k, n));
+            }else{
+                agg = shared_ptr<RemoteAggregator>(new RemoteAggregator(client_addr, client_port));
+            }
+
+            memset(fds, '\0', sizeof(fds));
+
+            for(int i = 0; i < nfds; i++)
             {
-                if (fds[i].revents & POLLERR)
+                rx[i] = new Receiver(argv[optind + i], radio_port, agg.get());
+                fds[i].fd = rx[i]->getfd();
+                fds[i].events = POLLIN;
+            }
+
+            while(1)
+            {
+                int rc = poll(fds, nfds, 1000);
+                if (rc < 0) throw runtime_error(string_format("Poll error: %s", strerror(errno)));
+                for(int i = 0; rc > 0 && i < nfds; i++)
                 {
-                    throw runtime_error("socket error!");
-                }
-                if (fds[i].revents & POLLIN){
-                    rx[i]->loop_iter();
-                    rc -= 1;
+                    if (fds[i].revents & POLLERR)
+                    {
+                        throw runtime_error("socket error!");
+                    }
+                    if (fds[i].revents & POLLIN){
+                        rx[i]->loop_iter();
+                        rc -= 1;
+                    }
                 }
             }
+        }else if(rx_mode == AGGREGATOR)
+        {
+            if (optind > argc) goto show_usage;
+
+            uint8_t buf[MAX_FORWARDER_PACKET_SIZE];
+            int fd = open_udp_socket_for_rx(srv_port);
+            LocalAggregator agg(client_addr, client_port, k, n);
+
+            for(;;)
+            {
+                ssize_t rsize = recv(fd, buf, sizeof(buf), 0);
+                if (rsize < 0) throw runtime_error(string_format("Error receiving packet: %s", strerror(errno)));
+                agg.process_packet(buf, rsize);
+            }
+        }else{
+            throw runtime_error(string_format("Unknown rx_mode=%d", rx_mode));
         }
     }catch(runtime_error e)
     {

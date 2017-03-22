@@ -132,26 +132,6 @@ void Transmitter::send_packet(const uint8_t *buf, size_t size)
 }
 
 
-int open_udp_socket(int port)
-{
-    struct sockaddr_in saddr;
-    int fd = socket(AF_INET, SOCK_DGRAM, 0);
-    if (fd < 0) throw runtime_error(string_format("Error opening socket: %s", strerror(errno)));
-
-    int optval = 1;
-    setsockopt(fd, SOL_SOCKET, SO_REUSEADDR, (const void *)&optval , sizeof(int));
-
-    bzero((char *) &saddr, sizeof(saddr));
-    saddr.sin_family = AF_INET;
-    saddr.sin_addr.s_addr = htonl(INADDR_ANY);
-    saddr.sin_port = htons((unsigned short)port);
-
-    if (bind(fd, (struct sockaddr *) &saddr, sizeof(saddr)) < 0)
-    {
-        throw runtime_error(string_format("Bind error: %s", strerror(errno)));
-    }
-    return fd;
-}
 
 int main(int argc, char * const *argv)
 {
@@ -194,7 +174,7 @@ int main(int argc, char * const *argv)
 
     try
     {
-        int fd = open_udp_socket(udp_port);
+        int fd = open_udp_socket_for_rx(udp_port);
         Transmitter t(argv[optind], k, n, radio_rate, radio_port);
 
         for(;;)

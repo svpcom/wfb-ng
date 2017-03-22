@@ -14,5 +14,6 @@ ifconfig $WLAN up
 iwconfig $WLAN channel $CHANNEL5G
 done
 
-./rx -u 5600 $WLANS
+./rx  -u 5600 $WLANS
+#./rx -c 10.3.108.103 -u 5600 $WLANS
 #tcpdump -i $WLAN 'ether[0x0a:4]==0x13223344' 
