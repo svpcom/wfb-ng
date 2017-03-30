@@ -422,7 +422,11 @@ int main(int argc, char* const *argv)
             while(1)
             {
                 int rc = poll(fds, nfds, 1000);
-                if (rc < 0) throw runtime_error(string_format("Poll error: %s", strerror(errno)));
+                if (rc < 0){
+                    if (errno == EINTR || errno == EAGAIN) continue;
+                    throw runtime_error(string_format("Poll error: %s", strerror(errno)));
+                }
+
                 for(int i = 0; rc > 0 && i < nfds; i++)
                 {
                     if (fds[i].revents & POLLERR)
