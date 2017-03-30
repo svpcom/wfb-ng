@@ -23,6 +23,7 @@
 #include <sys/stat.h>
 #include <fcntl.h>
 #include <unistd.h>
+#include <poll.h>
 #include <time.h>
 #include <sys/resource.h>
 #include <pcap/pcap.h>
@@ -132,17 +133,106 @@ void Transmitter::send_packet(const uint8_t *buf, size_t size)
 }
 
 
+void normal_rx(Transmitter &t, int fd)
+{
+    uint8_t buf[MAX_PAYLOAD_SIZE];
+    for(;;)
+    {
+        ssize_t rsize = recv(fd, buf, sizeof(buf), 0);
+        if (rsize < 0) throw runtime_error(string_format("Error receiving packet: %s", strerror(errno)));
+        t.send_packet(buf, rsize);
+    }
+}
+
+uint64_t get_system_time(void) // in milliseconds
+{
+    struct timeval te;
+    gettimeofday(&te, NULL);
+    return te.tv_sec * 1000LL + te.tv_usec / 1000;
+}
+
+void mavlink_rx(Transmitter &t, int fd, int agg_latency)
+{
+    struct pollfd fds[1];
+
+    if(fcntl(fd, F_SETFL, fcntl(fd, F_GETFL, 0) | O_NONBLOCK) < 0)
+    {
+        throw runtime_error(string_format("Unable to set socket into nonblocked mode: %s", strerror(errno)));
+    }
+
+    memset(fds, '\0', sizeof(fds));
+    fds[0].fd = fd;
+    fds[0].events = POLLIN;
+
+
+    size_t agg_size = 0;
+    uint8_t agg_buf[MAX_PAYLOAD_SIZE];
+    uint64_t expire_ts = get_system_time() + agg_latency;
+
+    for(;;)
+    {
+        uint64_t cur_ts = get_system_time();
+        int rc = poll(fds, 1, expire_ts > cur_ts ? expire_ts - cur_ts : 0);
+
+        if (rc < 0){
+            if (errno == EINTR || errno == EAGAIN) continue;
+            throw runtime_error(string_format("poll error: %s", strerror(errno)));
+        }
+
+        if (rc == 0)  // timeout expired
+        {
+            if(agg_size > 0)
+            {
+                t.send_packet(agg_buf, agg_size);
+                agg_size = 0;
+            }
+            expire_ts = get_system_time() + agg_latency;
+            continue;
+        }
+
+        // some events detected
+        if (fds[0].revents & (POLLERR | POLLNVAL))
+        {
+            throw runtime_error(string_format("socket error: %s", strerror(errno)));
+        }
+
+        if (fds[0].revents & POLLIN)
+        {
+            uint8_t buf[MAX_PAYLOAD_SIZE];
+            ssize_t rsize;
+            while((rsize = recv(fd, buf, sizeof(buf), 0)) >= 0)
+            {
+                if (rsize + agg_size > sizeof(agg_buf)) // new packet doesn't fit to agg buffer
+                {
+                    if(agg_size > 0)
+                    {
+                        t.send_packet(agg_buf, agg_size);
+                        agg_size = 0;
+                    }
+                    expire_ts = get_system_time() + agg_latency;
+                }
+                memcpy(agg_buf + agg_size, buf, rsize);
+                agg_size += rsize;
+            }
+            if(errno != EWOULDBLOCK) throw runtime_error(string_format("Error receiving packet: %s", strerror(errno)));
+        }
+    }
+}
 
 int main(int argc, char * const *argv)
 {
-    uint8_t buf[MAX_PAYLOAD_SIZE];
-
     int opt;
     uint8_t k=8, n=12, radio_port=1, radio_rate=54;
     int udp_port=5600;
+    bool mavlink_mode = false;
+    int mavlink_agg_latency = 0;
 
-    while ((opt = getopt(argc, argv, "k:n:u:r:p:")) != -1) {
+    while ((opt = getopt(argc, argv, "m:k:n:u:r:p:")) != -1) {
         switch (opt) {
+        case 'm':
+            mavlink_mode = true;
+            mavlink_agg_latency = atoi(optarg);
+            break;
         case 'k':
             k = atoi(optarg);
             break;
@@ -160,7 +250,7 @@ int main(int argc, char * const *argv)
             break;
         default: /* '?' */
         show_usage:
-            fprintf(stderr, "Usage: %s [-k RS_K] [-n RS_N] [-u udp_port] [-r tx_rate] [-p radio_port] interface\n",
+            fprintf(stderr, "Usage: %s [-m mavlink_agg_in_ms] [-k RS_K] [-n RS_N] [-u udp_port] [-r tx_rate] [-p radio_port] interface\n",
                     argv[0]);
             fprintf(stderr, "Default: k=%d, n=%d, udp_port=%d, tx_rate=%d Mbit/s, radio_port=%d\n", k, n, udp_port, radio_rate, radio_port);
             fprintf(stderr, "Radio MTU: %ld\n", MAX_PAYLOAD_SIZE);
@@ -177,16 +267,17 @@ int main(int argc, char * const *argv)
         int fd = open_udp_socket_for_rx(udp_port);
         Transmitter t(argv[optind], k, n, radio_rate, radio_port);
 
-        for(;;)
+        if (mavlink_mode)
         {
-            ssize_t rsize = recv(fd, buf, sizeof(buf), 0);
-            if (rsize < 0) throw runtime_error(string_format("Error receiving packet: %s", strerror(errno)));
-            t.send_packet(buf, rsize);
+            mavlink_rx(t, fd, mavlink_agg_latency);
+        }else
+        {
+            normal_rx(t, fd);
         }
-        return 0;
     }catch(runtime_error e)
     {
         fprintf(stderr, "Error: %s\n", e.what());
         exit(1);
     }
+    return 0;
 }
