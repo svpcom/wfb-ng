@@ -395,14 +395,14 @@ void LocalAggregator::send_packet(int ring_idx, int fragment_idx)
 
     if (packet_hdr->seq > seq + 1)
     {
-        fprintf(stderr, "%d packets lost\n", packet_hdr->seq - seq - 1);
+        fprintf(stderr, "%u packets lost\n", packet_hdr->seq - seq - 1);
     }
 
     seq = packet_hdr->seq;
 
     if(packet_hdr->packet_size > MAX_PAYLOAD_SIZE)
     {
-        fprintf(stderr, "corrupted packet %d\n", seq);
+        fprintf(stderr, "corrupted packet %u\n", seq);
     }else{
         send(sockfd, payload, packet_hdr->packet_size, 0);
     }
@@ -546,7 +546,7 @@ int main(int argc, char* const *argv)
         }else{
             throw runtime_error(string_format("Unknown rx_mode=%d", rx_mode));
         }
-    }catch(runtime_error e)
+    }catch(runtime_error &e)
     {
         fprintf(stderr, "Error: %s\n", e.what());
         exit(1);

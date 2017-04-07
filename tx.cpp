@@ -253,7 +253,7 @@ int main(int argc, char * const *argv)
             fprintf(stderr, "Usage: %s [-m mavlink_agg_in_ms] [-k RS_K] [-n RS_N] [-u udp_port] [-r tx_rate] [-p radio_port] interface\n",
                     argv[0]);
             fprintf(stderr, "Default: k=%d, n=%d, udp_port=%d, tx_rate=%d Mbit/s, radio_port=%d\n", k, n, udp_port, radio_rate, radio_port);
-            fprintf(stderr, "Radio MTU: %ld\n", MAX_PAYLOAD_SIZE);
+            fprintf(stderr, "Radio MTU: %lu\n", MAX_PAYLOAD_SIZE);
             exit(1);
         }
     }
@@ -274,7 +274,7 @@ int main(int argc, char * const *argv)
         {
             normal_rx(t, fd);
         }
-    }catch(runtime_error e)
+    }catch(runtime_error &e)
     {
         fprintf(stderr, "Error: %s\n", e.what());
         exit(1);
