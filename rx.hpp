@@ -63,6 +63,23 @@ private:
 };
 
 
+typedef struct {
+    uint8_t block_idx;
+    uint8_t** fragments;
+    uint8_t *fragment_map;
+    uint8_t send_fragment_idx;
+    uint8_t has_fragments;
+} rx_ring_item_t;
+
+
+#define RX_RING_SIZE 4
+#define PROC_RING_SIZE 4
+
+static inline int ROUND(int x, int base)
+{
+    return ((x) >= 0 ? (x) % base : (base - (-(x)) % base) % base);
+}
+
 class LocalAggregator : public Aggregator
 {
 public:
@@ -70,19 +87,21 @@ public:
     ~LocalAggregator();
     virtual void process_packet(const uint8_t *buf, size_t size);
 private:
-    void send_packet(int idx);
-    void apply_fec(void);
+    void send_packet(int ring_idx, int fragment_idx);
+    void apply_fec(int ring_idx);
+    int get_block_ring_idx(int block_idx);
+    void add_processed_block(int block_idx);
+    int rx_ring_push(void);
     fec_t* fec_p;
     int fec_k;  // RS number of primary fragments in block
     int fec_n;  // RS total number of fragments in block
     int sockfd;
-    uint8_t block_idx;
-    uint8_t send_fragment_idx;
     uint32_t seq;
-    uint8_t** fragments;
-    uint8_t *fragment_map;
-    uint8_t has_fragments;
-    bool fragment_lost;
+    rx_ring_item_t rx_ring[RX_RING_SIZE];
+    int rx_ring_front; // current packet
+    int rx_ring_alloc; // number of allocated entries
+    int proc_ring[PROC_RING_SIZE];
+    int proc_ring_last; // index to add processed packet
 };
 
 class Receiver

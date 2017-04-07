@@ -18,7 +18,7 @@
  *   51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
  */
 
-
+#include <assert.h>
 #include <stdio.h>
 #include <sys/types.h>
 #include <sys/stat.h>
@@ -190,32 +190,44 @@ void Receiver::loop_iter(void)
 }
 
 
-LocalAggregator::LocalAggregator(const string &client_addr, int client_port, int k, int n) : fec_k(k), fec_n(n), block_idx(0), send_fragment_idx(0), seq(0), has_fragments(0), fragment_lost(false)
+LocalAggregator::LocalAggregator(const string &client_addr, int client_port, int k, int n) : fec_k(k), fec_n(n), seq(0), rx_ring_front(0), rx_ring_alloc(0), proc_ring_last(0)
 {
     sockfd = open_udp_socket(client_addr, client_port);
     fec_p = fec_new(fec_k, fec_n);
 
-    fragments = new uint8_t*[fec_n];
-    for(int i=0; i < fec_n; i++)
+    for(int ring_idx = 0; ring_idx < RX_RING_SIZE; ring_idx++)
     {
-        fragments[i] = new uint8_t[MAX_FEC_PAYLOAD];
+        rx_ring[ring_idx].block_idx = 0;
+        rx_ring[ring_idx].send_fragment_idx = 0;
+        rx_ring[ring_idx].has_fragments = 0;
+        rx_ring[ring_idx].fragments = new uint8_t*[fec_n];
+        for(int i=0; i < fec_n; i++)
+        {
+            rx_ring[ring_idx].fragments[i] = new uint8_t[MAX_FEC_PAYLOAD];
+        }
+        rx_ring[ring_idx].fragment_map = new uint8_t[fec_n];
+        memset(rx_ring[ring_idx].fragment_map, '\0', fec_n * sizeof(uint8_t));
     }
 
-    fragment_map = new uint8_t[fec_n];
-    memset(fragment_map, '\0', fec_n * sizeof(uint8_t));
+    for(int ring_idx = 0; ring_idx < PROC_RING_SIZE; ring_idx++)
+    {
+        proc_ring[ring_idx] = -1;
+    }
 }
 
 
 LocalAggregator::~LocalAggregator()
 {
-    delete fragment_map;
 
-    for(int i=0; i < fec_n; i++)
+    for(int ring_idx = 0; ring_idx < RX_RING_SIZE; ring_idx++)
     {
-        delete fragments[i];
+        delete rx_ring[ring_idx].fragment_map;
+        for(int i=0; i < fec_n; i++)
+        {
+            delete rx_ring[ring_idx].fragments[i];
+        }
+        delete rx_ring[ring_idx].fragments;
     }
-    delete fragments;
-
     close(sockfd);
 }
 
@@ -238,6 +250,71 @@ RemoteAggregator::~RemoteAggregator()
 }
 
 
+void LocalAggregator::add_processed_block(int block_idx)
+{
+    proc_ring[proc_ring_last] = block_idx;
+    proc_ring_last = ROUND(proc_ring_last + 1, PROC_RING_SIZE);
+}
+
+int LocalAggregator::rx_ring_push(void)
+{
+    if(rx_ring_alloc < RX_RING_SIZE)
+    {
+        int idx = ROUND(rx_ring_front + rx_ring_alloc, RX_RING_SIZE);
+        rx_ring_alloc += 1;
+        return idx;
+    }
+
+    // override existing data
+    int idx = rx_ring_front;
+
+    fprintf(stderr, "override block %d with %d fragments\n", rx_ring[idx].block_idx, rx_ring[idx].has_fragments);
+
+    add_processed_block(rx_ring[idx].block_idx);
+    rx_ring_front = ROUND(rx_ring_front + 1, RX_RING_SIZE);
+    return idx;
+}
+
+
+int LocalAggregator::get_block_ring_idx(int block_idx)
+{
+    // check if block already added
+    for(int i = rx_ring_front, c = rx_ring_alloc; c > 0; i = ROUND(i + 1, RX_RING_SIZE), c--)
+    {
+        if (rx_ring[i].block_idx == block_idx) return i;
+    }
+
+    // check if block was already processed
+    for(int i=0; i < PROC_RING_SIZE; i++)
+    {
+        if (proc_ring[i] == block_idx) return -1;
+    }
+
+    int new_blocks;
+    if (rx_ring_alloc > 0)
+    {
+        new_blocks = ROUND(block_idx - rx_ring[ROUND(rx_ring_front + rx_ring_alloc - 1, RX_RING_SIZE)].block_idx, 256);
+    }else
+    {
+        int last_proc_block = proc_ring[ROUND(proc_ring_last - 1, PROC_RING_SIZE)];
+        new_blocks = ROUND(last_proc_block >=0 ? block_idx - last_proc_block : 1, 256);
+    }
+
+    assert (new_blocks > 0);
+
+    int ring_idx = -1;
+    for(int i = 0; i < new_blocks; i++)
+    {
+        ring_idx = rx_ring_push();
+        rx_ring[ring_idx].block_idx = ROUND(block_idx - new_blocks + i + 1, 256);
+        rx_ring[ring_idx].send_fragment_idx = 0;
+        rx_ring[ring_idx].has_fragments = 0;
+        memset(rx_ring[ring_idx].fragment_map, '\0', fec_n * sizeof(uint8_t));
+    }
+    return ring_idx;
+}
+
+
 void LocalAggregator::process_packet(const uint8_t *buf, size_t size)
 {
     if(size < sizeof(wblock_hdr_t) + sizeof(wpacket_hdr_t))
@@ -254,54 +331,67 @@ void LocalAggregator::process_packet(const uint8_t *buf, size_t size)
 
     wblock_hdr_t *block_hdr = (wblock_hdr_t*)buf;
 
-    if (block_hdr->block_idx != block_idx)
+    if (block_hdr->fragment_idx >= fec_n)
     {
-        if(has_fragments < fec_k)
+        fprintf(stderr, "invalid fragment_idx: %d\n", block_hdr->fragment_idx);
+        return;
+    }
+
+    int ring_idx = get_block_ring_idx(block_hdr->block_idx);
+
+    //ignore already processed blocks
+    if (ring_idx < 0) return;
+
+    rx_ring_item_t *p = &rx_ring[ring_idx];
+
+    //ignore already processed fragments
+    if (p->fragment_map[block_hdr->fragment_idx]) return;
+
+    memset(p->fragments[block_hdr->fragment_idx], '\0', MAX_FEC_PAYLOAD);
+    memcpy(p->fragments[block_hdr->fragment_idx],  buf + sizeof(wblock_hdr_t), size - sizeof(wblock_hdr_t));
+
+    p->fragment_map[block_hdr->fragment_idx] = 1;
+    p->has_fragments += 1;
+
+    if(ring_idx == rx_ring_front)
+    {
+        // check if any packets without gaps
+        while(p->send_fragment_idx < fec_k && p->fragment_map[p->send_fragment_idx])
         {
-            for(int i = send_fragment_idx; i < fec_k; i++)
-            {
-                if (fragment_map[i]) send_packet(i);
-            }
+            send_packet(ring_idx, p->send_fragment_idx);
+            p->send_fragment_idx += 1;
         }
-        block_idx = block_hdr->block_idx;
-        has_fragments = 0;
-        send_fragment_idx = 0;
-        fragment_lost = false;
-        memset(fragment_map, '\0', fec_n * sizeof(uint8_t));
     }
 
-    if (has_fragments >= fec_k || fragment_map[block_hdr->fragment_idx]) return;
-
-    memset(fragments[block_hdr->fragment_idx], '\0', MAX_FEC_PAYLOAD);
-    memcpy(fragments[block_hdr->fragment_idx],  buf + sizeof(wblock_hdr_t), size - sizeof(wblock_hdr_t));
-    fragment_map[block_hdr->fragment_idx] = 1;
-    has_fragments += 1;
-
-    if(block_hdr->fragment_idx > 0 && !fragment_map[block_hdr->fragment_idx - 1])
+    // or we can reconstruct gaps via FEC
+    if(p->send_fragment_idx < fec_k && p->has_fragments == fec_k)
     {
-        fragment_lost = true;
-    }
-
-    if(!fragment_lost)
-    {
-        send_packet(send_fragment_idx);
-        send_fragment_idx += 1;
-    }
-
-    if(has_fragments == fec_k)
-    {
-        apply_fec();
-        for(int i = send_fragment_idx; i < fec_k; i++)
+        //printf("do fec\n");
+        apply_fec(ring_idx);
+        while(p->send_fragment_idx < fec_k)
         {
-            send_packet(i);
+            send_packet(ring_idx, p->send_fragment_idx);
+            p->send_fragment_idx += 1;
         }
+    }
+
+    if(p->send_fragment_idx == fec_k)
+    {
+        int nrm = ROUND(ring_idx - rx_ring_front, RX_RING_SIZE);
+        for(int i=0; i <= nrm; i++)
+        {
+            add_processed_block(rx_ring[rx_ring_front].block_idx);
+            rx_ring_front = ROUND(rx_ring_front + 1, RX_RING_SIZE);
+            rx_ring_alloc -= 1;
+        }
+        assert(rx_ring_alloc >= 0);
     }
 }
 
-void LocalAggregator::send_packet(int idx)
+void LocalAggregator::send_packet(int ring_idx, int fragment_idx)
 {
-    wpacket_hdr_t* packet_hdr = (wpacket_hdr_t*)(fragments[idx]);
-    uint8_t *payload = (fragments[idx]) + sizeof(wpacket_hdr_t);
+    wpacket_hdr_t* packet_hdr = (wpacket_hdr_t*)(rx_ring[ring_idx].fragments[fragment_idx]);
+    uint8_t *payload = (rx_ring[ring_idx].fragments[fragment_idx]) + sizeof(wpacket_hdr_t);
 
     if (packet_hdr->seq > seq + 1)
     {
@@ -318,7 +408,7 @@ void LocalAggregator::send_packet(int idx)
     }
 }
 
-void LocalAggregator::apply_fec(void)
+void LocalAggregator::apply_fec(int ring_idx)
 {
     unsigned index[fec_k];
     uint8_t *in_blocks[fec_k];
@@ -328,18 +418,18 @@ void LocalAggregator::apply_fec(void)
 
     for(int i=0; i < fec_k; i++)
     {
-        if(fragment_map[i])
+        if(rx_ring[ring_idx].fragment_map[i])
         {
-            in_blocks[i] = fragments[i];
+            in_blocks[i] = rx_ring[ring_idx].fragments[i];
             index[i] = i;
         }else
         {
             for(;j < fec_n; j++)
             {
-                if(fragment_map[j])
+                if(rx_ring[ring_idx].fragment_map[j])
                 {
-                    in_blocks[i] = fragments[j];
-                    out_blocks[ob_idx++] = fragments[i];
+                    in_blocks[i] = rx_ring[ring_idx].fragments[j];
+                    out_blocks[ob_idx++] = rx_ring[ring_idx].fragments[i];
                     index[i] = j;
                     j++;
                     break;

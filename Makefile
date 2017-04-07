@@ -1,6 +1,6 @@
 
 LDFLAGS=-lrt -lpcap
-CPPFLAGS=-Wall
+CPPFLAGS=-Wall -g
 
 all: rx tx
 
