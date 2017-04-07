@@ -253,14 +253,14 @@ RemoteAggregator::~RemoteAggregator()
 void LocalAggregator::add_processed_block(int block_idx)
 {
     proc_ring[proc_ring_last] = block_idx;
-    proc_ring_last = ROUND(proc_ring_last + 1, PROC_RING_SIZE);
+    proc_ring_last = modN(proc_ring_last + 1, PROC_RING_SIZE);
 }
 
 int LocalAggregator::rx_ring_push(void)
 {
     if(rx_ring_alloc < RX_RING_SIZE)
     {
-        int idx = ROUND(rx_ring_front + rx_ring_alloc, RX_RING_SIZE);
+        int idx = modN(rx_ring_front + rx_ring_alloc, RX_RING_SIZE);
         rx_ring_alloc += 1;
         return idx;
     }
@@ -271,7 +271,7 @@ int LocalAggregator::rx_ring_push(void)
     fprintf(stderr, "override block %d with %d fragments\n", rx_ring[idx].block_idx, rx_ring[idx].has_fragments);
 
     add_processed_block(rx_ring[idx].block_idx);
-    rx_ring_front = ROUND(rx_ring_front + 1, RX_RING_SIZE);
+    rx_ring_front = modN(rx_ring_front + 1, RX_RING_SIZE);
     return idx;
 }
 
@@ -279,7 +279,7 @@ int LocalAggregator::rx_ring_push(void)
 int LocalAggregator::get_block_ring_idx(int block_idx)
 {
     // check if block already added
-    for(int i = rx_ring_front, c = rx_ring_alloc; c > 0; i = ROUND(i + 1, RX_RING_SIZE), c--)
+    for(int i = rx_ring_front, c = rx_ring_alloc; c > 0; i = modN(i + 1, RX_RING_SIZE), c--)
     {
         if (rx_ring[i].block_idx == block_idx) return i;
     }
@@ -293,11 +293,11 @@ int LocalAggregator::get_block_ring_idx(int block_idx)
     int new_blocks;
     if (rx_ring_alloc > 0)
     {
-        new_blocks = ROUND(block_idx - rx_ring[ROUND(rx_ring_front + rx_ring_alloc - 1, RX_RING_SIZE)].block_idx, 256);
+        new_blocks = modN(block_idx - rx_ring[modN(rx_ring_front + rx_ring_alloc - 1, RX_RING_SIZE)].block_idx, 256);
     }else
     {
-        int last_proc_block = proc_ring[ROUND(proc_ring_last - 1, PROC_RING_SIZE)];
-        new_blocks = ROUND(last_proc_block >=0 ? block_idx - last_proc_block : 1, 256);
+        int last_proc_block = proc_ring[modN(proc_ring_last - 1, PROC_RING_SIZE)];
+        new_blocks = modN(last_proc_block >=0 ? block_idx - last_proc_block : 1, 256);
     }
 
     assert (new_blocks > 0);
@@ -306,7 +306,7 @@ int LocalAggregator::get_block_ring_idx(int block_idx)
     for(int i = 0; i < new_blocks; i++)
     {
         ring_idx = rx_ring_push();
-        rx_ring[ring_idx].block_idx = ROUND(block_idx - new_blocks + i + 1, 256);
+        rx_ring[ring_idx].block_idx = modN(block_idx - new_blocks + i + 1, 256);
         rx_ring[ring_idx].send_fragment_idx = 0;
         rx_ring[ring_idx].has_fragments = 0;
         memset(rx_ring[ring_idx].fragment_map, '\0', fec_n * sizeof(uint8_t));
@@ -377,11 +377,11 @@ void LocalAggregator::process_packet(const uint8_t *buf, size_t size)
 
     if(p->send_fragment_idx == fec_k)
     {
-        int nrm = ROUND(ring_idx - rx_ring_front, RX_RING_SIZE);
+        int nrm = modN(ring_idx - rx_ring_front, RX_RING_SIZE);
         for(int i=0; i <= nrm; i++)
         {
             add_processed_block(rx_ring[rx_ring_front].block_idx);
-            rx_ring_front = ROUND(rx_ring_front + 1, RX_RING_SIZE);
+            rx_ring_front = modN(rx_ring_front + 1, RX_RING_SIZE);
             rx_ring_alloc -= 1;
         }
         assert(rx_ring_alloc >= 0);

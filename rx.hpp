@@ -75,9 +75,9 @@ typedef struct {
 #define RX_RING_SIZE 4
 #define PROC_RING_SIZE 4
 
-static inline int ROUND(int x, int base)
+static inline int modN(int x, int base)
 {
-    return ((x) >= 0 ? (x) % base : (base - (-(x)) % base) % base);
+    return (base + (x % base)) % base;
 }
 
 class LocalAggregator : public Aggregator
