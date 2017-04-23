@@ -51,13 +51,28 @@ string string_format( const std::string& format, Args ... args )
 
 /* this is the template radiotap header we send packets out with */
 
+
+#define IEEE80211_RADIOTAP_MCS_HAVE_BW          0x01
+#define IEEE80211_RADIOTAP_MCS_HAVE_MCS         0x02
+#define IEEE80211_RADIOTAP_MCS_HAVE_GI          0x04
+#define IEEE80211_RADIOTAP_MCS_HAVE_FMT         0x08
+
+#define         IEEE80211_RADIOTAP_MCS_BW_20    0
+#define         IEEE80211_RADIOTAP_MCS_BW_40    1
+#define         IEEE80211_RADIOTAP_MCS_BW_20L   2
+#define         IEEE80211_RADIOTAP_MCS_BW_20U   3
+#define IEEE80211_RADIOTAP_MCS_SGI              0x04
+#define IEEE80211_RADIOTAP_MCS_FMT_GF           0x08
+
+#define MCS_KNOWN (IEEE80211_RADIOTAP_MCS_HAVE_MCS | IEEE80211_RADIOTAP_MCS_HAVE_BW | IEEE80211_RADIOTAP_MCS_HAVE_GI) // | IEEE80211_RADIOTAP_MCS_HAVE_FMT)
+#define MCS_FLAGS (IEEE80211_RADIOTAP_MCS_BW_40 | IEEE80211_RADIOTAP_MCS_SGI) // | IEEE80211_RADIOTAP_MCS_FMT_GF)
+
 static const uint8_t radiotap_header[] = {
     0x00, 0x00, // <-- radiotap version
-    0x0c, 0x00, // <- radiotap header lengt
-    0x04, 0x80, 0x00, 0x00, // <-- radiotap present flags
-    0x00, // Rate, offset 0x8
-    0x00,
-    0x18, 0x00
+    0x0d, 0x00, // <- radiotap header length
+    0x00, 0x80, 0x08, 0x00, // <-- radiotap present flags:  RADIOTAP_TX_FLAGS + RADIOTAP_MCS
+    0x08, 0x00,  // RADIOTAP_F_TX_NOACK
+    MCS_KNOWN , MCS_FLAGS, 0x01  // MCS default is #1 -- QPSK 1/2 40MHz SGI -- 30 Mbit/s
 };
 
 //the last byte of the mac address is recycled as a port number

@@ -24,7 +24,7 @@ using namespace std;
 class Transmitter
 {
 public:
-    Transmitter(const char* wlan, int k, int m, uint8_t radio_rate, uint8_t radio_port);
+    Transmitter(const char* wlan, int k, int m, uint8_t radio_port);
     ~Transmitter();
     void send_packet(const uint8_t *buf, size_t size);
 
@@ -38,7 +38,6 @@ private:
     uint8_t block_idx;
     uint8_t fragment_idx;
     uint32_t seq;
-    uint8_t radio_rate;
     uint8_t radio_port;
     uint8_t** block;
     size_t max_packet_size;

@@ -41,9 +41,9 @@ extern "C"
 #include "tx.hpp"
 
 
-Transmitter::Transmitter(const char *wlan, int k, int n, uint8_t radio_rate, uint8_t radio_port) : wlan(wlan), fec_k(k), fec_n(n), block_idx(0),
-                                                                                                   fragment_idx(0), seq(0), radio_rate(radio_rate),
-                                                                                                   radio_port(radio_port), max_packet_size(0)
+Transmitter::Transmitter(const char *wlan, int k, int n,  uint8_t radio_port) : wlan(wlan), fec_k(k), fec_n(n), block_idx(0),
+                                                                                fragment_idx(0), seq(0),
+                                                                                radio_port(radio_port), max_packet_size(0)
 {
     char errbuf[PCAP_ERRBUF_SIZE];
     ppcap = pcap_create(wlan, errbuf);
@@ -89,7 +89,6 @@ void Transmitter::send_block_fragment(size_t packet_size)
     block_hdr.fragment_idx = fragment_idx;
 
     memcpy(p, radiotap_header, sizeof(radiotap_header));
-    p[8] = radio_rate * 2;
     p += sizeof(radiotap_header);
     memcpy(p, ieee80211_header, sizeof(ieee80211_header));
     p[SRC_MAC_LASTBYTE] = radio_port;
@@ -222,7 +221,7 @@ void mavlink_rx(Transmitter &t, int fd, int agg_latency)
 int main(int argc, char * const *argv)
 {
     int opt;
-    uint8_t k=8, n=12, radio_port=1, radio_rate=54;
+    uint8_t k=8, n=12, radio_port=1;
     int udp_port=5600;
     bool mavlink_mode = false;
     int mavlink_agg_latency = 0;
@@ -242,17 +241,14 @@ int main(int argc, char * const *argv)
         case 'u':
             udp_port = atoi(optarg);
             break;
-        case 'r':
-            radio_rate = atoi(optarg);
-            break;
         case 'p':
             radio_port = atoi(optarg);
             break;
         default: /* '?' */
         show_usage:
-            fprintf(stderr, "Usage: %s [-m mavlink_agg_in_ms] [-k RS_K] [-n RS_N] [-u udp_port] [-r tx_rate] [-p radio_port] interface\n",
+            fprintf(stderr, "Usage: %s [-m mavlink_agg_in_ms] [-k RS_K] [-n RS_N] [-u udp_port] [-p radio_port] interface\n",
                     argv[0]);
-            fprintf(stderr, "Default: k=%d, n=%d, udp_port=%d, tx_rate=%d Mbit/s, radio_port=%d\n", k, n, udp_port, radio_rate, radio_port);
+            fprintf(stderr, "Default: k=%d, n=%d, udp_port=%d, radio_port=%d\n", k, n, udp_port, radio_port);
             fprintf(stderr, "Radio MTU: %lu\n", MAX_PAYLOAD_SIZE);
             exit(1);
         }
@@ -265,7 +261,7 @@ int main(int argc, char * const *argv)
     try
     {
         int fd = open_udp_socket_for_rx(udp_port);
-        Transmitter t(argv[optind], k, n, radio_rate, radio_port);
+        Transmitter t(argv[optind], k, n, radio_port);
 
         if (mavlink_mode)
         {

@@ -72,8 +72,8 @@ typedef struct {
 } rx_ring_item_t;
 
 
-#define RX_RING_SIZE 4
-#define PROC_RING_SIZE 4
+#define RX_RING_SIZE 40
+#define PROC_RING_SIZE 40
 
 static inline int modN(int x, int base)
 {
