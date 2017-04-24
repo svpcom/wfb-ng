@@ -41,4 +41,5 @@ private:
     uint8_t radio_port;
     uint8_t** block;
     size_t max_packet_size;
+    uint16_t ieee80211_seq;
 };

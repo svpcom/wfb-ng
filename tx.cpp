@@ -43,7 +43,8 @@ extern "C"
 
 Transmitter::Transmitter(const char *wlan, int k, int n,  uint8_t radio_port) : wlan(wlan), fec_k(k), fec_n(n), block_idx(0),
                                                                                 fragment_idx(0), seq(0),
-                                                                                radio_port(radio_port), max_packet_size(0)
+                                                                                radio_port(radio_port), max_packet_size(0),
+                                                                                ieee80211_seq(0)
 {
     char errbuf[PCAP_ERRBUF_SIZE];
     ppcap = pcap_create(wlan, errbuf);
@@ -93,6 +94,9 @@ void Transmitter::send_block_fragment(size_t packet_size)
     memcpy(p, ieee80211_header, sizeof(ieee80211_header));
     p[SRC_MAC_LASTBYTE] = radio_port;
     p[DST_MAC_LASTBYTE] = radio_port;
+    p[FRAME_SEQ_LB] = ieee80211_seq & 0xff;
+    p[FRAME_SEQ_HB] = (ieee80211_seq >> 8) & 0xff;
+    ieee80211_seq += 16;
     p += sizeof(ieee80211_header);
     memcpy(p, &block_hdr, sizeof(block_hdr));
     p += sizeof(block_hdr);
