@@ -33,6 +33,7 @@
 #include <fcntl.h>
 #include <time.h>
 #include <sys/mman.h>
+#include <sodium.h>
 
 #define MAX_PACKET_SIZE 1510
 #define MAX_RX_INTERFACES 8
@@ -89,9 +90,19 @@ static uint8_t ieee80211_header[] = {
     0x00, 0x00,  // seq num << 4 + fragment num
 };
 
+
+// nounce:  56bit block_idx + 8bit fragment_idx
+
+#define BLOCK_IDX_MASK ((1LU << 56) - 1)
+
+#define WFB_PACKET_DATA 0x1
+#define WFB_PACKET_KEY 0x2
+
+#define SESSION_KEY_ANNOUNCE_MSEC 1000
+
 typedef struct {
-    uint8_t block_idx;
-    uint8_t fragment_idx;
+    uint8_t packet_type;
+    uint64_t nonce;
 }  __attribute__ ((packed)) wblock_hdr_t;
 
 typedef struct {
@@ -99,9 +110,14 @@ typedef struct {
     uint16_t packet_size;
 }  __attribute__ ((packed)) wpacket_hdr_t;
 
+typedef struct {
+    uint8_t packet_type;
+    uint8_t nonce[crypto_box_NONCEBYTES];
+    uint8_t session_key[crypto_aead_chacha20poly1305_KEYBYTES + crypto_box_MACBYTES]; // encrypted session key
+} __attribute__ ((packed)) wsession_key_t;
 
-#define MAX_PAYLOAD_SIZE (MAX_PACKET_SIZE - sizeof(radiotap_header) - sizeof(ieee80211_header) - sizeof(wblock_hdr_t) - sizeof(wpacket_hdr_t))
-#define MAX_FEC_PAYLOAD  (MAX_PACKET_SIZE - sizeof(radiotap_header) - sizeof(ieee80211_header) - sizeof(wblock_hdr_t))
+#define MAX_PAYLOAD_SIZE (MAX_PACKET_SIZE - sizeof(radiotap_header) - sizeof(ieee80211_header) - sizeof(wblock_hdr_t) - crypto_aead_chacha20poly1305_ABYTES - sizeof(wpacket_hdr_t))
+#define MAX_FEC_PAYLOAD  (MAX_PACKET_SIZE - sizeof(radiotap_header) - sizeof(ieee80211_header) - sizeof(wblock_hdr_t) - crypto_aead_chacha20poly1305_ABYTES)
 #define MAX_FORWARDER_PACKET_SIZE (MAX_PACKET_SIZE - sizeof(radiotap_header) - sizeof(ieee80211_header))
 
 int open_udp_socket_for_rx(int port);

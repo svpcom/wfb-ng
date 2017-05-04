@@ -2,3 +2,6 @@
 *.a
 rx
 tx
+rx.key
+tx.key
+keygen

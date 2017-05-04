@@ -190,7 +190,7 @@ void Receiver::loop_iter(void)
 }
 
 
-LocalAggregator::LocalAggregator(const string &client_addr, int client_port, int k, int n) : fec_k(k), fec_n(n), seq(0), rx_ring_front(0), rx_ring_alloc(0), proc_ring_last(0)
+LocalAggregator::LocalAggregator(const string &client_addr, int client_port, int k, int n, const string &keypair) : fec_k(k), fec_n(n), seq(0), rx_ring_front(0), rx_ring_alloc(0), proc_ring_last(0)
 {
     sockfd = open_udp_socket(client_addr, client_port);
     fec_p = fec_new(fec_k, fec_n);
@@ -213,6 +213,15 @@ LocalAggregator::LocalAggregator(const string &client_addr, int client_port, int
     {
         proc_ring[ring_idx] = -1;
     }
+
+    FILE *fp;
+    if((fp = fopen(keypair.c_str(), "r")) == NULL)
+    {
+        throw runtime_error(string_format("Unable to open %s: %s", keypair.c_str(), strerror(errno)));
+    }
+    if (fread(rx_secretkey, crypto_box_SECRETKEYBYTES, 1, fp) != 1) throw runtime_error(string_format("Unable to read rx secret key: %s", strerror(errno)));
+    if (fread(tx_publickey, crypto_box_PUBLICKEYBYTES, 1, fp) != 1) throw runtime_error(string_format("Unable to read tx public key: %s", strerror(errno)));
+    fclose(fp);
 }
 
 
@@ -317,27 +326,71 @@ int LocalAggregator::get_block_ring_idx(int block_idx)
 
 void LocalAggregator::process_packet(const uint8_t *buf, size_t size)
 {
-    if(size < sizeof(wblock_hdr_t) + sizeof(wpacket_hdr_t))
-    {
-        fprintf(stderr, "short packet (fec header)\n");
-        return;
-    }
-
-    if (size > MAX_FEC_PAYLOAD + sizeof(wblock_hdr_t))
+    if(size  == 0) return;
+    if (size > MAX_FORWARDER_PACKET_SIZE)
     {
         fprintf(stderr, "long packet (fec payload)\n");
         return;
     }
 
-    wblock_hdr_t *block_hdr = (wblock_hdr_t*)buf;
-
-    if (block_hdr->fragment_idx >= fec_n)
+    switch(buf[0])
     {
-        fprintf(stderr, "invalid fragment_idx: %d\n", block_hdr->fragment_idx);
+    case WFB_PACKET_DATA:
+        if(size < sizeof(wblock_hdr_t) + sizeof(wpacket_hdr_t))
+        {
+            fprintf(stderr, "short packet (fec header)\n");
+            return;
+        }
+        break;
+
+    case WFB_PACKET_KEY:
+        if(size != sizeof(wsession_key_t))
+        {
+            fprintf(stderr, "invalid session key packet\n");
+            return;
+        }
+
+        if(crypto_box_open_easy(session_key,
+                                ((wsession_key_t*)buf)->session_key, sizeof(wsession_key_t::session_key), ((wsession_key_t*)buf)->nonce,
+                                tx_publickey, rx_secretkey) != 0)
+        {
+            fprintf(stderr, "unable to decrypt session key\n");
+        }
+        return;
+
+    default:
+        fprintf(stderr, "Unknown packet type 0x%x\n", buf[0]);
         return;
     }
 
-    int ring_idx = get_block_ring_idx(block_hdr->block_idx);
+    // Truncate block_idx to 8 bit
+    uint8_t decrypted[MAX_FEC_PAYLOAD];
+    long long unsigned int decrypted_len;
+    wblock_hdr_t *block_hdr = (wblock_hdr_t*)buf;
+
+    if (crypto_aead_chacha20poly1305_decrypt(decrypted, &decrypted_len,
+                                             NULL,
+                                             buf + sizeof(wblock_hdr_t), size - sizeof(wblock_hdr_t),
+                                             buf,
+                                             sizeof(wblock_hdr_t),
+                                             (uint8_t*)(&(block_hdr->nonce)), session_key) != 0)
+    {
+        fprintf(stderr, "unable to decrypt packet #0x%Lx\n", (long long unsigned int)(block_hdr->nonce));
+        return;
+    }
+
+    assert(decrypted_len <= MAX_FEC_PAYLOAD);
+
+    uint8_t block_idx = (uint8_t)((block_hdr->nonce >> 8) & 0xff);
+    uint8_t fragment_idx = (uint8_t)(block_hdr->nonce & 0xff);
+
+    if (fragment_idx >= fec_n)
+    {
+        fprintf(stderr, "invalid fragment_idx: %d\n", fragment_idx);
+        return;
+    }
+
+    int ring_idx = get_block_ring_idx(block_idx);
 
     //ignore already processed blocks
     if (ring_idx < 0) return;
@@ -345,12 +398,12 @@ void LocalAggregator::process_packet(const uint8_t *buf, size_t size)
     rx_ring_item_t *p = &rx_ring[ring_idx];
 
     //ignore already processed fragments
-    if (p->fragment_map[block_hdr->fragment_idx]) return;
+    if (p->fragment_map[fragment_idx]) return;
 
-    memset(p->fragments[block_hdr->fragment_idx], '\0', MAX_FEC_PAYLOAD);
-    memcpy(p->fragments[block_hdr->fragment_idx],  buf + sizeof(wblock_hdr_t), size - sizeof(wblock_hdr_t));
+    memset(p->fragments[fragment_idx], '\0', MAX_FEC_PAYLOAD);
+    memcpy(p->fragments[fragment_idx], decrypted, decrypted_len);
 
-    p->fragment_map[block_hdr->fragment_idx] = 1;
+    p->fragment_map[fragment_idx] = 1;
     p->has_fragments += 1;
 
     if(ring_idx == rx_ring_front)
@@ -448,9 +501,13 @@ int main(int argc, char* const *argv)
     int srv_port=0;
     string client_addr="127.0.0.1";
     rx_mode_t rx_mode = LOCAL;
+    string keypair = "rx.key";
 
-    while ((opt = getopt(argc, argv, "fa:k:n:c:u:p:")) != -1) {
+    while ((opt = getopt(argc, argv, "K:fa:k:n:c:u:p:")) != -1) {
         switch (opt) {
+        case 'K':
+            keypair = optarg;
+            break;
         case 'f':
             rx_mode = FORWARDER;
             break;
@@ -475,10 +532,10 @@ int main(int argc, char* const *argv)
             break;
         default: /* '?' */
         show_usage:
-            fprintf(stderr, "Local receiver: %s [-k RS_K] [-n RS_N] [-c client_addr] [-u client_port] [-p radio_port] interface1 [interface2] ...\n", argv[0]);
+            fprintf(stderr, "Local receiver: %s [-K rx_key] [-k RS_K] [-n RS_N] [-c client_addr] [-u client_port] [-p radio_port] interface1 [interface2] ...\n", argv[0]);
             fprintf(stderr, "Remote (forwarder): %s -f [-c client_addr] [-u client_port] [-p radio_port] interface1 [interface2] ...\n", argv[0]);
-            fprintf(stderr, "Remote (aggregator): %s -a server_port [-k RS_K] [-n RS_N] [-c client_addr] [-u client_port]\n", argv[0]);
-            fprintf(stderr, "Default: k=%d, n=%d, connect=%s:%d, radio_port=%d\n", k, n, client_addr.c_str(), client_port, radio_port);
+            fprintf(stderr, "Remote (aggregator): %s -a server_port [-K rx_key] [-k RS_K] [-n RS_N] [-c client_addr] [-u client_port]\n", argv[0]);
+            fprintf(stderr, "Default: K='%s', k=%d, n=%d, connect=%s:%d, radio_port=%d\n", keypair.c_str(), k, n, client_addr.c_str(), client_port, radio_port);
             exit(1);
         }
     }
@@ -495,7 +552,7 @@ int main(int argc, char* const *argv)
 
             shared_ptr<Aggregator> agg;
             if(rx_mode == LOCAL){
-                agg = shared_ptr<LocalAggregator>(new LocalAggregator(client_addr, client_port, k, n));
+                agg = shared_ptr<LocalAggregator>(new LocalAggregator(client_addr, client_port, k, n, keypair));
             }else{
                 agg = shared_ptr<RemoteAggregator>(new RemoteAggregator(client_addr, client_port));
             }
@@ -535,7 +592,7 @@ int main(int argc, char* const *argv)
 
             uint8_t buf[MAX_FORWARDER_PACKET_SIZE];
             int fd = open_udp_socket_for_rx(srv_port);
-            LocalAggregator agg(client_addr, client_port, k, n);
+            LocalAggregator agg(client_addr, client_port, k, n, keypair);
 
             for(;;)
             {

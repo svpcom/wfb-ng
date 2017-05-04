@@ -40,11 +40,51 @@ extern "C"
 #include "wifibroadcast.hpp"
 #include "tx.hpp"
 
+Transmitter::Transmitter(int k, int n, const string &keypair):  fec_k(k), fec_n(n), block_idx(0),
+                                                                fragment_idx(0), seq(0),
+                                                                max_packet_size(0)
+{
+    fec_p = fec_new(fec_k, fec_n);
 
-Transmitter::Transmitter(const char *wlan, int k, int n,  uint8_t radio_port) : wlan(wlan), fec_k(k), fec_n(n), block_idx(0),
-                                                                                fragment_idx(0), seq(0),
-                                                                                radio_port(radio_port), max_packet_size(0),
-                                                                                ieee80211_seq(0)
+    block = new uint8_t*[fec_n];
+    for(int i=0; i < fec_n; i++)
+    {
+        block[i] = new uint8_t[MAX_FEC_PAYLOAD];
+    }
+
+    FILE *fp;
+    if((fp = fopen(keypair.c_str(), "r")) == NULL)
+    {
+        throw runtime_error(string_format("Unable to open %s: %s", keypair.c_str(), strerror(errno)));
+    }
+    if (fread(tx_secretkey, crypto_box_SECRETKEYBYTES, 1, fp) != 1) throw runtime_error(string_format("Unable to read tx secret key: %s", strerror(errno)));
+    if (fread(rx_publickey, crypto_box_PUBLICKEYBYTES, 1, fp) != 1) throw runtime_error(string_format("Unable to read rx public key: %s", strerror(errno)));
+    fclose(fp);
+
+    randombytes_buf(session_key, sizeof(session_key));
+    session_key_packet.packet_type = WFB_PACKET_KEY;
+    randombytes_buf(session_key_packet.nonce, sizeof(session_key_packet.nonce));
+    if (crypto_box_easy(session_key_packet.session_key, session_key, sizeof(session_key),
+                        session_key_packet.nonce, rx_publickey, tx_secretkey) != 0)
+    {
+        throw runtime_error("Unable to make session key!");
+    }
+}
+
+Transmitter::~Transmitter()
+{
+    for(int i=0; i < fec_n; i++)
+    {
+        delete block[i];
+    }
+    delete block;
+
+    fec_free(fec_p);
+}
+
+PcapTransmitter::PcapTransmitter(int k, int n, const string &keypair, uint8_t radio_port, const char *wlan) : Transmitter(k, n, keypair),
+                                                                                                              radio_port(radio_port), wlan(wlan),
+                                                                                                              ieee80211_seq(0)
 {
     char errbuf[PCAP_ERRBUF_SIZE];
     ppcap = pcap_create(wlan, errbuf);
@@ -59,38 +99,21 @@ Transmitter::Transmitter(const char *wlan, int k, int n,  uint8_t radio_port) : 
     if (pcap_activate(ppcap) !=0) throw runtime_error(string_format("pcap_activate failed: %s", pcap_geterr(ppcap)));
     //if (pcap_setnonblock(ppcap, 1, errbuf) != 0) throw runtime_error(string_format("set_nonblock failed: %s", errbuf));
 
-    fec_p = fec_new(fec_k, fec_n);
-
-    block = new uint8_t*[fec_n];
-    for(int i=0; i < fec_n; i++)
-    {
-        block[i] = new uint8_t[MAX_FEC_PAYLOAD];
-    }
-}
-
-Transmitter::~Transmitter()
-{
-    for(int i=0; i < fec_n; i++)
-    {
-        delete block[i];
-    }
-    delete block;
-
-    fec_free(fec_p);
-    pcap_close(ppcap);
 }
 
 
-void Transmitter::send_block_fragment(size_t packet_size)
+void PcapTransmitter::inject_packet(const uint8_t *buf, size_t size)
 {
     uint8_t txbuf[MAX_PACKET_SIZE];
     uint8_t *p = txbuf;
-    wblock_hdr_t block_hdr;
-    block_hdr.block_idx = block_idx;
-    block_hdr.fragment_idx = fragment_idx;
 
+    assert(size <= MAX_FORWARDER_PACKET_SIZE);
+
+    // radiotap header
     memcpy(p, radiotap_header, sizeof(radiotap_header));
     p += sizeof(radiotap_header);
+
+    // ieee80211 header
     memcpy(p, ieee80211_header, sizeof(ieee80211_header));
     p[SRC_MAC_LASTBYTE] = radio_port;
     p[DST_MAC_LASTBYTE] = radio_port;
@@ -98,10 +121,10 @@ void Transmitter::send_block_fragment(size_t packet_size)
     p[FRAME_SEQ_HB] = (ieee80211_seq >> 8) & 0xff;
     ieee80211_seq += 16;
     p += sizeof(ieee80211_header);
-    memcpy(p, &block_hdr, sizeof(block_hdr));
-    p += sizeof(block_hdr);
-    memcpy(p, block[fragment_idx], packet_size);
-    p += packet_size;
+
+    // FEC data
+    memcpy(p, buf, size);
+    p += size;
 
     if (pcap_inject(ppcap, txbuf, p - txbuf) != p - txbuf)
     {
@@ -109,9 +132,41 @@ void Transmitter::send_block_fragment(size_t packet_size)
     }
 }
 
+PcapTransmitter::~PcapTransmitter()
+{
+    pcap_close(ppcap);
+}
+
+
+void Transmitter::send_block_fragment(size_t packet_size)
+{
+    uint8_t ciphertext[MAX_FORWARDER_PACKET_SIZE];
+    wblock_hdr_t *block_hdr = (wblock_hdr_t*)ciphertext;
+    long long unsigned int ciphertext_len;
+
+    assert(packet_size <= MAX_FEC_PAYLOAD);
+
+    block_hdr->packet_type = WFB_PACKET_DATA;
+    block_hdr->nonce = ((block_idx & BLOCK_IDX_MASK) << 8) + fragment_idx;
+
+    // encrypted payload
+    crypto_aead_chacha20poly1305_encrypt(ciphertext + sizeof(wblock_hdr_t), &ciphertext_len,
+                                         block[fragment_idx], packet_size,
+                                         (uint8_t*)block_hdr, sizeof(wblock_hdr_t),
+                                         NULL, (uint8_t*)(&(block_hdr->nonce)), session_key);
+
+    inject_packet(ciphertext, sizeof(wblock_hdr_t) + ciphertext_len);
+}
+
+void Transmitter::send_session_key(void)
+{
+    inject_packet((uint8_t*)&session_key_packet, sizeof(session_key_packet));
+}
+
 void Transmitter::send_packet(const uint8_t *buf, size_t size)
 {
     wpacket_hdr_t packet_hdr;
+    assert(size <= MAX_PAYLOAD_SIZE);
 
     packet_hdr.seq = seq++;
     packet_hdr.packet_size = size;
@@ -135,18 +190,6 @@ void Transmitter::send_packet(const uint8_t *buf, size_t size)
     max_packet_size = 0;
 }
 
-
-void normal_rx(Transmitter &t, int fd)
-{
-    uint8_t buf[MAX_PAYLOAD_SIZE];
-    for(;;)
-    {
-        ssize_t rsize = recv(fd, buf, sizeof(buf), 0);
-        if (rsize < 0) throw runtime_error(string_format("Error receiving packet: %s", strerror(errno)));
-        t.send_packet(buf, rsize);
-    }
-}
-
 uint64_t get_system_time(void) // in milliseconds
 {
     struct timeval te;
@@ -154,7 +197,26 @@ uint64_t get_system_time(void) // in milliseconds
     return te.tv_sec * 1000LL + te.tv_usec / 1000;
 }
 
-void mavlink_rx(Transmitter &t, int fd, int agg_latency)
+void normal_rx(Transmitter *t, int fd)
+{
+    uint8_t buf[MAX_PAYLOAD_SIZE];
+    uint64_t session_key_announce_ts = 0;
+    for(;;)
+    {
+        ssize_t rsize = recv(fd, buf, sizeof(buf), 0);
+        if (rsize < 0) throw runtime_error(string_format("Error receiving packet: %s", strerror(errno)));
+        uint64_t cur_ts = get_system_time();
+        if (cur_ts >= session_key_announce_ts)
+        {
+            // Announce session key
+            t->send_session_key();
+            session_key_announce_ts = cur_ts + SESSION_KEY_ANNOUNCE_MSEC;
+        }
+        t->send_packet(buf, rsize);
+    }
+}
+
+void mavlink_rx(Transmitter *t, int fd, int agg_latency)
 {
     struct pollfd fds[1];
 
@@ -171,6 +233,7 @@ void mavlink_rx(Transmitter &t, int fd, int agg_latency)
     size_t agg_size = 0;
     uint8_t agg_buf[MAX_PAYLOAD_SIZE];
     uint64_t expire_ts = get_system_time() + agg_latency;
+    uint64_t session_key_announce_ts = 0;
 
     for(;;)
     {
@@ -186,7 +249,14 @@ void mavlink_rx(Transmitter &t, int fd, int agg_latency)
         {
             if(agg_size > 0)
             {
-                t.send_packet(agg_buf, agg_size);
+                cur_ts = get_system_time();
+                if (cur_ts >= session_key_announce_ts)
+                {
+                    // Announce session key
+                    t->send_session_key();
+                    session_key_announce_ts = cur_ts + SESSION_KEY_ANNOUNCE_MSEC;
+                }
+                t->send_packet(agg_buf, agg_size);
                 agg_size = 0;
             }
             expire_ts = get_system_time() + agg_latency;
@@ -209,7 +279,14 @@ void mavlink_rx(Transmitter &t, int fd, int agg_latency)
                 {
                     if(agg_size > 0)
                     {
-                        t.send_packet(agg_buf, agg_size);
+                        cur_ts = get_system_time();
+                        if (cur_ts >= session_key_announce_ts)
+                        {
+                            // Announce session key
+                            t->send_session_key();
+                            session_key_announce_ts = cur_ts + SESSION_KEY_ANNOUNCE_MSEC;
+                        }
+                        t->send_packet(agg_buf, agg_size);
                         agg_size = 0;
                     }
                     expire_ts = get_system_time() + agg_latency;
@@ -229,9 +306,13 @@ int main(int argc, char * const *argv)
     int udp_port=5600;
     bool mavlink_mode = false;
     int mavlink_agg_latency = 0;
+    string keypair = "tx.key";
 
-    while ((opt = getopt(argc, argv, "m:k:n:u:r:p:")) != -1) {
+    while ((opt = getopt(argc, argv, "K:m:k:n:u:r:p:")) != -1) {
         switch (opt) {
+        case 'K':
+            keypair = optarg;
+            break;
         case 'm':
             mavlink_mode = true;
             mavlink_agg_latency = atoi(optarg);
@@ -250,9 +331,9 @@ int main(int argc, char * const *argv)
             break;
         default: /* '?' */
         show_usage:
-            fprintf(stderr, "Usage: %s [-m mavlink_agg_in_ms] [-k RS_K] [-n RS_N] [-u udp_port] [-p radio_port] interface\n",
+            fprintf(stderr, "Usage: %s [-K tx_key] [-m mavlink_agg_in_ms] [-k RS_K] [-n RS_N] [-u udp_port] [-p radio_port] interface\n",
                     argv[0]);
-            fprintf(stderr, "Default: k=%d, n=%d, udp_port=%d, radio_port=%d\n", k, n, udp_port, radio_port);
+            fprintf(stderr, "Default: K='%s', k=%d, n=%d, udp_port=%d, radio_port=%d\n", keypair.c_str(), k, n, udp_port, radio_port);
             fprintf(stderr, "Radio MTU: %lu\n", MAX_PAYLOAD_SIZE);
             exit(1);
         }
@@ -265,14 +346,15 @@ int main(int argc, char * const *argv)
     try
     {
         int fd = open_udp_socket_for_rx(udp_port);
-        Transmitter t(argv[optind], k, n, radio_port);
+        shared_ptr<Transmitter>t = shared_ptr<PcapTransmitter>(new PcapTransmitter(k, n, keypair, radio_port, argv[optind]));
+        //shared_ptr<Transmitter>t = shared_ptr<UdpTransmitter>(new UdpTransmitter(k, n, keypair, "127.0.0.1", 5601));
 
         if (mavlink_mode)
         {
-            mavlink_rx(t, fd, mavlink_agg_latency);
+            mavlink_rx(t.get(), fd, mavlink_agg_latency);
         }else
         {
-            normal_rx(t, fd);
+            normal_rx(t.get(), fd);
         }
     }catch(runtime_error &e)
     {

@@ -83,7 +83,7 @@ static inline int modN(int x, int base)
 class LocalAggregator : public Aggregator
 {
 public:
-    LocalAggregator(const string &client_addr, int client_port, int k, int n);
+    LocalAggregator(const string &client_addr, int client_port, int k, int n, const string &keypair);
     ~LocalAggregator();
     virtual void process_packet(const uint8_t *buf, size_t size);
 private:
@@ -102,6 +102,11 @@ private:
     int rx_ring_alloc; // number of allocated entries
     int proc_ring[PROC_RING_SIZE];
     int proc_ring_last; // index to add processed packet
+
+    // rx->tx keypair
+    uint8_t rx_secretkey[crypto_box_SECRETKEYBYTES];
+    uint8_t tx_publickey[crypto_box_PUBLICKEYBYTES];
+    uint8_t session_key[crypto_aead_chacha20poly1305_KEYBYTES];
 };
 
 class Receiver
