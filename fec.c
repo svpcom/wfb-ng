@@ -1,6 +1,10 @@
 /**
  * zfec -- fast forward error correction library with Python interface
- */
+ * https://tahoe-lafs.org/trac/zfec/
+
+ This package implements an "erasure code", or "forward error correction code".
+ You may use this package under the GNU General Public License, version 2 or, at your option, any later version.
+*/
 
 #include "fec.h"
 
