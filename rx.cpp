@@ -51,7 +51,7 @@ Receiver::Receiver(const char *wlan, int radio_port, Aggregator *agg) : agg(agg)
     ppcap = pcap_create(wlan, errbuf);
 
     if (ppcap == NULL){
-        throw runtime_error(string_format("Unable to open interface %s in pcap: %s\n", wlan, errbuf));
+        throw runtime_error(string_format("Unable to open interface %s in pcap: %s", wlan, errbuf));
     }
 
     if (pcap_set_snaplen(ppcap, 4096) !=0) throw runtime_error("set_snaplen failed");
