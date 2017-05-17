@@ -5,20 +5,20 @@ CPPFLAGS=-Wall -g
 all: rx tx keygen
 
 %.o: %.c *.h
-	gcc -c -o $@ $< $(CPPFLAGS)
+	$(CC) -c -o $@ $< $(CPPFLAGS)
 
 %.o: %.cpp *.hpp *.h
-	g++ -std=c++11 -c -o $@ $< $(CPPFLAGS)
+	$(CXX) -std=gnu++11 -c -o $@ $< $(CPPFLAGS)
 
 rx: rx.o radiotap.o fec.o wifibroadcast.o
-	g++ -o $@ $^ $(LDFLAGS)
+	$(CXX) -o $@ $^ $(LDFLAGS)
 
 
 tx: tx.o fec.o wifibroadcast.o
-	g++ -o $@ $^ $(LDFLAGS)
+	$(CXX) -o $@ $^ $(LDFLAGS)
 
 keygen: keygen.o
-	gcc -o $@ $^ $(LDFLAGS)
+	$(CC) -o $@ $^ $(LDFLAGS)
 
 clean:
 	rm -f rx tx *~ *.o
