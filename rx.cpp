@@ -83,11 +83,11 @@ Receiver::Receiver(const char *wlan, int radio_port, Aggregator *agg) : agg(agg)
     }
 
     if (pcap_compile(ppcap, &bpfprogram, program.c_str(), 1, 0) == -1) {
-        throw runtime_error(string_format("Unable to compile %s: %s", program, pcap_geterr(ppcap)));
+        throw runtime_error(string_format("Unable to compile %s: %s", program.c_str(), pcap_geterr(ppcap)));
     }
 
     if (pcap_setfilter(ppcap, &bpfprogram) == -1) {
-        throw runtime_error(string_format("Unable to set filter %s: %s", program, pcap_geterr(ppcap)));
+        throw runtime_error(string_format("Unable to set filter %s: %s", program.c_str(), pcap_geterr(ppcap)));
     }
 
     pcap_freecode(&bpfprogram);
