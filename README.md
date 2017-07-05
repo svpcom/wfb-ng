@@ -40,3 +40,5 @@ Supported WiFi hardware:  Ralink RT2800. Was tested with ALPHA AWUS051NH v2 in 5
 need to apply kernel patches from ``patches`` directory. See https://github.com/bortek/EZ-WifiBroadcast/wiki for details.
 
 Wifibroadcast + PX4 HOWTO: https://dev.px4.io/en/qgc/video_streaming_wifi_broadcast.html
+
+See https://github.com/svpcom/wifibroadcast/wiki for additional info
