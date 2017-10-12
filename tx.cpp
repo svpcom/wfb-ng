@@ -40,7 +40,7 @@ extern "C"
 #include "tx.hpp"
 
 Transmitter::Transmitter(int k, int n, const string &keypair):  fec_k(k), fec_n(n), block_idx(0),
-                                                                fragment_idx(0), seq(0),
+                                                                fragment_idx(0),
                                                                 max_packet_size(0)
 {
     fec_p = fec_new(fec_k, fec_n);
@@ -62,9 +62,9 @@ Transmitter::Transmitter(int k, int n, const string &keypair):  fec_k(k), fec_n(
 
     randombytes_buf(session_key, sizeof(session_key));
     session_key_packet.packet_type = WFB_PACKET_KEY;
-    randombytes_buf(session_key_packet.nonce, sizeof(session_key_packet.nonce));
-    if (crypto_box_easy(session_key_packet.session_key, session_key, sizeof(session_key),
-                        session_key_packet.nonce, rx_publickey, tx_secretkey) != 0)
+    randombytes_buf(session_key_packet.session_key_nonce, sizeof(session_key_packet.session_key_nonce));
+    if (crypto_box_easy(session_key_packet.session_key_data, session_key, sizeof(session_key),
+                        session_key_packet.session_key_nonce, rx_publickey, tx_secretkey) != 0)
     {
         throw runtime_error("Unable to make session key!");
     }
@@ -146,7 +146,7 @@ void Transmitter::send_block_fragment(size_t packet_size)
     assert(packet_size <= MAX_FEC_PAYLOAD);
 
     block_hdr->packet_type = WFB_PACKET_DATA;
-    block_hdr->nonce = ((block_idx & BLOCK_IDX_MASK) << 8) + fragment_idx;
+    block_hdr->nonce = htobe64(((block_idx & BLOCK_IDX_MASK) << 8) + fragment_idx);
 
     // encrypted payload
     crypto_aead_chacha20poly1305_encrypt(ciphertext + sizeof(wblock_hdr_t), &ciphertext_len,
@@ -159,6 +159,7 @@ void Transmitter::send_block_fragment(size_t packet_size)
 
 void Transmitter::send_session_key(void)
 {
+    //fprintf(stderr, "Announce session key\n");
     inject_packet((uint8_t*)&session_key_packet, sizeof(session_key_packet));
 }
 
@@ -167,8 +168,7 @@ void Transmitter::send_packet(const uint8_t *buf, size_t size)
     wpacket_hdr_t packet_hdr;
     assert(size <= MAX_PAYLOAD_SIZE);
 
-    packet_hdr.seq = seq++;
-    packet_hdr.packet_size = size;
+    packet_hdr.packet_size = htobe16(size);
     memset(block[fragment_idx], '\0', MAX_FEC_PAYLOAD);
     memcpy(block[fragment_idx], &packet_hdr, sizeof(packet_hdr));
     memcpy(block[fragment_idx] + sizeof(packet_hdr), buf, size);
@@ -196,7 +196,7 @@ uint64_t get_system_time(void) // in milliseconds
     return te.tv_sec * 1000LL + te.tv_usec / 1000;
 }
 
-void normal_rx(Transmitter *t, int fd)
+void video_source(Transmitter *t, int fd)
 {
     uint8_t buf[MAX_PAYLOAD_SIZE];
     uint64_t session_key_announce_ts = 0;
@@ -215,7 +215,7 @@ void normal_rx(Transmitter *t, int fd)
     }
 }
 
-void mavlink_rx(Transmitter *t, int fd, int agg_latency)
+void mavlink_source(Transmitter *t, int fd, int agg_latency)
 {
     struct pollfd fds[1];
 
@@ -345,15 +345,17 @@ int main(int argc, char * const *argv)
     try
     {
         int fd = open_udp_socket_for_rx(udp_port);
+#ifdef DEBUG_TX
+        shared_ptr<Transmitter>t = shared_ptr<UdpTransmitter>(new UdpTransmitter(k, n, keypair, "127.0.0.1", 5601));
+#else
         shared_ptr<Transmitter>t = shared_ptr<PcapTransmitter>(new PcapTransmitter(k, n, keypair, radio_port, argv[optind]));
-        //shared_ptr<Transmitter>t = shared_ptr<UdpTransmitter>(new UdpTransmitter(k, n, keypair, "127.0.0.1", 5601));
-
+#endif
         if (mavlink_mode)
         {
-            mavlink_rx(t.get(), fd, mavlink_agg_latency);
+            mavlink_source(t.get(), fd, mavlink_agg_latency);
         }else
         {
-            normal_rx(t.get(), fd);
+            video_source(t.get(), fd);
         }
     }catch(runtime_error &e)
     {

@@ -41,7 +41,6 @@ private:
     int fec_n;  // RS total number of fragments in block
     uint64_t block_idx; //block_idx << 8 + fragment_idx = nonce (64bit)
     uint8_t fragment_idx;
-    uint32_t seq;
     uint8_t** block;
     size_t max_packet_size;
 

@@ -24,13 +24,13 @@ typedef enum {
     AGGREGATOR
 } rx_mode_t;
 
-class Aggregator
+class BaseAggregator
 {
 public:
     virtual void process_packet(const uint8_t *buf, size_t size) = 0;
 
 protected:
-    int open_udp_socket(const string &client_addr, int client_port)
+    int open_udp_socket_for_tx(const string &client_addr, int client_port)
     {
         struct sockaddr_in saddr;
         int fd = socket(AF_INET, SOCK_DGRAM, 0);
@@ -50,11 +50,11 @@ protected:
 };
 
 
-class RemoteAggregator : public Aggregator
+class Forwarder : public BaseAggregator
 {
 public:
-    RemoteAggregator(const string &client_addr, int client_port);
-    ~RemoteAggregator();
+    Forwarder(const string &client_addr, int client_port);
+    ~Forwarder();
     virtual void process_packet(const uint8_t *buf, size_t size);
 
 private:
@@ -63,7 +63,7 @@ private:
 
 
 typedef struct {
-    uint8_t block_idx;
+    uint64_t block_idx;
     uint8_t** fragments;
     uint8_t *fragment_map;
     uint8_t send_fragment_idx;
@@ -72,24 +72,22 @@ typedef struct {
 
 
 #define RX_RING_SIZE 40
-#define PROC_RING_SIZE 40
 
 static inline int modN(int x, int base)
 {
     return (base + (x % base)) % base;
 }
 
-class LocalAggregator : public Aggregator
+class Aggregator : public BaseAggregator
 {
 public:
-    LocalAggregator(const string &client_addr, int client_port, int k, int n, const string &keypair);
-    ~LocalAggregator();
+    Aggregator(const string &client_addr, int client_port, int k, int n, const string &keypair);
+    ~Aggregator();
     virtual void process_packet(const uint8_t *buf, size_t size);
 private:
     void send_packet(int ring_idx, int fragment_idx);
     void apply_fec(int ring_idx);
-    int get_block_ring_idx(int block_idx);
-    void add_processed_block(int block_idx);
+    int get_block_ring_idx(uint64_t block_idx);
     int rx_ring_push(void);
     fec_t* fec_p;
     int fec_k;  // RS number of primary fragments in block
@@ -99,8 +97,7 @@ private:
     rx_ring_item_t rx_ring[RX_RING_SIZE];
     int rx_ring_front; // current packet
     int rx_ring_alloc; // number of allocated entries
-    int proc_ring[PROC_RING_SIZE];
-    int proc_ring_last; // index to add processed packet
+    uint64_t last_known_block;  //id of last known block
 
     // rx->tx keypair
     uint8_t rx_secretkey[crypto_box_SECRETKEYBYTES];
@@ -111,12 +108,12 @@ private:
 class Receiver
 {
 public:
-    Receiver(const char* wlan, int port, Aggregator* agg);
+    Receiver(const char* wlan, int port, BaseAggregator* agg);
     ~Receiver();
     void loop_iter(void);
     int getfd(void){ return fd; }
 private:
-    Aggregator *agg;
+    BaseAggregator *agg;
     int fd;
     pcap_t *ppcap;
 };
