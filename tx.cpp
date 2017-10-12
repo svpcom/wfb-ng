@@ -333,7 +333,7 @@ int main(int argc, char * const *argv)
             fprintf(stderr, "Usage: %s [-K tx_key] [-m mavlink_agg_in_ms] [-k RS_K] [-n RS_N] [-u udp_port] [-p radio_port] interface\n",
                     argv[0]);
             fprintf(stderr, "Default: K='%s', k=%d, n=%d, udp_port=%d, radio_port=%d\n", keypair.c_str(), k, n, udp_port, radio_port);
-            fprintf(stderr, "Radio MTU: %lu\n", MAX_PAYLOAD_SIZE);
+            fprintf(stderr, "Radio MTU: %lu\n", (unsigned long)MAX_PAYLOAD_SIZE);
             exit(1);
         }
     }

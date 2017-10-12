@@ -1,6 +1,6 @@
 
 LDFLAGS=-lrt -lpcap -lsodium
-CPPFLAGS=-Wall -g
+CPPFLAGS=-Wall -O2
 
 all: rx tx keygen
 
