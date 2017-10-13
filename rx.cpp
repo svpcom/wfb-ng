@@ -265,6 +265,14 @@ int Aggregator::rx_ring_push(void)
     // override existing data
     int idx = rx_ring_front;
 
+    /*
+      Ring overflow. This means that there are more unfinished blocks than ring size
+      Possible solutions:
+      1. Increase ring size. Do this if you have large variance of packet travel time throught WiFi card or network stack.
+         Some cards can do this due to packet reordering inside, diffent chipset and/or firmware or your RX hosts have different CPU power.
+      2. Reduce packet injection speed or try to unify RX hardware.
+    */
+
     fprintf(stderr, "override block 0x%Lx with %d fragments\n", (long long unsigned int)(rx_ring[idx].block_idx), rx_ring[idx].has_fragments);
 
     rx_ring_front = modN(rx_ring_front + 1, RX_RING_SIZE);
@@ -274,13 +282,13 @@ int Aggregator::rx_ring_push(void)
 
 int Aggregator::get_block_ring_idx(uint64_t block_idx)
 {
-    // check if block already added
+    // check if block is already to the ring
     for(int i = rx_ring_front, c = rx_ring_alloc; c > 0; i = modN(i + 1, RX_RING_SIZE), c--)
     {
         if (rx_ring[i].block_idx == block_idx) return i;
     }
 
-    // check if block was already processed
+    // check if block is already known and not in the ring then it is already processed
     if (last_known_block != (uint64_t)-1 && block_idx <= last_known_block)
     {
         return -1;

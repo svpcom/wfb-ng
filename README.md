@@ -1,14 +1,25 @@
 Wifibroadcast
--------------
+=============
 
-This is transmitter and receiver of UDP packets using raw WiFi radio inspired by https://befinitiv.wordpress.com/wifibroadcast-analog-like-transmission-of-live-video-data/ . The main difference is how to data are encapsulated into ieee80211 frames. The original wifibroadcast accepts stream of bytes and split them into packets without attention to x264 stream elements. This can emit up to 100ms latencies.  In my case wifibroadcast accepts UDP stream (for example x264 encapsulated into RTP packets). This provides low latency streaming.
+This is transmitter and receiver of UDP packets using raw WiFi radio inspired by  https://befinitiv.wordpress.com/wifibroadcast-analog-like-transmission-of-live-video-data/ . The main difference is how the data are encapsulated into ieee80211 frames. The original wifibroadcast accepts stream of bytes and split them into packets without attention to x264 stream elements. This can emit up to 100ms latencies.  In my case wifibroadcast accepts UDP stream (for example x264 encapsulated into RTP packets). This provides low latency streaming.
+
+Other features:
+---------------
+ - Stream encryption and authentication
+ - Distributed operation. It can gather data from cards on different hosts. So you don't limited to bandwidth of single USB bus.
+ - Aggreagation of mavlink packets. Don't send wifi packet for every mavlink packet.
+ - OSD https://github.com/svpcom/wifibroadcast_osd for raspberry pi (consume 10% CPU on PI Zero)
 
 
-Wifibroadcast puts the wifi cards into monitor mode. This mode allows to send and receive arbitrary packets without association. Additionally, it is also possible to receive erroneous frames (where the checksum does not match). This way a true unidirectional connection is established which mimics the advantageous properties of an analog link. Those are:
+Theory:
+-------
+
+Wifibroadcast puts the wifi cards into monitor mode. This mode allows to send and receive arbitrary packets without association.
+This way a true unidirectional connection is established which mimics the advantageous properties of an analog link. Those are:
 
  - The transmitter sends its data regardless of any associated receivers. Thus there is no risk of sudden video stall due to the loss of association
 
- - The receiver receives video as long as it is in range of the transmitter. If it gets slowly out of range the video quality degrades but does not stall. Even if frames are erroneous they will be displayed instead of being rejected.
+ - The receiver receives video as long as it is in range of the transmitter. If it gets slowly out of range the video quality degrades but does not stall.
 
  - The traditional scheme “single broadcaster – multiple receivers” works out of the box. If bystanders want to watch the video stream with their devices they just have to “switch to the right channel”
 
@@ -19,8 +30,9 @@ Wifibroadcast puts the wifi cards into monitor mode. This mode allows to send an
 
 
 Sample usage chain:
+-------------------
 ```
-Camera -> gstreamer --[RTP stream (UDP)]--> wifibroadcast_tx --//--[ RADIO ]--//--> wifibroadcast_rx --[RTP stream (UDP)]--> gstreamer --> Display
+Camera -> gstreamer --[RTP stream (UDP)]--> wfb_tx --//--[ RADIO ]--//--> wfb_rx --[RTP stream (UDP)]--> gstreamer --> Display
 ```
 
 For encode logitech c920 camera:
@@ -36,9 +48,17 @@ To decode:
 ```
 
 
-Supported WiFi hardware:  Ralink RT2800. Was tested with ALPHA AWUS051NH v2 in 5GHz mode. To disable ieee80211 autospeed and maximize output power you
-need to apply kernel patches from ``patches`` directory. See https://github.com/bortek/EZ-WifiBroadcast/wiki for details.
+Supported WiFi hardware:
+------------------------
+My primary hardware target is Ralink RT28xx family. These cards are cheap and have best packet injection speed.
+System was tested with ALPHA AWUS051NH v2 as TX and array of RT5572 OEM cards as RX in 5GHz mode.
 
-Wifibroadcast + PX4 HOWTO: https://dev.px4.io/en/qgc/video_streaming_wifi_broadcast.html
+To disable ieee80211 autospeed and maximize output power you need to apply kernel patches from ``patches`` directory. See https://github.com/svpcom/wifibroadcast/wiki/Kernel-patches for details.
 
+Wifibroadcast + PX4 HOWTO:
+--------------------------
+https://dev.px4.io/en/qgc/video_streaming_wifi_broadcast.html
+
+Wiki:
+-----
 See https://github.com/svpcom/wifibroadcast/wiki for additional info
