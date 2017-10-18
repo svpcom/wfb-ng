@@ -36,6 +36,8 @@ protected:
 
 private:
     void send_block_fragment(size_t packet_size);
+    void make_session_key(void);
+
     fec_t* fec_p;
     int fec_k;  // RS number of primary fragments in block
     int fec_n;  // RS total number of fragments in block

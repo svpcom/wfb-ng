@@ -60,14 +60,7 @@ Transmitter::Transmitter(int k, int n, const string &keypair):  fec_k(k), fec_n(
     if (fread(rx_publickey, crypto_box_PUBLICKEYBYTES, 1, fp) != 1) throw runtime_error(string_format("Unable to read rx public key: %s", strerror(errno)));
     fclose(fp);
 
-    randombytes_buf(session_key, sizeof(session_key));
-    session_key_packet.packet_type = WFB_PACKET_KEY;
-    randombytes_buf(session_key_packet.session_key_nonce, sizeof(session_key_packet.session_key_nonce));
-    if (crypto_box_easy(session_key_packet.session_key_data, session_key, sizeof(session_key),
-                        session_key_packet.session_key_nonce, rx_publickey, tx_secretkey) != 0)
-    {
-        throw runtime_error("Unable to make session key!");
-    }
+    make_session_key();
 }
 
 Transmitter::~Transmitter()
@@ -80,6 +73,20 @@ Transmitter::~Transmitter()
 
     fec_free(fec_p);
 }
+
+
+void Transmitter::make_session_key(void)
+{
+    randombytes_buf(session_key, sizeof(session_key));
+    session_key_packet.packet_type = WFB_PACKET_KEY;
+    randombytes_buf(session_key_packet.session_key_nonce, sizeof(session_key_packet.session_key_nonce));
+    if (crypto_box_easy(session_key_packet.session_key_data, session_key, sizeof(session_key),
+                        session_key_packet.session_key_nonce, rx_publickey, tx_secretkey) != 0)
+    {
+        throw runtime_error("Unable to make session key!");
+    }
+}
+
 
 PcapTransmitter::PcapTransmitter(int k, int n, const string &keypair, uint8_t radio_port, const char *wlan) : Transmitter(k, n, keypair),
                                                                                                               radio_port(radio_port), wlan(wlan),
@@ -187,6 +194,14 @@ void Transmitter::send_packet(const uint8_t *buf, size_t size)
     block_idx += 1;
     fragment_idx = 0;
     max_packet_size = 0;
+
+    // Generate new session key after MAX_BLOCK_IDX blocks
+    if (block_idx > MAX_BLOCK_IDX)
+    {
+        make_session_key();
+        send_session_key();
+        block_idx = 0;
+    }
 }
 
 uint64_t get_system_time(void) // in milliseconds

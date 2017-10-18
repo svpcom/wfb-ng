@@ -393,6 +393,13 @@ void Aggregator::process_packet(const uint8_t *buf, size_t size)
     uint64_t block_idx = be64toh(block_hdr->nonce) >> 8;
     uint8_t fragment_idx = (uint8_t)(be64toh(block_hdr->nonce) & 0xff);
 
+    // Should never happend due to generating new session key on tx side
+    if (block_idx > MAX_BLOCK_IDX)
+    {
+        fprintf(stderr, "block_idx overflow\n");
+        return;
+    }
+
     if (fragment_idx >= fec_n)
     {
         fprintf(stderr, "invalid fragment_idx: %d\n", fragment_idx);

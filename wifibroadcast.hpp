@@ -105,6 +105,8 @@ static uint8_t ieee80211_header[] = {
 // nonce:  56bit block_idx + 8bit fragment_idx
 
 #define BLOCK_IDX_MASK ((1LLU << 56) - 1)
+#define MAX_BLOCK_IDX ((1LLU << 55) - 1)
+
 
 #define WFB_PACKET_DATA 0x1
 #define WFB_PACKET_KEY 0x2
