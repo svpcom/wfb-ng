@@ -17,6 +17,7 @@
  *   51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
  */
 
+#include <unordered_map>
 
 typedef enum {
     LOCAL,
@@ -27,8 +28,8 @@ typedef enum {
 class BaseAggregator
 {
 public:
-    virtual void process_packet(const uint8_t *buf, size_t size) = 0;
-
+    virtual void process_packet(const uint8_t *buf, size_t size, uint8_t wlan_idx, uint8_t antenna, uint8_t rssi, sockaddr_in *sockaddr) = 0;
+    virtual void dump_stats(FILE *fp) = 0;
 protected:
     int open_udp_socket_for_tx(const string &client_addr, int client_port)
     {
@@ -55,8 +56,8 @@ class Forwarder : public BaseAggregator
 public:
     Forwarder(const string &client_addr, int client_port);
     ~Forwarder();
-    virtual void process_packet(const uint8_t *buf, size_t size);
-
+    virtual void process_packet(const uint8_t *buf, size_t size, uint8_t wlan_idx, uint8_t antenna, uint8_t rssi, sockaddr_in *sockaddr);
+    virtual void dump_stats(FILE *fp) {}
 private:
     int sockfd;
 };
@@ -78,15 +79,42 @@ static inline int modN(int x, int base)
     return (base + (x % base)) % base;
 }
 
+class antennaItem
+{
+public:
+    antennaItem(void) : count_all(0), rssi_sum(0), rssi_min(0), rssi_max(0) {}
+
+    void log_rssi(uint8_t rssi){
+        if(count_all == 0){
+            rssi_min = rssi;
+            rssi_max = rssi;
+        } else {
+            rssi_min = min(rssi, rssi_min);
+            rssi_max = max(rssi, rssi_max);
+        }
+        rssi_sum += rssi;
+        count_all += 1;
+    }
+
+    uint32_t count_all;
+    uint32_t rssi_sum;
+    uint8_t rssi_min;
+    uint8_t rssi_max;
+};
+
+typedef std::unordered_map<uint64_t, antennaItem> antenna_stat_t;
+
 class Aggregator : public BaseAggregator
 {
 public:
     Aggregator(const string &client_addr, int client_port, int k, int n, const string &keypair);
     ~Aggregator();
-    virtual void process_packet(const uint8_t *buf, size_t size);
+    virtual void process_packet(const uint8_t *buf, size_t size, uint8_t wlan_idx, uint8_t antenna, uint8_t rssi, sockaddr_in *sockaddr);
+    virtual void dump_stats(FILE *fp);
 private:
     void send_packet(int ring_idx, int fragment_idx);
     void apply_fec(int ring_idx);
+    void log_rssi(const sockaddr_in *sockaddr, uint8_t wlan_idx, uint8_t ant, uint8_t rssi);
     int get_block_ring_idx(uint64_t block_idx);
     int rx_ring_push(void);
     fec_t* fec_p;
@@ -103,16 +131,25 @@ private:
     uint8_t rx_secretkey[crypto_box_SECRETKEYBYTES];
     uint8_t tx_publickey[crypto_box_PUBLICKEYBYTES];
     uint8_t session_key[crypto_aead_chacha20poly1305_KEYBYTES];
+
+    antenna_stat_t antenna_stat;
+    uint32_t count_p_all;
+    uint32_t count_p_dec_err;
+    uint32_t count_p_dec_ok;
+    uint32_t count_p_fec_recovered;
+    uint32_t count_p_lost;
+    uint32_t count_p_bad;
 };
 
 class Receiver
 {
 public:
-    Receiver(const char* wlan, int port, BaseAggregator* agg);
+    Receiver(const char* wlan, int wlan_idx, int port, BaseAggregator* agg);
     ~Receiver();
     void loop_iter(void);
     int getfd(void){ return fd; }
 private:
+    int wlan_idx;
     BaseAggregator *agg;
     int fd;
     pcap_t *ppcap;

@@ -26,5 +26,5 @@ build_rpi: clean
 	tar czf dist/wifibroadcast_rpi.tar.gz tx rx keygen -C scripts tx_standalone.sh rx_standalone.sh
 
 clean:
-	rm -f rx tx keygen dist *~ *.o
+	rm -rf rx tx keygen dist *~ *.o
 

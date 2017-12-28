@@ -113,6 +113,11 @@ static uint8_t ieee80211_header[] = {
 
 #define SESSION_KEY_ANNOUNCE_MSEC 1000
 
+typedef struct {
+    uint8_t wlan_idx;
+    uint8_t antenna; //RADIOTAP_ANTENNA
+    uint8_t rssi; //RADIOTAP_DBM_ANTSIGNAL
+} __attribute__ ((packed)) wrxfwd_t;
 
 // Network packet headers. All numbers are in network (big endian) format
 // Encrypted packets can be either session key or data packet.
@@ -143,5 +148,6 @@ typedef struct {
 #define MAX_FORWARDER_PACKET_SIZE (MAX_PACKET_SIZE - sizeof(radiotap_header) - sizeof(ieee80211_header))
 
 int open_udp_socket_for_rx(int port);
+uint64_t get_time_ms(void);
 
 #endif

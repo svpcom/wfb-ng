@@ -85,7 +85,24 @@ public:
 private:
     virtual void inject_packet(const uint8_t *buf, size_t size)
     {
-        send(sockfd, buf, size, 0);
+        wrxfwd_t fwd_hdr = { .wlan_idx = (uint8_t)(rand() % 2),
+                             .antenna = (uint8_t)(rand() % 2),
+                             .rssi = (uint8_t)(rand() & 0xff) };
+
+        struct iovec iov[2] = {{ .iov_base = (void*)&fwd_hdr,
+                                 .iov_len = sizeof(fwd_hdr)},
+                               { .iov_base = (void*)buf,
+                                 .iov_len = size }};
+
+        struct msghdr msghdr = { .msg_name = NULL,
+                                 .msg_namelen = 0,
+                                 .msg_iov = iov,
+                                 .msg_iovlen = 2,
+                                 .msg_control = NULL,
+                                 .msg_controllen = 0,
+                                 .msg_flags = 0};
+
+        sendmsg(sockfd, &msghdr, 0);
     }
 
     int open_udp_socket(const string &client_addr, int client_port)

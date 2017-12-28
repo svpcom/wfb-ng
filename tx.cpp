@@ -204,13 +204,6 @@ void Transmitter::send_packet(const uint8_t *buf, size_t size)
     }
 }
 
-uint64_t get_system_time(void) // in milliseconds
-{
-    struct timeval te;
-    gettimeofday(&te, NULL);
-    return te.tv_sec * 1000LL + te.tv_usec / 1000;
-}
-
 void video_source(Transmitter *t, int fd)
 {
     uint8_t buf[MAX_PAYLOAD_SIZE];
@@ -219,7 +212,7 @@ void video_source(Transmitter *t, int fd)
     {
         ssize_t rsize = recv(fd, buf, sizeof(buf), 0);
         if (rsize < 0) throw runtime_error(string_format("Error receiving packet: %s", strerror(errno)));
-        uint64_t cur_ts = get_system_time();
+        uint64_t cur_ts = get_time_ms();
         if (cur_ts >= session_key_announce_ts)
         {
             // Announce session key
@@ -246,12 +239,12 @@ void mavlink_source(Transmitter *t, int fd, int agg_latency)
 
     size_t agg_size = 0;
     uint8_t agg_buf[MAX_PAYLOAD_SIZE];
-    uint64_t expire_ts = get_system_time() + agg_latency;
+    uint64_t expire_ts = get_time_ms() + agg_latency;
     uint64_t session_key_announce_ts = 0;
 
     for(;;)
     {
-        uint64_t cur_ts = get_system_time();
+        uint64_t cur_ts = get_time_ms();
         int rc = poll(fds, 1, expire_ts > cur_ts ? expire_ts - cur_ts : 0);
 
         if (rc < 0){
@@ -263,7 +256,7 @@ void mavlink_source(Transmitter *t, int fd, int agg_latency)
         {
             if(agg_size > 0)
             {
-                cur_ts = get_system_time();
+                cur_ts = get_time_ms();
                 if (cur_ts >= session_key_announce_ts)
                 {
                     // Announce session key
@@ -273,7 +266,7 @@ void mavlink_source(Transmitter *t, int fd, int agg_latency)
                 t->send_packet(agg_buf, agg_size);
                 agg_size = 0;
             }
-            expire_ts = get_system_time() + agg_latency;
+            expire_ts = get_time_ms() + agg_latency;
             continue;
         }
 
@@ -293,7 +286,7 @@ void mavlink_source(Transmitter *t, int fd, int agg_latency)
                 {
                     if(agg_size > 0)
                     {
-                        cur_ts = get_system_time();
+                        cur_ts = get_time_ms();
                         if (cur_ts >= session_key_announce_ts)
                         {
                             // Announce session key
@@ -303,7 +296,7 @@ void mavlink_source(Transmitter *t, int fd, int agg_latency)
                         t->send_packet(agg_buf, agg_size);
                         agg_size = 0;
                     }
-                    expire_ts = get_system_time() + agg_latency;
+                    expire_ts = get_time_ms() + agg_latency;
                 }
                 memcpy(agg_buf + agg_size, buf, rsize);
                 agg_size += rsize;
