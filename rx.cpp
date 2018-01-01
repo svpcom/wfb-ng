@@ -347,6 +347,8 @@ void Aggregator::dump_stats(FILE *fp)
     antenna_stat.clear();
 
     fprintf(fp, "%" PRIu64 "\tPKT\t%u:%u:%u:%u:%u:%u\n", ts, count_p_all, count_p_dec_err, count_p_dec_ok, count_p_fec_recovered, count_p_lost, count_p_bad);
+    fflush(fp);
+
     count_p_all = 0;
     count_p_dec_err = 0;
     count_p_dec_ok = 0;

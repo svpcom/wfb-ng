@@ -25,6 +25,9 @@ build_rpi: clean
 	mkdir -p dist
 	tar czf dist/wifibroadcast_rpi.tar.gz tx rx keygen -C scripts tx_standalone.sh rx_standalone.sh
 
+telem:
+	python -m telemetry.server './rx -a 5601 -u 5600' './rx -a 14551 -u 14550'
+
 clean:
 	rm -rf rx tx keygen dist *~ *.o
 
