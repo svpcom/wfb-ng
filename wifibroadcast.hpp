@@ -1,4 +1,4 @@
-// Copyright (C) 2017 Vasily Evseenko <svpcom@p2ptech.org>
+// Copyright (C) 2017, 2018 Vasily Evseenko <svpcom@p2ptech.org>
 
 /*
  *   This program is free software; you can redistribute it and/or modify
@@ -116,7 +116,7 @@ static uint8_t ieee80211_header[] = {
 typedef struct {
     uint8_t wlan_idx;
     uint8_t antenna; //RADIOTAP_ANTENNA
-    uint8_t rssi; //RADIOTAP_DBM_ANTSIGNAL
+    int8_t rssi; //RADIOTAP_DBM_ANTSIGNAL
 } __attribute__ ((packed)) wrxfwd_t;
 
 // Network packet headers. All numbers are in network (big endian) format

@@ -1,6 +1,6 @@
 // -*- C++ -*-
 //
-// Copyright (C) 2017 Vasily Evseenko <svpcom@p2ptech.org>
+// Copyright (C) 2017, 2018 Vasily Evseenko <svpcom@p2ptech.org>
 
 /*
  *   This program is free software; you can redistribute it and/or modify
@@ -31,6 +31,7 @@
 #include <sys/socket.h>
 #include <netinet/in.h>
 #include <arpa/inet.h>
+#include <limits.h>
 
 extern "C"
 {
@@ -117,7 +118,7 @@ void Receiver::loop_iter(void)
         int pktlen = hdr.caplen;
         // int pkt_rate = 0
         uint8_t antenna = 0;
-        uint8_t rssi = 0;
+        int8_t rssi = SCHAR_MIN;
         uint8_t flags = 0;
         struct ieee80211_radiotap_iterator iterator;
         int ret = ieee80211_radiotap_iterator_init(&iterator, (ieee80211_radiotap_header*)pkt, pktlen, NULL);
@@ -147,11 +148,14 @@ void Receiver::loop_iter(void)
                 //     break;
 
             case IEEE80211_RADIOTAP_ANTENNA:
+                // FIXME
+                // In case of multiple antenna stats in one packet this index will be irrelivant
                 antenna = *(uint8_t*)(iterator.this_arg);
                 break;
 
             case IEEE80211_RADIOTAP_DBM_ANTSIGNAL:
-                rssi = *(int8_t*)(iterator.this_arg);
+                // Some cards can provide rssi for multiple antennas in one packet, so we should select maximum value
+                rssi = max(rssi, *(int8_t*)(iterator.this_arg));
                 break;
 
             case IEEE80211_RADIOTAP_FLAGS:
@@ -249,7 +253,7 @@ Forwarder::Forwarder(const string &client_addr, int client_port)
 }
 
 
-void Forwarder::process_packet(const uint8_t *buf, size_t size, uint8_t wlan_idx, uint8_t antenna, uint8_t rssi, sockaddr_in *sockaddr)
+void Forwarder::process_packet(const uint8_t *buf, size_t size, uint8_t wlan_idx, uint8_t antenna, int8_t rssi, sockaddr_in *sockaddr)
 {
     wrxfwd_t fwd_hdr = { .wlan_idx = wlan_idx,
                          .antenna = antenna,
@@ -358,7 +362,7 @@ void Aggregator::dump_stats(FILE *fp)
 }
 
 
-void Aggregator::log_rssi(const sockaddr_in *sockaddr, uint8_t wlan_idx, uint8_t ant, uint8_t rssi)
+void Aggregator::log_rssi(const sockaddr_in *sockaddr, uint8_t wlan_idx, uint8_t ant, int8_t rssi)
 {
     // key: addr + port + wlan_idx + ant
     uint64_t key = 0;
@@ -373,7 +377,7 @@ void Aggregator::log_rssi(const sockaddr_in *sockaddr, uint8_t wlan_idx, uint8_t
 }
 
 
-void Aggregator::process_packet(const uint8_t *buf, size_t size, uint8_t wlan_idx, uint8_t antenna, uint8_t rssi, sockaddr_in *sockaddr)
+void Aggregator::process_packet(const uint8_t *buf, size_t size, uint8_t wlan_idx, uint8_t antenna, int8_t rssi, sockaddr_in *sockaddr)
 {
     uint8_t new_session_key[sizeof(session_key)];
     count_p_all += 1;

@@ -1,6 +1,6 @@
 // -*- C++ -*-
 //
-// Copyright (C) 2017 Vasily Evseenko <svpcom@p2ptech.org>
+// Copyright (C) 2017, 2018 Vasily Evseenko <svpcom@p2ptech.org>
 
 /*
  *   This program is free software; you can redistribute it and/or modify
@@ -87,7 +87,7 @@ private:
     {
         wrxfwd_t fwd_hdr = { .wlan_idx = (uint8_t)(rand() % 2),
                              .antenna = (uint8_t)(rand() % 2),
-                             .rssi = (uint8_t)(rand() & 0xff) };
+                             .rssi = (int8_t)(rand() & 0xff) };
 
         struct iovec iov[2] = {{ .iov_base = (void*)&fwd_hdr,
                                  .iov_len = sizeof(fwd_hdr)},
