@@ -30,4 +30,10 @@ case $BAND in
       ;;
 esac
 
-./tx $WLAN
+# Video TX
+./tx -p 1 -u 5600 $WLAN &
+
+# Mavlink TX
+./tx -m 100 -p 2 -u 14550 $WLAN &
+
+wait -n

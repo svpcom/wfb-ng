@@ -32,4 +32,10 @@ case $BAND in
 esac
 done
 
-./rx $WLANS
+# No UI, video only
+./rx -p 1 -u 5600 $WLANS
+
+# Ncurses UI, video + Mavlink
+# Requires python-twisted packages
+
+#python -m telemetry.server "./rx -p 1 -u 5600 $WLANS" "./rx -p 2 -u 14550 $WLANS" 127.0.0.1:14550

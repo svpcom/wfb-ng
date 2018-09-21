@@ -22,9 +22,10 @@ import sys
 import curses
 import curses.textpad
 import time
+import mavlink
 from twisted.python import log
 from twisted.internet import reactor, defer
-from twisted.internet.protocol import ProcessProtocol
+from twisted.internet.protocol import ProcessProtocol, DatagramProtocol
 from twisted.protocols.basic import LineReceiver
 from twisted.internet.error import ReactorNotRunning
 
@@ -61,6 +62,24 @@ def abort_on_crash(f, stop_reactor=True, warn_cancel=True):
     fatal_error(stop_reactor)
 
 
+class MAVLinkProtocol(DatagramProtocol):
+    def __init__(self, host, port):
+        self.host = host
+        self.port = port
+        self.mav = mavlink.MAVLink(self)
+
+    def send_rssi(self, rssi, rx_errors, rx_fec):
+        self.mav.radio_status_send(rssi, rssi, 0, 0, 0, rx_errors, rx_fec)
+
+    def write(self, msg):
+        if self.transport is not None:
+            self.transport.write(msg, (self.host, self.port))
+
+    def datagramReceived(self, data, addr):
+        for m in self.mav.parse_buffer(data):
+            log.msg("Got a message from %s with id %u and fields %s" % (addr, m.get_msgId(), m.get_fieldnames()))
+
+
 class BadTelemetry(Exception):
     pass
 
@@ -68,11 +87,12 @@ class BadTelemetry(Exception):
 class AntennaProtocol(LineReceiver):
     delimiter = '\n'
 
-    def __init__(self, window, rx_id):
+    def __init__(self, window, rx_id, mav_proto):
         self.window = window
         self.rx_id = rx_id
         self.ant = {}
         self.count_all = None
+        self.mav_proto = mav_proto
 
     def lineReceived(self, line):
         cols = line.strip().split('\t')
@@ -102,9 +122,15 @@ class AntennaProtocol(LineReceiver):
                 self.window.addstr(0, 0, 'PKT: %d recv, %d d_err, %d d_ok, %d fec_r, %d lost, %d bad\n' % self.count_all)
                 self.window.addstr(1, 0, 'PKT/s: %d recv, %d d_err, %d d_ok, %d fec_r, %d lost, %d bad\n' % (p_all, p_dec_err, p_dec_ok, p_fec_rec, p_lost, p_bad))
 
+                mav_rssi = []
                 for i, (k, v) in enumerate(sorted(self.ant.iteritems())):
                     pkt_s, rssi_min, rssi_avg, rssi_max = v
+                    mav_rssi.append(rssi_avg)
                     self.window.addstr(i + 3, 0, '%s: %d pkt/s, rssi %d < %d < %d\n' % (k, pkt_s, rssi_min, rssi_avg, rssi_max))
+
+                if self.mav_proto and mav_rssi:
+                    rssi = max(mav_rssi) % 256
+                    self.mav_proto.send_rssi(rssi, min(p_dec_err + p_bad + p_lost, 65535), min(p_fec_rec, 65535))
 
                 self.ant.clear()
             else:
@@ -130,12 +156,12 @@ class DbgProtocol(LineReceiver):
 
 
 class RXProtocol(ProcessProtocol):
-    def __init__(self, status_win, log_win, cmd, rx_id):
+    def __init__(self, status_win, log_win, cmd, rx_id, mav_proto):
         self.status_win = status_win
         self.log_win = log_win
         self.cmd = cmd
         self.rx_id = rx_id
-        self.ant = AntennaProtocol(self.status_win, rx_id)
+        self.ant = AntennaProtocol(self.status_win, rx_id, mav_proto)
         self.dbg = DbgProtocol(self.log_win, rx_id)
         self.df = defer.Deferred()
 
@@ -191,8 +217,13 @@ def init(stdscr):
     cmd1 = sys.argv[1].split() # ["./rx", "-a", "5601", "-u", "5600"]
     cmd2 = sys.argv[2].split() # ["./rx", "-a", "14551", "-u", "14550"]
 
-    df1 = RXProtocol(status_win1, log_win, cmd1, 'video').start()
-    df2 = RXProtocol(status_win2, log_win, cmd2, 'telem').start()
+    # Inject WFB RSSI as RADIO_STATUS messages
+    osd_host, osd_port = sys.argv[3].split(':') # 127.0.0.1:14550
+    mav_proto = MAVLinkProtocol(osd_host, int(osd_port))
+    reactor.listenUDP(0, mav_proto)
+
+    df1 = RXProtocol(status_win1, log_win, cmd1, 'video', None).start()
+    df2 = RXProtocol(status_win2, log_win, cmd2, 'telem', mav_proto).start()
     return defer.gatherResults([df1, df2], consumeErrors=True)
 
 
