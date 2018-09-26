@@ -66,10 +66,11 @@ class MAVLinkProtocol(DatagramProtocol):
     def __init__(self, host, port):
         self.host = host
         self.port = port
-        self.mav = mavlink.MAVLink(self)
+        self.mav = mavlink.MAVLink(self, srcSystem=1, srcComponent=242) # WFB
 
-    def send_rssi(self, rssi, rx_errors, rx_fec):
-        self.mav.radio_status_send(rssi, rssi, 0, 0, 0, rx_errors, rx_fec)
+    def send_rssi(self, rssi, rx_errors, rx_fec, flags):
+        # Send flags as txbuf
+        self.mav.radio_status_send(rssi, rssi, flags, 0, 0, rx_errors, rx_fec)
 
     def write(self, msg):
         if self.transport is not None:
@@ -82,6 +83,11 @@ class MAVLinkProtocol(DatagramProtocol):
 
 class BadTelemetry(Exception):
     pass
+
+
+class WFBFlags(object):
+    LINK_LOST = 1
+    LINK_JAMMED = 2
 
 
 class AntennaProtocol(LineReceiver):
@@ -123,14 +129,22 @@ class AntennaProtocol(LineReceiver):
                 self.window.addstr(1, 0, 'PKT/s: %d recv, %d d_err, %d d_ok, %d fec_r, %d lost, %d bad\n' % (p_all, p_dec_err, p_dec_ok, p_fec_rec, p_lost, p_bad))
 
                 mav_rssi = []
+                flags = 0
+
                 for i, (k, v) in enumerate(sorted(self.ant.iteritems())):
                     pkt_s, rssi_min, rssi_avg, rssi_max = v
                     mav_rssi.append(rssi_avg)
                     self.window.addstr(i + 3, 0, '%s: %d pkt/s, rssi %d < %d < %d\n' % (k, pkt_s, rssi_min, rssi_avg, rssi_max))
 
-                if self.mav_proto and mav_rssi:
-                    rssi = max(mav_rssi) % 256
-                    self.mav_proto.send_rssi(rssi, min(p_dec_err + p_bad + p_lost, 65535), min(p_fec_rec, 65535))
+                rssi = (max(mav_rssi) if mav_rssi else -128) % 256
+
+                if not mav_rssi:
+                    flags |= WFBFlags.LINK_LOST
+                elif p_dec_ok == 0:
+                    flags |= WFBFlags.LINK_JAMMED
+
+                if self.mav_proto:
+                    self.mav_proto.send_rssi(rssi, min(p_dec_err + p_bad + p_lost, 65535), min(p_fec_rec, 65535), flags)
 
                 self.ant.clear()
             else:
@@ -222,8 +236,8 @@ def init(stdscr):
     mav_proto = MAVLinkProtocol(osd_host, int(osd_port))
     reactor.listenUDP(0, mav_proto)
 
-    df1 = RXProtocol(status_win1, log_win, cmd1, 'video', None).start()
-    df2 = RXProtocol(status_win2, log_win, cmd2, 'telem', mav_proto).start()
+    df1 = RXProtocol(status_win1, log_win, cmd1, 'video', mav_proto).start()
+    df2 = RXProtocol(status_win2, log_win, cmd2, 'telem', None).start()
     return defer.gatherResults([df1, df2], consumeErrors=True)
 
 
