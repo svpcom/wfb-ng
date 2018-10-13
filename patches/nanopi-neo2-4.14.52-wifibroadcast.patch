@@ -1,0 +1,233 @@
+commit 5b05082415524021444d2ad5beb05d2e56a126f6
+Author: Vasily Evseenko <svpcom@gmail.com>
+Date:   Fri Aug 31 09:21:36 2018 +0000
+
+    Fixes for X8
+
+diff --git a/arch/arm64/boot/dts/allwinner/sun50i-h5-nanopi.dtsi b/arch/arm64/boot/dts/allwinner/sun50i-h5-nanopi.dtsi
+index 0584ad7..2154939 100644
+--- a/arch/arm64/boot/dts/allwinner/sun50i-h5-nanopi.dtsi
++++ b/arch/arm64/boot/dts/allwinner/sun50i-h5-nanopi.dtsi
+@@ -249,7 +249,7 @@
+ 
+ &uart1 {
+     pinctrl-names = "default";
+-    pinctrl-0 = <&uart1_pins>;
++    pinctrl-0 = <&uart1_pins>, <&uart1_rts_cts_pins>;
+     status = "okay";
+ };
+ 
+diff --git a/drivers/net/wireless/ralink/rt2x00/rt2800lib.c b/drivers/net/wireless/ralink/rt2x00/rt2800lib.c
+index d2c28944..7131032 100644
+--- a/drivers/net/wireless/ralink/rt2x00/rt2800lib.c
++++ b/drivers/net/wireless/ralink/rt2x00/rt2800lib.c
+@@ -1698,14 +1698,14 @@ void rt2800_config_intf(struct rt2x00_dev *rt2x00dev, struct rt2x00_intf *intf,
+ 			 */
+ 			reg = rt2800_register_read(rt2x00dev, TBTT_SYNC_CFG);
+ 			rt2x00_set_field32(&reg, TBTT_SYNC_CFG_BCN_CWMIN, 0);
+-			rt2x00_set_field32(&reg, TBTT_SYNC_CFG_BCN_AIFSN, 1);
++			rt2x00_set_field32(&reg, TBTT_SYNC_CFG_BCN_AIFSN, 0);
+ 			rt2x00_set_field32(&reg, TBTT_SYNC_CFG_BCN_EXP_WIN, 32);
+ 			rt2x00_set_field32(&reg, TBTT_SYNC_CFG_TBTT_ADJUST, 0);
+ 			rt2800_register_write(rt2x00dev, TBTT_SYNC_CFG, reg);
+ 		} else {
+ 			reg = rt2800_register_read(rt2x00dev, TBTT_SYNC_CFG);
+ 			rt2x00_set_field32(&reg, TBTT_SYNC_CFG_BCN_CWMIN, 4);
+-			rt2x00_set_field32(&reg, TBTT_SYNC_CFG_BCN_AIFSN, 2);
++			rt2x00_set_field32(&reg, TBTT_SYNC_CFG_BCN_AIFSN, 0);
+ 			rt2x00_set_field32(&reg, TBTT_SYNC_CFG_BCN_EXP_WIN, 32);
+ 			rt2x00_set_field32(&reg, TBTT_SYNC_CFG_TBTT_ADJUST, 16);
+ 			rt2800_register_write(rt2x00dev, TBTT_SYNC_CFG, reg);
+@@ -5530,10 +5530,10 @@ static int rt2800_init_registers(struct rt2x00_dev *rt2x00dev)
+ 	 * defaults as the Ralink driver: 16 for both, CCK and OFDM SIFS.
+ 	 */
+ 	reg = rt2800_register_read(rt2x00dev, XIFS_TIME_CFG);
+-	rt2x00_set_field32(&reg, XIFS_TIME_CFG_CCKM_SIFS_TIME, 16);
+-	rt2x00_set_field32(&reg, XIFS_TIME_CFG_OFDM_SIFS_TIME, 16);
+-	rt2x00_set_field32(&reg, XIFS_TIME_CFG_OFDM_XIFS_TIME, 4);
+-	rt2x00_set_field32(&reg, XIFS_TIME_CFG_EIFS, 314);
++	rt2x00_set_field32(&reg, XIFS_TIME_CFG_CCKM_SIFS_TIME, 0);
++	rt2x00_set_field32(&reg, XIFS_TIME_CFG_OFDM_SIFS_TIME, 0);
++	rt2x00_set_field32(&reg, XIFS_TIME_CFG_OFDM_XIFS_TIME, 0);
++	rt2x00_set_field32(&reg, XIFS_TIME_CFG_EIFS, 0);
+ 	rt2x00_set_field32(&reg, XIFS_TIME_CFG_BB_RXEND_ENABLE, 1);
+ 	rt2800_register_write(rt2x00dev, XIFS_TIME_CFG, reg);
+ 
+@@ -9597,7 +9597,7 @@ int rt2800_conf_tx(struct ieee80211_hw *hw,
+ 	field.bit_mask = 0xf << field.bit_offset;
+ 
+ 	reg = rt2800_register_read(rt2x00dev, WMM_AIFSN_CFG);
+-	rt2x00_set_field32(&reg, field, queue->aifs);
++	rt2x00_set_field32(&reg, field, 0);
+ 	rt2800_register_write(rt2x00dev, WMM_AIFSN_CFG, reg);
+ 
+ 	reg = rt2800_register_read(rt2x00dev, WMM_CWMIN_CFG);
+@@ -9613,7 +9613,7 @@ int rt2800_conf_tx(struct ieee80211_hw *hw,
+ 
+ 	reg = rt2800_register_read(rt2x00dev, offset);
+ 	rt2x00_set_field32(&reg, EDCA_AC0_CFG_TX_OP, queue->txop);
+-	rt2x00_set_field32(&reg, EDCA_AC0_CFG_AIFSN, queue->aifs);
++	rt2x00_set_field32(&reg, EDCA_AC0_CFG_AIFSN, 0);
+ 	rt2x00_set_field32(&reg, EDCA_AC0_CFG_CWMIN, queue->cw_min);
+ 	rt2x00_set_field32(&reg, EDCA_AC0_CFG_CWMAX, queue->cw_max);
+ 	rt2800_register_write(rt2x00dev, offset, reg);
+diff --git a/drivers/net/wireless/ralink/rt2x00/rt2x00.h b/drivers/net/wireless/ralink/rt2x00/rt2x00.h
+index 1f38c33..49bfd3e 100644
+--- a/drivers/net/wireless/ralink/rt2x00/rt2x00.h
++++ b/drivers/net/wireless/ralink/rt2x00/rt2x00.h
+@@ -127,17 +127,15 @@
+ #define BEACON			100
+ #define PREAMBLE		144
+ #define SHORT_PREAMBLE		72
+-#define SLOT_TIME		20
+-#define SHORT_SLOT_TIME		9
++#define SLOT_TIME		1
++#define SHORT_SLOT_TIME		1
+ #define SIFS			10
+ #define PIFS			(SIFS + SLOT_TIME)
+ #define SHORT_PIFS		(SIFS + SHORT_SLOT_TIME)
+ #define DIFS			(PIFS + SLOT_TIME)
+ #define SHORT_DIFS		(SHORT_PIFS + SHORT_SLOT_TIME)
+-#define EIFS			(SIFS + DIFS + \
+-				  GET_DURATION(IEEE80211_HEADER + ACK_SIZE, 10))
+-#define SHORT_EIFS		(SIFS + SHORT_DIFS + \
+-				  GET_DURATION(IEEE80211_HEADER + ACK_SIZE, 10))
++#define EIFS			0	
++#define SHORT_EIFS		0
+ 
+ enum rt2x00_chip_intf {
+ 	RT2X00_CHIP_INTF_PCI,
+diff --git a/net/wireless/db.txt b/net/wireless/db.txt
+index a2fc3a0..2c3a976 100644
+--- a/net/wireless/db.txt
++++ b/net/wireless/db.txt
+@@ -1,17 +1,47 @@
+-#
+-# This file is a placeholder to prevent accidental build breakage if someone
+-# enables CONFIG_CFG80211_INTERNAL_REGDB.  Almost no one actually needs to
+-# enable that build option.
+-#
+-# You should be using CRDA instead.  It is even better if you use the CRDA
+-# package provided by your distribution, since they will probably keep it
+-# up-to-date on your behalf.
+-#
+-# If you _really_ intend to use CONFIG_CFG80211_INTERNAL_REGDB then you will
+-# need to replace this file with one containing appropriately formatted
+-# regulatory rules that cover the regulatory domains you will be using.  Your
+-# best option is to extract the db.txt file from the wireless-regdb git
+-# repository:
+-#
+-#   git://git.kernel.org/pub/scm/linux/kernel/git/linville/wireless-regdb.git
+-#
++country 00:
++	(2302 - 2742 @ 40), (30)
++	(4910 - 5835 @ 160), (30)
++
++country DE:
++	(2302 - 2742 @ 40), (30)
++	(4910 - 5835 @ 160), (30)
++
++country AT:
++	(2302 - 2742 @ 40), (30)
++	(4910 - 5835 @ 160), (30)
++
++country CH:
++	(2302 - 2742 @ 40), (30)
++	(4910 - 5835 @ 160), (30)
++
++country TW:
++	(2302 - 2742 @ 40), (30)
++	(4910 - 5835 @ 160), (30)
++
++country AU:
++	(2302 - 2742 @ 40), (30)
++	(4910 - 5835 @ 160), (30)
++
++country CA:
++	(2302 - 2742 @ 40), (30)
++	(4910 - 5835 @ 160), (30)
++
++country US:
++	(2302 - 2742 @ 40), (30)
++	(4910 - 5835 @ 160), (30)
++
++country BO:
++	(2302 - 2742 @ 40), (30)
++	(4910 - 5835 @ 160), (30)
++
++country GB:
++	(2302 - 2742 @ 40), (30)
++	(4910 - 5835 @ 160), (30)
++
++country CN:
++	(2302 - 2742 @ 40), (30)
++	(4910 - 5835 @ 160), (30)
++
++country NZ:
++	(2302 - 2742 @ 40), (30)
++	(4910 - 5835 @ 160), (30)
+diff --git a/net/wireless/reg.c b/net/wireless/reg.c
+index 6e94f69..20e5c10 100644
+--- a/net/wireless/reg.c
++++ b/net/wireless/reg.c
+@@ -221,35 +221,20 @@ static const struct ieee80211_regdomain world_regdom = {
+ 	.alpha2 =  "00",
+ 	.reg_rules = {
+ 		/* IEEE 802.11b/g, channels 1..11 */
+-		REG_RULE(2412-10, 2462+10, 40, 6, 20, 0),
++		REG_RULE(2312-10, 2462+10, 40, 6, 30, 0),
+ 		/* IEEE 802.11b/g, channels 12..13. */
+-		REG_RULE(2467-10, 2472+10, 20, 6, 20,
+-			NL80211_RRF_NO_IR | NL80211_RRF_AUTO_BW),
++		REG_RULE(2467-10, 2472+10, 40, 6, 30, 0),
+ 		/* IEEE 802.11 channel 14 - Only JP enables
+ 		 * this and for 802.11b only */
+-		REG_RULE(2484-10, 2484+10, 20, 6, 20,
+-			NL80211_RRF_NO_IR |
+-			NL80211_RRF_NO_OFDM),
++		REG_RULE(2484-10, 2732+10, 40, 6, 30, 0),
+ 		/* IEEE 802.11a, channel 36..48 */
+-		REG_RULE(5180-10, 5240+10, 80, 6, 20,
+-                        NL80211_RRF_NO_IR |
+-                        NL80211_RRF_AUTO_BW),
+-
++		REG_RULE(4920-10, 5240+10, 160, 6, 30, 0),
+ 		/* IEEE 802.11a, channel 52..64 - DFS required */
+-		REG_RULE(5260-10, 5320+10, 80, 6, 20,
+-			NL80211_RRF_NO_IR |
+-			NL80211_RRF_AUTO_BW |
+-			NL80211_RRF_DFS),
+-
++		REG_RULE(5260-10, 5320+10, 160, 6, 30, 0),
+ 		/* IEEE 802.11a, channel 100..144 - DFS required */
+-		REG_RULE(5500-10, 5720+10, 160, 6, 20,
+-			NL80211_RRF_NO_IR |
+-			NL80211_RRF_DFS),
+-
++		REG_RULE(5500-10, 5720+10, 160, 6, 30, 0),
+ 		/* IEEE 802.11a, channel 149..165 */
+-		REG_RULE(5745-10, 5825+10, 80, 6, 20,
+-			NL80211_RRF_NO_IR),
+-
++		REG_RULE(5745-10, 6100+10, 160, 6, 30, 0),
+ 		/* IEEE 802.11ad (60GHz), channels 1..3 */
+ 		REG_RULE(56160+2160*1-1080, 56160+2160*3+1080, 2160, 0, 0, 0),
+ 	}
+@@ -3193,7 +3178,7 @@ void wiphy_regulatory_deregister(struct wiphy *wiphy)
+ int cfg80211_get_unii(int freq)
+ {
+ 	/* UNII-1 */
+-	if (freq >= 5150 && freq <= 5250)
++	if (freq >= 4920 && freq <= 5250)
+ 		return 0;
+ 
+ 	/* UNII-2A */
+@@ -3209,7 +3194,7 @@ int cfg80211_get_unii(int freq)
+ 		return 3;
+ 
+ 	/* UNII-3 */
+-	if (freq > 5725 && freq <= 5825)
++	if (freq > 5725 && freq <= 6100)
+ 		return 4;
+ 
+ 	return -EINVAL;
