@@ -1,5 +1,7 @@
 *.o
 *.a
+*.pyc
+dist/
 rx
 tx
 rx.key
