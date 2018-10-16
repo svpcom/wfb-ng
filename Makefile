@@ -23,8 +23,7 @@ build_rpi: clean
 	docker build rpi_docker -t wifibroadcast:rpi_raspbian
 	docker run -i -t --rm -v $(PWD):/build -v $(PWD):/rpxc/sysroot/build wifibroadcast:rpi_raspbian make CFLAGS=--sysroot=/rpxc/sysroot LDFLAGS="--sysroot=/rpxc/sysroot" CXX=arm-linux-gnueabihf-g++ CC=arm-linux-gnueabihf-gcc
 	mkdir -p dist
-	tar czf dist/wifibroadcast_rpi.tar.gz tx rx keygen -C scripts tx_standalone.sh rx_standalone.sh
-
+	tar czf dist/wifibroadcast_rpi.tar.gz tx rx keygen telemetry/{__init__.py,server.py,mavlink.py} -C scripts tx_standalone.sh rx_standalone.sh
 telem:
 	python -m telemetry.server './rx -a 5601 -u 5600' './rx -a 14551 -u 14552' 127.0.0.1:14552 || tail -n 100 server.log
 
