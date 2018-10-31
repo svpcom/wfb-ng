@@ -53,7 +53,7 @@ Supported WiFi hardware:
 My primary hardware target is Ralink RT28xx family. These cards are cheap and have best packet injection speed.
 System was tested with ALPHA AWUS051NH v2 as TX and array of RT5572 OEM cards as RX in 5GHz mode.
 
-To disable ieee80211 autospeed and maximize output power you need to apply kernel patches from ``patches`` directory. See https://github.com/svpcom/wifibroadcast/wiki/Kernel-patches for details.
+To maximize output power and/or increase bandwidth (in case of one-way transmitting) you need to apply kernel patches from ``patches`` directory. See https://github.com/svpcom/wifibroadcast/wiki/Kernel-patches for details.
 
 Wifibroadcast + PX4 HOWTO:
 --------------------------
