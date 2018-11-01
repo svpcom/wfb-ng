@@ -102,13 +102,13 @@ private:
                                  .msg_controllen = 0,
                                  .msg_flags = 0};
 
-        sendmsg(sockfd, &msghdr, 0);
+        sendmsg(sockfd, &msghdr, MSG_DONTWAIT);
     }
 
     int open_udp_socket(const string &client_addr, int client_port)
     {
         struct sockaddr_in saddr;
-        int fd = socket(AF_INET, SOCK_DGRAM | SOCK_NONBLOCK, 0);
+        int fd = socket(AF_INET, SOCK_DGRAM, 0);
         if (fd < 0) throw runtime_error(string_format("Error opening socket: %s", strerror(errno)));
 
         bzero((char *) &saddr, sizeof(saddr));

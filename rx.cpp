@@ -272,7 +272,7 @@ void Forwarder::process_packet(const uint8_t *buf, size_t size, uint8_t wlan_idx
                              .msg_controllen = 0,
                              .msg_flags = 0};
 
-    sendmsg(sockfd, &msghdr, 0);
+    sendmsg(sockfd, &msghdr, MSG_DONTWAIT);
 }
 
 
@@ -559,7 +559,7 @@ void Aggregator::send_packet(int ring_idx, int fragment_idx)
         fprintf(stderr, "corrupted packet %u\n", seq);
         count_p_bad += 1;
     }else{
-        send(sockfd, payload, packet_size, 0);
+        send(sockfd, payload, packet_size, MSG_DONTWAIT);
     }
 }
 
