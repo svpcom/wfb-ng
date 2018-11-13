@@ -112,11 +112,13 @@ static uint8_t ieee80211_header[] = {
 #define WFB_PACKET_KEY 0x2
 
 #define SESSION_KEY_ANNOUNCE_MSEC 1000
+#define RX_ANT_MAX  4
 
+// Header for forwarding raw packets from RX host to Aggregator in UDP packets
 typedef struct {
     uint8_t wlan_idx;
-    uint8_t antenna; //RADIOTAP_ANTENNA
-    int8_t rssi; //RADIOTAP_DBM_ANTSIGNAL
+    uint8_t antenna[RX_ANT_MAX]; //RADIOTAP_ANTENNA, list of antenna idx, 0xff for unused slot
+    int8_t rssi[RX_ANT_MAX]; //RADIOTAP_DBM_ANTSIGNAL, list of rssi for corresponding antenna idx
 } __attribute__ ((packed)) wrxfwd_t;
 
 // Network packet headers. All numbers are in network (big endian) format

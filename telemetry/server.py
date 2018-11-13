@@ -121,12 +121,28 @@ class AntennaProtocol(LineReceiver):
                 p_all, p_dec_err, p_dec_ok, p_fec_rec, p_lost, p_bad = map(int, cols[2].split(':'))
 
                 if not self.count_all:
-                    self.count_all = (p_all, p_dec_err, p_dec_ok, p_fec_rec, p_lost, p_bad)
+                    self.count_all = (p_all, p_dec_ok, p_fec_rec, p_lost, p_dec_err, p_bad)
                 else:
-                    self.count_all = tuple((a + b) for a, b in zip((p_all, p_dec_err, p_dec_ok, p_fec_rec, p_lost, p_bad), self.count_all))
+                    self.count_all = tuple((a + b) for a, b in zip((p_all, p_dec_ok, p_fec_rec, p_lost, p_dec_err, p_bad), self.count_all))
 
-                self.window.addstr(0, 0, 'PKT: %d recv, %d d_err, %d d_ok, %d fec_r, %d lost, %d bad\n' % self.count_all)
-                self.window.addstr(1, 0, 'PKT/s: %d recv, %d d_err, %d d_ok, %d fec_r, %d lost, %d bad\n' % (p_all, p_dec_err, p_dec_ok, p_fec_rec, p_lost, p_bad))
+                self.window.addstr(0, 0, 'PKT:   recv %d d_ok %d fec_r %d lost %d d_err %d bad %d\n' % self.count_all)
+
+                msg_l = (('PKT/s: recv %d d_ok %d ' % (p_all, p_dec_ok), 0),
+                         ('fec_r %d' % p_fec_rec, curses.A_REVERSE if p_fec_rec else 0),
+                         (' ', 0),
+                         ('lost %d' % p_lost, curses.A_REVERSE if p_lost else 0),
+                         (' ', 0),
+                         ('d_err %d' % p_dec_err, curses.A_REVERSE if p_dec_err else 0),
+                         (' ', 0),
+                         ('bad %d\n' % p_bad, curses.A_REVERSE if p_bad else 0))
+
+                x = 0
+                xmax = self.window.getmaxyx()[1]
+                for msg, attr in msg_l:
+                    if x < xmax:
+                        self.window.addstr(1, x, msg, attr)
+                        x += len(msg)
+
 
                 mav_rssi = []
                 flags = 0
@@ -134,7 +150,7 @@ class AntennaProtocol(LineReceiver):
                 for i, (k, v) in enumerate(sorted(self.ant.iteritems())):
                     pkt_s, rssi_min, rssi_avg, rssi_max = v
                     mav_rssi.append(rssi_avg)
-                    self.window.addstr(i + 3, 0, '%s: %d pkt/s, rssi %d < %d < %d\n' % (k, pkt_s, rssi_min, rssi_avg, rssi_max))
+                    self.window.addstr(i + 3, 0, '%04x: %d pkt/s, rssi %d < %d < %d\n' % (int(k, 16), pkt_s, rssi_min, rssi_avg, rssi_max))
 
                 rssi = (max(mav_rssi) if mav_rssi else -128) % 256
 

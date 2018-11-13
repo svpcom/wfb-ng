@@ -85,9 +85,13 @@ public:
 private:
     virtual void inject_packet(const uint8_t *buf, size_t size)
     {
-        wrxfwd_t fwd_hdr = { .wlan_idx = (uint8_t)(rand() % 2),
-                             .antenna = (uint8_t)(rand() % 2),
-                             .rssi = (int8_t)(rand() & 0xff) };
+        wrxfwd_t fwd_hdr = { .wlan_idx = (uint8_t)(rand() % 2) };
+
+        memset(fwd_hdr.antenna, 0xff, sizeof(fwd_hdr.antenna));
+        memset(fwd_hdr.rssi, SCHAR_MIN, sizeof(fwd_hdr.rssi));
+
+        fwd_hdr.antenna[0] = (uint8_t)(rand() % 2);
+        fwd_hdr.rssi[0] = (int8_t)(rand() & 0xff);
 
         struct iovec iov[2] = {{ .iov_base = (void*)&fwd_hdr,
                                  .iov_len = sizeof(fwd_hdr)},

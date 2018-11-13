@@ -117,13 +117,19 @@ void Receiver::loop_iter(void)
 
         int pktlen = hdr.caplen;
         // int pkt_rate = 0
-        uint8_t antenna = 0;
-        int8_t rssi = SCHAR_MIN;
+        int ant_idx = 0;
+        uint8_t antenna[RX_ANT_MAX];
+        int8_t rssi[RX_ANT_MAX];
         uint8_t flags = 0;
         struct ieee80211_radiotap_iterator iterator;
         int ret = ieee80211_radiotap_iterator_init(&iterator, (ieee80211_radiotap_header*)pkt, pktlen, NULL);
 
-        while (ret == 0) {
+        // Fill all antenna slots with 0xff (unused)
+        memset(antenna, 0xff, sizeof(antenna));
+        // Fill all rssi slots with minimum value
+        memset(rssi, SCHAR_MIN, sizeof(rssi));
+
+        while (ret == 0 && ant_idx < RX_ANT_MAX) {
             ret = ieee80211_radiotap_iterator_next(&iterator);
 
             if (ret)
@@ -150,12 +156,13 @@ void Receiver::loop_iter(void)
             case IEEE80211_RADIOTAP_ANTENNA:
                 // FIXME
                 // In case of multiple antenna stats in one packet this index will be irrelivant
-                antenna = *(uint8_t*)(iterator.this_arg);
+                antenna[ant_idx] = *(uint8_t*)(iterator.this_arg);
+                ant_idx += 1;
                 break;
 
             case IEEE80211_RADIOTAP_DBM_ANTSIGNAL:
                 // Some cards can provide rssi for multiple antennas in one packet, so we should select maximum value
-                rssi = max(rssi, *(int8_t*)(iterator.this_arg));
+                rssi[ant_idx] = *(int8_t*)(iterator.this_arg);
                 break;
 
             case IEEE80211_RADIOTAP_FLAGS:
@@ -167,7 +174,7 @@ void Receiver::loop_iter(void)
             }
         }  /* while more rt headers */
 
-        if (ret != -ENOENT){
+        if (ret != -ENOENT && ant_idx < RX_ANT_MAX){
             fprintf(stderr, "Error parsing radiotap header!\n");
             continue;
         }
@@ -253,11 +260,12 @@ Forwarder::Forwarder(const string &client_addr, int client_port)
 }
 
 
-void Forwarder::process_packet(const uint8_t *buf, size_t size, uint8_t wlan_idx, uint8_t antenna, int8_t rssi, sockaddr_in *sockaddr)
+void Forwarder::process_packet(const uint8_t *buf, size_t size, uint8_t wlan_idx, const uint8_t *antenna, const int8_t *rssi, sockaddr_in *sockaddr)
 {
-    wrxfwd_t fwd_hdr = { .wlan_idx = wlan_idx,
-                         .antenna = antenna,
-                         .rssi = rssi };
+    wrxfwd_t fwd_hdr = { .wlan_idx = wlan_idx };
+
+    memcpy(fwd_hdr.antenna, antenna, RX_ANT_MAX * sizeof(uint8_t));
+    memcpy(fwd_hdr.rssi, rssi, RX_ANT_MAX * sizeof(int8_t));
 
     struct iovec iov[2] = {{ .iov_base = (void*)&fwd_hdr,
                              .iov_len = sizeof(fwd_hdr)},
@@ -362,22 +370,25 @@ void Aggregator::dump_stats(FILE *fp)
 }
 
 
-void Aggregator::log_rssi(const sockaddr_in *sockaddr, uint8_t wlan_idx, uint8_t ant, int8_t rssi)
+void Aggregator::log_rssi(const sockaddr_in *sockaddr, uint8_t wlan_idx, const uint8_t *ant, const int8_t *rssi)
 {
-    // key: addr + port + wlan_idx + ant
-    uint64_t key = 0;
-    if (sockaddr != NULL && sockaddr->sin_family == AF_INET)
+    for(int i = 0; i < RX_ANT_MAX && ant[i] != 0xff; i++)
     {
-        key = ((uint64_t)ntohl(sockaddr->sin_addr.s_addr) << 32 | (uint64_t)ntohs(sockaddr->sin_port) << 16);
+        // key: addr + port + wlan_idx + ant
+        uint64_t key = 0;
+        if (sockaddr != NULL && sockaddr->sin_family == AF_INET)
+        {
+            key = ((uint64_t)ntohl(sockaddr->sin_addr.s_addr) << 32 | (uint64_t)ntohs(sockaddr->sin_port) << 16);
+        }
+
+        key |= ((uint64_t)wlan_idx << 8 | (uint64_t)ant[i]);
+
+        antenna_stat[key].log_rssi(rssi[i]);
     }
-
-    key |= ((uint64_t)wlan_idx << 8 | (uint64_t)ant);
-
-    antenna_stat[key].log_rssi(rssi);
 }
 
 
-void Aggregator::process_packet(const uint8_t *buf, size_t size, uint8_t wlan_idx, uint8_t antenna, int8_t rssi, sockaddr_in *sockaddr)
+void Aggregator::process_packet(const uint8_t *buf, size_t size, uint8_t wlan_idx, const uint8_t *antenna, const int8_t *rssi, sockaddr_in *sockaddr)
 {
     uint8_t new_session_key[sizeof(session_key)];
     count_p_all += 1;

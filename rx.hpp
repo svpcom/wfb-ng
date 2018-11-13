@@ -28,7 +28,7 @@ typedef enum {
 class BaseAggregator
 {
 public:
-    virtual void process_packet(const uint8_t *buf, size_t size, uint8_t wlan_idx, uint8_t antenna, int8_t rssi, sockaddr_in *sockaddr) = 0;
+    virtual void process_packet(const uint8_t *buf, size_t size, uint8_t wlan_idx, const uint8_t *antenna, const int8_t *rssi, sockaddr_in *sockaddr) = 0;
     virtual void dump_stats(FILE *fp) = 0;
 protected:
     int open_udp_socket_for_tx(const string &client_addr, int client_port)
@@ -56,7 +56,7 @@ class Forwarder : public BaseAggregator
 public:
     Forwarder(const string &client_addr, int client_port);
     ~Forwarder();
-    virtual void process_packet(const uint8_t *buf, size_t size, uint8_t wlan_idx, uint8_t antenna, int8_t rssi, sockaddr_in *sockaddr);
+    virtual void process_packet(const uint8_t *buf, size_t size, uint8_t wlan_idx, const uint8_t *antenna, const int8_t *rssi, sockaddr_in *sockaddr);
     virtual void dump_stats(FILE *fp) {}
 private:
     int sockfd;
@@ -109,12 +109,12 @@ class Aggregator : public BaseAggregator
 public:
     Aggregator(const string &client_addr, int client_port, int k, int n, const string &keypair);
     ~Aggregator();
-    virtual void process_packet(const uint8_t *buf, size_t size, uint8_t wlan_idx, uint8_t antenna, int8_t rssi, sockaddr_in *sockaddr);
+    virtual void process_packet(const uint8_t *buf, size_t size, uint8_t wlan_idx, const uint8_t *antenna, const int8_t *rssi, sockaddr_in *sockaddr);
     virtual void dump_stats(FILE *fp);
 private:
     void send_packet(int ring_idx, int fragment_idx);
     void apply_fec(int ring_idx);
-    void log_rssi(const sockaddr_in *sockaddr, uint8_t wlan_idx, uint8_t ant, int8_t rssi);
+    void log_rssi(const sockaddr_in *sockaddr, uint8_t wlan_idx, const uint8_t *ant, const int8_t *rssi);
     int get_block_ring_idx(uint64_t block_idx);
     int rx_ring_push(void);
     fec_t* fec_p;
