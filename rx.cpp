@@ -194,7 +194,7 @@ void Receiver::loop_iter(void)
         pkt += iterator._max_length;
         pktlen -= iterator._max_length;
 
-        if (pktlen > sizeof(ieee80211_header))
+        if (pktlen > (int)sizeof(ieee80211_header))
         {
             agg->process_packet(pkt + sizeof(ieee80211_header), pktlen - sizeof(ieee80211_header), wlan_idx, antenna, rssi, NULL);
         } else {
@@ -726,7 +726,7 @@ void network_loop(int srv_port, Aggregator &agg, int log_interval)
                     break;
                 }
 
-                if (rsize < sizeof(wrxfwd_t))
+                if (rsize < (ssize_t)sizeof(wrxfwd_t))
                 {
                     fprintf(stderr, "short packet (rx fwd header)\n");
                     continue;

@@ -60,7 +60,7 @@ extern string string_format(const char *format, ...);
 #define MCS_KNOWN (IEEE80211_RADIOTAP_MCS_HAVE_MCS | IEEE80211_RADIOTAP_MCS_HAVE_BW | IEEE80211_RADIOTAP_MCS_HAVE_GI) // | IEEE80211_RADIOTAP_MCS_HAVE_FMT)
 #define MCS_FLAGS (IEEE80211_RADIOTAP_MCS_BW_40 | IEEE80211_RADIOTAP_MCS_SGI) // | IEEE80211_RADIOTAP_MCS_FMT_GF)
 
-static const uint8_t radiotap_header[] = {
+static const uint8_t radiotap_header[]  __attribute__((unused)) = {
     0x00, 0x00, // <-- radiotap version
     0x0d, 0x00, // <- radiotap header length
     0x00, 0x80, 0x08, 0x00, // <-- radiotap present flags:  RADIOTAP_TX_FLAGS + RADIOTAP_MCS
@@ -74,7 +74,7 @@ static const uint8_t radiotap_header[] = {
 #define FRAME_SEQ_LB 22
 #define FRAME_SEQ_HB 23
 
-static uint8_t ieee80211_header[] = {
+static uint8_t ieee80211_header[] __attribute__((unused)) = {
     0x08, 0x01, 0x00, 0x00,
     0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF,
     0x13, 0x22, 0x33, 0x44, 0x55, 0x66,
