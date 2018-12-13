@@ -17,12 +17,10 @@ ifconfig $WLAN up
 case $BAND in
   "5G")
       echo "Setting $WLAN to channel $CHANNEL5G"
-      iw dev $WLAN set bitrates ht-mcs-5 1 sgi-5
       iw dev $WLAN set channel $CHANNEL5G HT40+
       ;;
   "2G")
       echo "Setting $WLAN to channel $CHANNEL2G"
-      iw dev $WLAN set bitrates ht-mcs-2.4 1 sgi-2.4
       iw dev $WLAN set channel $CHANNEL2G HT40+
       ;;
    *)
@@ -33,9 +31,4 @@ esac
 done
 
 # No UI, video only
-./rx -p 1 -u 5600 $WLANS
-
-# Ncurses UI, video + Mavlink
-# Requires python-twisted packages
-
-#python -m telemetry.server "./rx -p 1 -u 5600 $WLANS" "./rx -p 2 -u 14550 $WLANS" 127.0.0.1:14550
+./wfb_rx -p 1 -u 5600 -K gs.key $WLANS

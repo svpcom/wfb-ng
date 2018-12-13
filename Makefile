@@ -1,32 +1,57 @@
+VERSION ?= $(shell ./version.py)
+ARCH ?= $(shell uname -i)
+COMMIT ?= $(shell git rev-parse HEAD)
+
+export VERSION COMMIT
 
 _LDFLAGS := $(LDFLAGS) -lrt -lpcap -lsodium
-_CFLAGS := $(CFLAGS) -Wall -O2
+_CFLAGS := $(CFLAGS) -Wall -O2 -DWFB_VERSION='"$(VERSION)-$(shell /bin/bash -c '_tmp=$(COMMIT); echo $${_tmp::8}')"'
 
-all: rx tx keygen
+all: all_bin gs.key test
 
-%.o: %.c *.h
-	$(CC) -std=gnu99 -c -o $@ $< $(_CFLAGS)
+all_bin: wfb_rx wfb_tx wfb_keygen
 
-%.o: %.cpp *.hpp *.h
-	$(CXX) -std=gnu++11 -c -o $@ $< $(_CFLAGS)
+gs.key: wfb_keygen
+	@if ! [ -f gs.key ]; then ./wfb_keygen; fi
 
-rx: rx.o radiotap.o fec.o wifibroadcast.o
+src/%.o: src/%.c src/*.h
+	$(CC) $(_CFLAGS) -std=gnu99 -c -o $@ $<
+
+src/%.o: src/%.cpp src/*.hpp src/*.h
+	$(CXX) $(_CFLAGS) -std=gnu++11 -c -o $@ $<
+
+wfb_rx: src/rx.o src/radiotap.o src/fec.o src/wifibroadcast.o
 	$(CXX) -o $@ $^ $(_LDFLAGS)
 
-tx: tx.o fec.o wifibroadcast.o
+wfb_tx: src/tx.o src/fec.o src/wifibroadcast.o
 	$(CXX) -o $@ $^ $(_LDFLAGS)
 
-keygen: keygen.o
+wfb_keygen: src/keygen.o
 	$(CC) -o $@ $^ $(_LDFLAGS)
 
 build_rpi: clean
 	docker build rpi_docker -t wifibroadcast:rpi_raspbian
-	docker run -i -t --rm -v $(PWD):/build -v $(PWD):/rpxc/sysroot/build wifibroadcast:rpi_raspbian make CFLAGS=--sysroot=/rpxc/sysroot LDFLAGS="--sysroot=/rpxc/sysroot" CXX=arm-linux-gnueabihf-g++ CC=arm-linux-gnueabihf-gcc
-	mkdir -p dist
-	tar czf dist/wifibroadcast_rpi.tar.gz tx rx keygen telemetry/{__init__.py,server.py,mavlink.py} -C scripts tx_standalone.sh rx_standalone.sh
-telem:
-	python -m telemetry.server './rx -a 5601 -u 5600' './rx -a 14551 -u 14552' 127.0.0.1:14552 || tail -n 100 server.log
+	docker run -i -t --rm -v $(PWD):/build -v $(PWD):/rpxc/sysroot/build wifibroadcast:rpi_raspbian make all_bin CFLAGS=--sysroot=/rpxc/sysroot LDFLAGS="--sysroot=/rpxc/sysroot" CXX=arm-linux-gnueabihf-g++ CC=arm-linux-gnueabihf-gcc VERSION=$(VERSION) COMMIT=$(COMMIT) ARCH=arm
+	make bdist ARCH=arm
+	rm -f wfb_rx wfb_tx wfb_keygen src/*.o
+
+test:
+	PYTHONPATH=`pwd` trial telemetry.tests
+
+rpm:  all_bin
+	rm -rf dist
+	python ./setup.py bdist_rpm --force-arch $(ARCH)
+	rm -rf wifibroadcast.egg-info/
+
+deb:  all_bin
+	rm -rf deb_dist
+	python ./setup.py --command-packages=stdeb.command bdist_deb
+
+bdist: all_bin
+	rm -rf dist
+	python ./setup.py bdist --plat-name linux-$(ARCH)
+	rm -rf wifibroadcast.egg-info/
 
 clean:
-	rm -rf rx tx keygen dist *~ *.o
+	rm -rf wfb_rx wfb_tx wfb_keygen dist deb_dist build wifibroadcast.egg-info *~ src/*.o
 

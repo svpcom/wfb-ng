@@ -1,0 +1,15 @@
+# This is a mostly empty service, but allows commands like stop, start, reload
+# to propagate to all wifibroadcast@ service instances.
+
+[Unit]
+Description=Wifibroadcast server
+After=network.target
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/bin/true
+ExecReload=/bin/true
+
+[Install]
+WantedBy=multi-user.target

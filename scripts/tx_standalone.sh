@@ -16,12 +16,10 @@ ifconfig $WLAN up
 case $BAND in
   "5G")
       echo "Setting $WLAN to channel $CHANNEL5G"
-      iw dev $WLAN set bitrates ht-mcs-5 1 sgi-5
       iw dev $WLAN set channel $CHANNEL5G HT40+
       ;;
   "2G")
       echo "Setting $WLAN to channel $CHANNEL2G"
-      iw dev $WLAN set bitrates ht-mcs-2.4 1 sgi-2.4
       iw dev $WLAN set channel $CHANNEL2G HT40+
       ;;
    *)
@@ -31,9 +29,4 @@ case $BAND in
 esac
 
 # Video TX
-./tx -p 1 -u 5600 $WLAN &
-
-# Mavlink TX
-./tx -m 100 -p 2 -u 14550 $WLAN &
-
-wait -n
+./wfb_tx -p 1 -u 5600 -K drone.key $WLAN

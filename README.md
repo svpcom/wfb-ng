@@ -5,10 +5,12 @@ This is transmitter and receiver of UDP packets using raw WiFi radio inspired by
 
 Other features:
 ---------------
- - Stream encryption and authentication
+ - Bidirectional mavlink telemetry. You can use it for mavlink up/down and video down link.
+ - Automatic TX diversity (select TX card based on RX RSSI)
+ - Stream encryption and authentication using libsodium.
  - Distributed operation. It can gather data from cards on different hosts. So you don't limited to bandwidth of single USB bus.
  - Aggreagation of mavlink packets. Don't send wifi packet for every mavlink packet.
- - OSD https://github.com/svpcom/wifibroadcast_osd for raspberry pi (consume 10% CPU on PI Zero)
+ - Enhanced OSD https://github.com/svpcom/wifibroadcast_osd for raspberry pi (consume 10% CPU on PI Zero)
 
 
 Theory:
@@ -25,7 +27,7 @@ This way a true unidirectional connection is established which mimics the advant
 
  - Wifibroadcast allows you to use several low cost receivers in parallel and combine their data to increase probability of correct data reception. This so-called software diversity allows you to use identical receivers to improve relieability as well as complementary receivers (think of one receiver with an omnidirectional antenna covering 360° and several directional antennas for high distance all working in parallel)
 
- - Wifibroadcast uses Forward Error Correction to archive a high reliability at low bandwidth requirements. It is able to repair lost or corrupted packets at the receiver.
+ - Wifibroadcast uses Forward Error Correction to achieve a high reliability at low bandwidth requirements. It is able to repair lost or corrupted packets at the receiver.
 
 
 
@@ -47,11 +49,41 @@ To decode:
                ! rtph264depay ! avdec_h264 ! clockoverlay valignment=bottom ! autovideosink fps-update-interval=1000 sync=false
 ```
 
+HOWTO build:
+----------------------
+For development (inline build)
+```
+make
+```
+
+For binary distribution RHEL or Fedora
+```
+make rpm
+```
+
+For binary distribution Debian or Ubuntu
+```
+pip install stdeb
+make deb
+```
+
+For binary distribution (tar.gz)
+```
+make bdist
+```
+
+You need to generate encryption keys for gs(ground station) and drone:
+```
+wfb_keygen
+```
+Leave them inplace for development build or copy to `/etc` for binary install.
+Put `drone.key` to drone and `gs.key` to gs.
 
 Supported WiFi hardware:
 ------------------------
-My primary hardware target is Ralink RT28xx family. These cards are cheap and have best packet injection speed.
-System was tested with ALPHA AWUS051NH v2 as TX and array of RT5572 OEM cards as RX in 5GHz mode.
+My primary hardware targets are:
+1. Realtek RTL8812au. 802.11ac capable. Easy to buy. **Requires external patched driver!** System was tested with ALPHA AWUS036ACH on both sides in 5GHz mode.
+2. Ralink RT28xx family. Cheap, but doesn't produced anymore. System was tested with ALPHA AWUS051NH v2 as TX and array of RT5572 OEM cards as RX in 5GHz mode.
 
 To maximize output power and/or increase bandwidth (in case of one-way transmitting) you need to apply kernel patches from ``patches`` directory. See https://github.com/svpcom/wifibroadcast/wiki/Kernel-patches for details.
 

@@ -2,8 +2,12 @@
 *.a
 *.pyc
 dist/
-rx
-tx
-rx.key
-tx.key
-keygen
+deb_dist/
+build/
+_trial_temp/
+wfb_rx
+wfb_tx
+gs.key
+drone.key
+wfb_keygen
+telemetry/conf/site.cfg

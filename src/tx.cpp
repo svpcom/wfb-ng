@@ -1,6 +1,6 @@
 // -*- C++ -*-
 //
-// Copyright (C) 2017 Vasily Evseenko <svpcom@p2ptech.org>
+// Copyright (C) 2017, 2018 Vasily Evseenko <svpcom@p2ptech.org>
 
 /*
  *   This program is free software; you can redistribute it and/or modify
@@ -30,6 +30,7 @@
 
 #include <string>
 #include <memory>
+#include <vector>
 
 extern "C"
 {
@@ -88,23 +89,28 @@ void Transmitter::make_session_key(void)
 }
 
 
-PcapTransmitter::PcapTransmitter(int k, int n, const string &keypair, uint8_t radio_port, const char *wlan) : Transmitter(k, n, keypair),
-                                                                                                              radio_port(radio_port), wlan(wlan),
-                                                                                                              ieee80211_seq(0)
+PcapTransmitter::PcapTransmitter(int k, int n, const string &keypair, uint8_t radio_port, const vector<string> &wlans) : Transmitter(k, n, keypair),
+                                                                                                                        radio_port(radio_port),
+                                                                                                                        current_output(0),
+                                                                                                                        ieee80211_seq(0)
 {
     char errbuf[PCAP_ERRBUF_SIZE];
-    ppcap = pcap_create(wlan, errbuf);
-    if (ppcap == NULL){
-        throw runtime_error(string_format("Unable to open interface %s in pcap: %s", wlan, errbuf));
-    }
-    if (pcap_set_snaplen(ppcap, 4096) !=0) throw runtime_error("set_snaplen failed");
-    if (pcap_set_promisc(ppcap, 1) != 0) throw runtime_error("set_promisc failed");
-    //if (pcap_set_rfmon(ppcap, 1) !=0) throw runtime_error("set_rfmon failed");
-    if (pcap_set_timeout(ppcap, -1) !=0) throw runtime_error("set_timeout failed");
-    //if (pcap_set_buffer_size(ppcap, 2048) !=0) throw runtime_error("set_buffer_size failed");
-    if (pcap_activate(ppcap) !=0) throw runtime_error(string_format("pcap_activate failed: %s", pcap_geterr(ppcap)));
-    //if (pcap_setnonblock(ppcap, 1, errbuf) != 0) throw runtime_error(string_format("set_nonblock failed: %s", errbuf));
+    for(auto it=wlans.begin(); it!=wlans.end(); it++)
+    {
+        pcap_t *p = pcap_create(it->c_str(), errbuf);
+        if (p == NULL){
+            throw runtime_error(string_format("Unable to open interface %s in pcap: %s", it->c_str(), errbuf));
+        }
+        if (pcap_set_snaplen(p, 4096) !=0) throw runtime_error("set_snaplen failed");
+        if (pcap_set_promisc(p, 1) != 0) throw runtime_error("set_promisc failed");
+        //if (pcap_set_rfmon(p, 1) !=0) throw runtime_error("set_rfmon failed");
+        if (pcap_set_timeout(p, -1) !=0) throw runtime_error("set_timeout failed");
+        //if (pcap_set_buffer_size(p, 2048) !=0) throw runtime_error("set_buffer_size failed");
+        if (pcap_activate(p) !=0) throw runtime_error(string_format("pcap_activate failed: %s", pcap_geterr(p)));
+        //if (pcap_setnonblock(p, 1, errbuf) != 0) throw runtime_error(string_format("set_nonblock failed: %s", errbuf));
 
+        ppcap.push_back(p);
+    }
 }
 
 
@@ -132,7 +138,7 @@ void PcapTransmitter::inject_packet(const uint8_t *buf, size_t size)
     memcpy(p, buf, size);
     p += size;
 
-    if (pcap_inject(ppcap, txbuf, p - txbuf) != p - txbuf)
+    if (pcap_inject(ppcap[current_output], txbuf, p - txbuf) != p - txbuf)
     {
         throw runtime_error(string_format("Unable to inject packet"));
     }
@@ -140,7 +146,9 @@ void PcapTransmitter::inject_packet(const uint8_t *buf, size_t size)
 
 PcapTransmitter::~PcapTransmitter()
 {
-    pcap_close(ppcap);
+    for(auto it=ppcap.begin(); it != ppcap.end(); it++){
+        pcap_close(*it);
+    }
 }
 
 
@@ -204,125 +212,82 @@ void Transmitter::send_packet(const uint8_t *buf, size_t size)
     }
 }
 
-void video_source(Transmitter *t, int fd)
+void video_source(shared_ptr<Transmitter> &t, vector<int> &tx_fd)
 {
-    uint8_t buf[MAX_PAYLOAD_SIZE];
-    uint64_t session_key_announce_ts = 0;
-    for(;;)
-    {
-        ssize_t rsize = recv(fd, buf, sizeof(buf), 0);
-        if (rsize < 0) throw runtime_error(string_format("Error receiving packet: %s", strerror(errno)));
-        uint64_t cur_ts = get_time_ms();
-        if (cur_ts >= session_key_announce_ts)
-        {
-            // Announce session key
-            t->send_session_key();
-            session_key_announce_ts = cur_ts + SESSION_KEY_ANNOUNCE_MSEC;
-        }
-        t->send_packet(buf, rsize);
-    }
-}
-
-void mavlink_source(Transmitter *t, int fd, int agg_latency)
-{
-    struct pollfd fds[1];
-
-    if(fcntl(fd, F_SETFL, fcntl(fd, F_GETFL, 0) | O_NONBLOCK) < 0)
-    {
-        throw runtime_error(string_format("Unable to set socket into nonblocked mode: %s", strerror(errno)));
-    }
-
+    int nfds = tx_fd.size();
+    struct pollfd fds[nfds];
     memset(fds, '\0', sizeof(fds));
-    fds[0].fd = fd;
-    fds[0].events = POLLIN;
 
+    int i = 0;
+    for(auto it=tx_fd.begin(); it != tx_fd.end(); it++, i++)
+    {
+        int fd = *it;
+        if(fcntl(fd, F_SETFL, fcntl(fd, F_GETFL, 0) | O_NONBLOCK) < 0)
+        {
+            throw runtime_error(string_format("Unable to set socket into nonblocked mode: %s", strerror(errno)));
+        }
 
-    size_t agg_size = 0;
-    uint8_t agg_buf[MAX_PAYLOAD_SIZE];
-    uint64_t expire_ts = get_time_ms() + agg_latency;
+        fds[i].fd = fd;
+        fds[i].events = POLLIN;
+    }
+
     uint64_t session_key_announce_ts = 0;
 
     for(;;)
     {
-        uint64_t cur_ts = get_time_ms();
-        int rc = poll(fds, 1, expire_ts > cur_ts ? expire_ts - cur_ts : 0);
+        int rc = poll(fds, nfds, -1);
 
         if (rc < 0){
             if (errno == EINTR || errno == EAGAIN) continue;
             throw runtime_error(string_format("poll error: %s", strerror(errno)));
         }
 
-        if (rc == 0)  // timeout expired
+        if (rc == 0) continue;  // timeout expired
+
+        for(i = 0; i < nfds; i++)
         {
-            if(agg_size > 0)
+            // some events detected
+            if (fds[i].revents & (POLLERR | POLLNVAL))
             {
-                cur_ts = get_time_ms();
-                if (cur_ts >= session_key_announce_ts)
-                {
-                    // Announce session key
-                    t->send_session_key();
-                    session_key_announce_ts = cur_ts + SESSION_KEY_ANNOUNCE_MSEC;
-                }
-                t->send_packet(agg_buf, agg_size);
-                agg_size = 0;
+                throw runtime_error(string_format("socket error: %s", strerror(errno)));
             }
-            expire_ts = get_time_ms() + agg_latency;
-            continue;
-        }
 
-        // some events detected
-        if (fds[0].revents & (POLLERR | POLLNVAL))
-        {
-            throw runtime_error(string_format("socket error: %s", strerror(errno)));
-        }
-
-        if (fds[0].revents & POLLIN)
-        {
-            uint8_t buf[MAX_PAYLOAD_SIZE];
-            ssize_t rsize;
-            while((rsize = recv(fd, buf, sizeof(buf), 0)) >= 0)
+            if (fds[i].revents & POLLIN)
             {
-                if (rsize + agg_size > sizeof(agg_buf)) // new packet doesn't fit to agg buffer
+                uint8_t buf[MAX_PAYLOAD_SIZE];
+                ssize_t rsize;
+                int fd = tx_fd[i];
+
+                t->select_output(i);
+                while((rsize = recv(fd, buf, sizeof(buf), 0)) >= 0)
                 {
-                    if(agg_size > 0)
+                    uint64_t cur_ts = get_time_ms();
+                    if (cur_ts >= session_key_announce_ts)
                     {
-                        cur_ts = get_time_ms();
-                        if (cur_ts >= session_key_announce_ts)
-                        {
-                            // Announce session key
-                            t->send_session_key();
-                            session_key_announce_ts = cur_ts + SESSION_KEY_ANNOUNCE_MSEC;
-                        }
-                        t->send_packet(agg_buf, agg_size);
-                        agg_size = 0;
+                        // Announce session key
+                        t->send_session_key();
+                        session_key_announce_ts = cur_ts + SESSION_KEY_ANNOUNCE_MSEC;
                     }
-                    expire_ts = get_time_ms() + agg_latency;
+                    t->send_packet(buf, rsize);
                 }
-                memcpy(agg_buf + agg_size, buf, rsize);
-                agg_size += rsize;
+                if(errno != EWOULDBLOCK) throw runtime_error(string_format("Error receiving packet: %s", strerror(errno)));
             }
-            if(errno != EWOULDBLOCK) throw runtime_error(string_format("Error receiving packet: %s", strerror(errno)));
         }
     }
 }
+
 
 int main(int argc, char * const *argv)
 {
     int opt;
     uint8_t k=8, n=12, radio_port=1;
     int udp_port=5600;
-    bool mavlink_mode = false;
-    int mavlink_agg_latency = 0;
     string keypair = "tx.key";
 
-    while ((opt = getopt(argc, argv, "K:m:k:n:u:r:p:")) != -1) {
+    while ((opt = getopt(argc, argv, "K:k:n:u:r:p:")) != -1) {
         switch (opt) {
         case 'K':
             keypair = optarg;
-            break;
-        case 'm':
-            mavlink_mode = true;
-            mavlink_agg_latency = atoi(optarg);
             break;
         case 'k':
             k = atoi(optarg);
@@ -338,10 +303,11 @@ int main(int argc, char * const *argv)
             break;
         default: /* '?' */
         show_usage:
-            fprintf(stderr, "Usage: %s [-K tx_key] [-m mavlink_agg_in_ms] [-k RS_K] [-n RS_N] [-u udp_port] [-p radio_port] interface\n",
+            fprintf(stderr, "Usage: %s [-K tx_key] [-k RS_K] [-n RS_N] [-u udp_port] [-p radio_port] interface1 [interface2] ...\n",
                     argv[0]);
             fprintf(stderr, "Default: K='%s', k=%d, n=%d, udp_port=%d, radio_port=%d\n", keypair.c_str(), k, n, udp_port, radio_port);
             fprintf(stderr, "Radio MTU: %lu\n", (unsigned long)MAX_PAYLOAD_SIZE);
+            fprintf(stderr, "WFB version " WFB_VERSION "\n");
             exit(1);
         }
     }
@@ -352,19 +318,23 @@ int main(int argc, char * const *argv)
 
     try
     {
-        int fd = open_udp_socket_for_rx(udp_port);
-#ifdef DEBUG_TX
-        shared_ptr<Transmitter>t = shared_ptr<UdpTransmitter>(new UdpTransmitter(k, n, keypair, "127.0.0.1", 5601));
-#else
-        shared_ptr<Transmitter>t = shared_ptr<PcapTransmitter>(new PcapTransmitter(k, n, keypair, radio_port, argv[optind]));
-#endif
-        if (mavlink_mode)
+        vector<int> tx_fd;
+        vector<string> wlans;
+        for(int i = 0; optind + i < argc; i++)
         {
-            mavlink_source(t.get(), fd, mavlink_agg_latency);
-        }else
-        {
-            video_source(t.get(), fd);
+            int fd = open_udp_socket_for_rx(udp_port + i);
+            fprintf(stderr, "Listen on %d for %s\n", udp_port + i, argv[optind + i]);
+            tx_fd.push_back(fd);
+            wlans.push_back(string(argv[optind + i]));
         }
+
+#ifdef DEBUG_TX
+        shared_ptr<Transmitter>t = shared_ptr<UdpTransmitter>(new UdpTransmitter(k, n, keypair, "127.0.0.1", 5601 + i));
+#else
+        shared_ptr<Transmitter>t = shared_ptr<PcapTransmitter>(new PcapTransmitter(k, n, keypair, radio_port, wlans));
+#endif
+
+        video_source(t, tx_fd);
     }catch(runtime_error &e)
     {
         fprintf(stderr, "Error: %s\n", e.what());

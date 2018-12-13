@@ -30,7 +30,7 @@ public:
     virtual ~Transmitter();
     void send_packet(const uint8_t *buf, size_t size);
     void send_session_key(void);
-
+    virtual void select_output(int idx) = 0;
 protected:
     virtual void inject_packet(const uint8_t *buf, size_t size) = 0;
 
@@ -57,15 +57,15 @@ private:
 class PcapTransmitter : public Transmitter
 {
 public:
-    PcapTransmitter(int k, int m, const string &keypair, uint8_t radio_port, const char* wlan);
+    PcapTransmitter(int k, int m, const string &keypair, uint8_t radio_port, const vector<string> &wlans);
     virtual ~PcapTransmitter();
-
+    virtual void select_output(int idx) { current_output = idx; }
 private:
     virtual void inject_packet(const uint8_t *buf, size_t size);
     uint8_t radio_port;
-    string wlan;
+    int current_output;
     uint16_t ieee80211_seq;
-    pcap_t *ppcap;
+    vector<pcap_t*> ppcap;
 };
 
 
@@ -81,6 +81,8 @@ public:
     {
         close(sockfd);
     }
+
+    virtual void select_output(int idx){}
 
 private:
     virtual void inject_packet(const uint8_t *buf, size_t size)
