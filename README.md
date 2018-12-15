@@ -82,7 +82,7 @@ Put `drone.key` to drone and `gs.key` to gs.
 Supported WiFi hardware:
 ------------------------
 My primary hardware targets are:
-1. Realtek RTL8812au. 802.11ac capable. Easy to buy. **Requires external patched driver!** System was tested with ALPHA AWUS036ACH on both sides in 5GHz mode.
+1. Realtek RTL8812au. 802.11ac capable. Easy to buy. [**Requires external patched driver!**](https://github.com/svpcom/rtl8812au)  System was tested with ALPHA AWUS036ACH on both sides in 5GHz mode.
 2. Ralink RT28xx family. Cheap, but doesn't produced anymore. System was tested with ALPHA AWUS051NH v2 as TX and array of RT5572 OEM cards as RX in 5GHz mode.
 
 To maximize output power and/or increase bandwidth (in case of one-way transmitting) you need to apply kernel patches from ``patches`` directory. See https://github.com/svpcom/wifibroadcast/wiki/Kernel-patches for details.
