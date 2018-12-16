@@ -63,7 +63,6 @@ make rpm
 
 For binary distribution Debian or Ubuntu
 ```
-pip install stdeb
 make deb
 ```
 

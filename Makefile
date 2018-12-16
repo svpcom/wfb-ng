@@ -9,6 +9,10 @@ _CFLAGS := $(CFLAGS) -Wall -O2 -DWFB_VERSION='"$(VERSION)-$(shell /bin/bash -c '
 
 all: all_bin gs.key test
 
+env:
+	virtualenv env
+	./env/bin/pip install --upgrade pip setuptools stdeb
+
 all_bin: wfb_rx wfb_tx wfb_keygen
 
 gs.key: wfb_keygen
@@ -38,20 +42,21 @@ build_rpi: clean
 test:
 	PYTHONPATH=`pwd` trial telemetry.tests
 
-rpm:  all_bin
+rpm:  all_bin env
 	rm -rf dist
-	python ./setup.py bdist_rpm --force-arch $(ARCH)
+	./env/bin/python ./setup.py bdist_rpm --force-arch $(ARCH)
 	rm -rf wifibroadcast.egg-info/
 
-deb:  all_bin
+deb:  all_bin env
 	rm -rf deb_dist
-	python ./setup.py --command-packages=stdeb.command bdist_deb
+	./env/bin/python ./setup.py --command-packages=stdeb.command bdist_deb
+	rm -rf wifibroadcast.egg-info/ wifibroadcast-$(VERSION).tar.gz
 
-bdist: all_bin
+bdist: all_bin env
 	rm -rf dist
-	python ./setup.py bdist --plat-name linux-$(ARCH)
+	./env/bin/python ./setup.py bdist --plat-name linux-$(ARCH)
 	rm -rf wifibroadcast.egg-info/
 
 clean:
-	rm -rf wfb_rx wfb_tx wfb_keygen dist deb_dist build wifibroadcast.egg-info *~ src/*.o
+	rm -rf env wfb_rx wfb_tx wfb_keygen dist deb_dist build wifibroadcast.egg-info _trial_temp *~ src/*.o
 

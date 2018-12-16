@@ -4,6 +4,7 @@
 dist/
 deb_dist/
 build/
+env/
 _trial_temp/
 wfb_rx
 wfb_tx
