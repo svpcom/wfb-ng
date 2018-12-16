@@ -29,7 +29,8 @@ class SendPacket(DatagramProtocol):
 
     def datagramReceived(self, data, addr):
         log.msg("received back %r from %s" % (data, addr))
-        self.df.callback(addr)
+        self.df.callback((data, addr))
+
 
 class UDPProxyTestCase(unittest.TestCase):
     def setUp(self):
@@ -49,20 +50,21 @@ class UDPProxyTestCase(unittest.TestCase):
     @defer.inlineCallbacks
     def test_proxy(self):
         addr = ('127.0.0.1', 14551)
-        p = SendPacket('test', addr)
+        p = SendPacket('test', addr, 10)
         ep3 = reactor.listenUDP(9999, p)
         ep4 = reactor.listenUDP(14553, Echo())
         try:
             ts = time.time()
-            _addr = yield p.df
+            _data, _addr = yield p.df
             self.assertGreater(time.time() - ts, 1.0)
             self.assertEqual(_addr, addr)
+            self.assertEqual(_data, 'test' * 10)
         finally:
             ep4.stopListening()
             ep3.stopListening()
 
     @defer.inlineCallbacks
-    def test_rssi_injection_and_aggregation(self):
+    def test_rssi_injection(self):
         addr = ('127.0.0.1', 14551)
         p = SendPacket('test', addr)
 
@@ -70,17 +72,11 @@ class UDPProxyTestCase(unittest.TestCase):
         yield df_sleep(0.1)
 
         try:
-            for i in range(100):
-                self.p1.send_rssi(1, 2, 3, 4)
-
+            self.p1.send_rssi(1, 2, 3, 4)
             ts = time.time()
-            _addr = yield p.df
+            _data, _addr = yield p.df
             self.assertLess(time.time() - ts, 1.0)
-
-
             self.assertEqual(_addr, addr)
-            self.assertEqual(len(self.p1.agg_queue), 24)
-            self.assertEqual(self.p1.agg_queue_size, 456)
+            self.assertEqual(_data, '\xfd\x07\x00\x00\x00\x01\xf2m\x00\x00\x02\x00\x03\x00\x01\x01\x04\xae\x11')
         finally:
             ep3.stopListening()
-

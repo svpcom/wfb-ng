@@ -43,44 +43,24 @@ class UDPProxyProtocol(DatagramProtocol):
         if(self.agg_queue_timer):
             self.agg_queue_timer.cancel()
 
-    def write(self, msg):
-        # send message to local transport
-        if self.agg_max_size is None:
-            return self._write(msg)
-
-        if len(msg) > self.agg_max_size:
-            log.msg('Message too big: %d > %d' % (len(msg), self.agg_max_size), isError=1)
-            return
-
-        if self.agg_queue_size + len(msg) > self.agg_max_size:
-            # message doesn't fit into agg queue
-            if self.agg_queue_timer is not None:
-                self.agg_queue_timer.cancel()
-                self.agg_queue_timer = None
-
-            self._write(''.join(self.agg_queue))
-            self.agg_queue = []
-            self.agg_queue_size = 0
-
-        self.agg_queue.append(msg)
-        self.agg_queue_size += len(msg)
-
-        if self.agg_timeout and self.agg_queue_timer is None:
-            self.agg_queue_timer = reactor.callLater(self.agg_timeout, self.flush_queue)
-
     def flush_queue(self):
         if self.agg_queue_size > 0:
             if self.agg_queue_timer is not None:
                 if not self.agg_queue_timer.called:
                     self.agg_queue_timer.cancel()
             self.agg_queue_timer = None
-            self._write(''.join(self.agg_queue))
+            self._send_to_peer(''.join(self.agg_queue))
             self.agg_queue = []
             self.agg_queue_size = 0
 
-    def _write(self, msg):
+    # call from peer and from mavlink rssi injector only!
+    def write(self, msg):
         if self.transport is not None and self.reply_addr is not None:
             self.transport.write(msg, self.reply_addr)
+
+    def _send_to_peer(self, data):
+        if self.peer is not None:
+            self.peer.write(data)
 
     def datagramReceived(self, data, addr):
         if settings.common.debug:
@@ -88,8 +68,30 @@ class UDPProxyProtocol(DatagramProtocol):
 
         self.reply_addr = addr
 
-        if self.peer is not None:
-            self.peer.write(data)
+        # send message to local transport
+        if self.agg_max_size is None:
+            return self._send_to_peer(data)
+
+        if len(data) > self.agg_max_size:
+            log.msg('Message too big: %d > %d' % (len(data), self.agg_max_size), isError=1)
+            return
+
+        if self.agg_queue_size + len(data) > self.agg_max_size:
+            # message doesn't fit into agg queue
+            if self.agg_queue_timer is not None:
+                self.agg_queue_timer.cancel()
+                self.agg_queue_timer = None
+
+            self._send_to_peer(''.join(self.agg_queue))
+            self.agg_queue = []
+            self.agg_queue_size = 0
+
+        self.agg_queue.append(data)
+        self.agg_queue_size += len(data)
+
+        if self.agg_timeout and self.agg_queue_timer is None:
+            self.agg_queue_timer = reactor.callLater(self.agg_timeout, self.flush_queue)
+
 
     def send_rssi(self, rssi, rx_errors, rx_fec, flags):
         # Send flags as txbuf
