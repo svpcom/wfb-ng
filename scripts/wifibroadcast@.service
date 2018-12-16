@@ -5,7 +5,8 @@ ReloadPropagatedFrom=wifibroadcast.service
 
 [Service]
 Type=simple
-ExecStart=/usr/bin/wfb-server.sh %i wlan0
+EnvironmentFile=/etc/default/wifibroadcast
+ExecStart=/usr/bin/wfb-server.sh %i ${WFB_NICS}
 TimeoutStopSec=5s
 Restart=on-failure
 RestartSec=5s

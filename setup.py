@@ -70,7 +70,8 @@ setup(
     package_data={'telemetry.conf': ['master.cfg', 'site.cfg']},
     data_files = [('/usr/bin', ['wfb_tx', 'wfb_rx', 'wfb_keygen']),
                   ('/lib/systemd/system', ['scripts/wifibroadcast.service',
-                                           'scripts/wifibroadcast@.service'])],
+                                           'scripts/wifibroadcast@.service']),
+                  ('/etc/default', ['scripts/default/wifibroadcast'])],
 
     keywords="wifibroadcast",
     author="Vasily Evseenko",
