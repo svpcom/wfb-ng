@@ -52,9 +52,9 @@ deb:  all_bin env
 	./env/bin/python ./setup.py --command-packages=stdeb.command bdist_deb
 	rm -rf wifibroadcast.egg-info/ wifibroadcast-$(VERSION).tar.gz
 
-bdist: all_bin env
+bdist: all_bin
 	rm -rf dist
-	./env/bin/python ./setup.py bdist --plat-name linux-$(ARCH)
+	python ./setup.py bdist --plat-name linux-$(ARCH)
 	rm -rf wifibroadcast.egg-info/
 
 clean:
