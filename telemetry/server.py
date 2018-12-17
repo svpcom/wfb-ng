@@ -259,7 +259,7 @@ def init_mavlink(profile, wlans):
         connect = ('127.0.0.1', cfg.connect)
         listen = 0
 
-    p_in = UDPProxyProtocol(connect, agg_max_size=settings.common.radio_mtu, agg_timeout=settings.common.mavlink_agg_timeout)
+    p_in = UDPProxyProtocol(connect, agg_max_size=settings.common.radio_mtu, agg_timeout=settings.common.mavlink_agg_timeout, inject_rssi=cfg.inject_rssi)
     p_tx_l = [UDPProxyProtocol(('127.0.0.1', cfg.port_tx + i)) for i, _ in enumerate(wlans)]
     p_rx = UDPProxyProtocol()
     p_rx.peer = p_in

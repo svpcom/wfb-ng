@@ -34,7 +34,7 @@ class SendPacket(DatagramProtocol):
 
 class UDPProxyTestCase(unittest.TestCase):
     def setUp(self):
-        self.p1 = UDPProxyProtocol(agg_max_size=1446, agg_timeout=1)
+        self.p1 = UDPProxyProtocol(agg_max_size=1446, agg_timeout=1, inject_rssi=True)
         self.p2 = UDPProxyProtocol(('127.0.0.1', 14553))
         self.p1.peer = self.p2
         self.p2.peer = self.p1
@@ -77,6 +77,6 @@ class UDPProxyTestCase(unittest.TestCase):
             _data, _addr = yield p.df
             self.assertLess(time.time() - ts, 1.0)
             self.assertEqual(_addr, addr)
-            self.assertEqual(_data, '\xfd\x07\x00\x00\x00\x01\xf2m\x00\x00\x02\x00\x03\x00\x01\x01\x04\xae\x11')
+            self.assertEqual(_data, '\xfd\t\x00\x00\x00\x03\xf2m\x00\x00\x02\x00\x03\x00\x01\x01d\x00\x04\xa8\xad')
         finally:
             ep3.stopListening()

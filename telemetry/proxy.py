@@ -28,9 +28,12 @@ from telemetry.conf import settings
 class UDPProxyProtocol(DatagramProtocol):
     noisy = False
 
-    def __init__(self, addr=None, agg_max_size=None, agg_timeout=None):
+    def __init__(self, addr=None, agg_max_size=None, agg_timeout=None, inject_rssi=False):
         # use self.write to send mavlink message
-        self.mav = mavlink.MAVLink(self, srcSystem=1, srcComponent=242) # WFB
+        if inject_rssi:
+            self.mav = mavlink.MAVLink(self, srcSystem=3, srcComponent=242) # WFB
+        else:
+            self.mav = None
         self.peer = None
         self.reply_addr = addr
         self.agg_max_size = agg_max_size
@@ -94,6 +97,7 @@ class UDPProxyProtocol(DatagramProtocol):
 
 
     def send_rssi(self, rssi, rx_errors, rx_fec, flags):
-        # Send flags as txbuf
-        self.mav.radio_status_send(rssi, rssi, flags, 0, 0, rx_errors, rx_fec)
+        # Send flags as remnoise, because txbuf value is used by PX4 to throttle bandwidth
+        if self.mav is not None:
+            self.mav.radio_status_send(rssi, rssi, 100, 0, flags, rx_errors, rx_fec)
 
