@@ -65,15 +65,21 @@ extern string string_format(const char *format, ...);
 #define	IEEE80211_RADIOTAP_MCS_STBC_SHIFT 5
 
 #define MCS_KNOWN (IEEE80211_RADIOTAP_MCS_HAVE_MCS | IEEE80211_RADIOTAP_MCS_HAVE_BW | IEEE80211_RADIOTAP_MCS_HAVE_GI | IEEE80211_RADIOTAP_MCS_HAVE_STBC) // | IEEE80211_RADIOTAP_MCS_HAVE_FMT)
-#define MCS_FLAGS (IEEE80211_RADIOTAP_MCS_BW_40 | IEEE80211_RADIOTAP_MCS_SGI | (IEEE80211_RADIOTAP_MCS_STBC_1 << IEEE80211_RADIOTAP_MCS_STBC_SHIFT) ) // | IEEE80211_RADIOTAP_MCS_FMT_GF)
 
-static const uint8_t radiotap_header[]  __attribute__((unused)) = {
+// Default is MCS#1 -- QPSK 1/2 40MHz SGI -- 30 Mbit/s
+// MCS_FLAGS = (IEEE80211_RADIOTAP_MCS_BW_40 | IEEE80211_RADIOTAP_MCS_SGI | (IEEE80211_RADIOTAP_MCS_STBC_1 << IEEE80211_RADIOTAP_MCS_STBC_SHIFT) ) // | IEEE80211_RADIOTAP_MCS_FMT_GF)
+
+static uint8_t radiotap_header[]  __attribute__((unused)) = {
     0x00, 0x00, // <-- radiotap version
     0x0d, 0x00, // <- radiotap header length
     0x00, 0x80, 0x08, 0x00, // <-- radiotap present flags:  RADIOTAP_TX_FLAGS + RADIOTAP_MCS
     0x08, 0x00,  // RADIOTAP_F_TX_NOACK
-    MCS_KNOWN , MCS_FLAGS, 0x01  // MCS default is #1 -- QPSK 1/2 40MHz SGI -- 30 Mbit/s
+    MCS_KNOWN , 0x00, 0x00 // bitmap, flags, mcs_index
 };
+
+// offset of MCS_FLAGS and MCS index
+#define MCS_FLAGS_OFF 11
+#define MCS_IDX_OFF 12
 
 //the last byte of the mac address is recycled as a port number
 #define SRC_MAC_LASTBYTE 15

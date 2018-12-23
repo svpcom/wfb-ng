@@ -282,9 +282,15 @@ int main(int argc, char * const *argv)
     int opt;
     uint8_t k=8, n=12, radio_port=1;
     int udp_port=5600;
+
+    int bandwidth = 40;
+    int short_gi = 1;
+    int stbc = 1;
+    int mcs_index = 1;
+
     string keypair = "tx.key";
 
-    while ((opt = getopt(argc, argv, "K:k:n:u:r:p:")) != -1) {
+    while ((opt = getopt(argc, argv, "K:k:n:u:r:p:B:G:S:M:")) != -1) {
         switch (opt) {
         case 'K':
             keypair = optarg;
@@ -301,11 +307,24 @@ int main(int argc, char * const *argv)
         case 'p':
             radio_port = atoi(optarg);
             break;
+        case 'B':
+            bandwidth = atoi(optarg);
+            break;
+        case 'G':
+            short_gi = (optarg[0] == 's' || optarg[0] == 'S') ? 1 : 0;
+            break;
+        case 'S':
+            stbc = atoi(optarg);
+            break;
+        case 'M':
+            mcs_index = atoi(optarg);
+            break;
         default: /* '?' */
         show_usage:
-            fprintf(stderr, "Usage: %s [-K tx_key] [-k RS_K] [-n RS_N] [-u udp_port] [-p radio_port] interface1 [interface2] ...\n",
+            fprintf(stderr, "Usage: %s [-K tx_key] [-k RS_K] [-n RS_N] [-u udp_port] [-p radio_port] [-B bandwidth] [-G guard_interval] [-S stbc] [-M mcs_index] interface1 [interface2] ...\n",
                     argv[0]);
-            fprintf(stderr, "Default: K='%s', k=%d, n=%d, udp_port=%d, radio_port=%d\n", keypair.c_str(), k, n, udp_port, radio_port);
+            fprintf(stderr, "Default: K='%s', k=%d, n=%d, udp_port=%d, radio_port=%d bandwidth=%d guard_interval=%s stbc=%d mcs_index=%d\n",
+                    keypair.c_str(), k, n, udp_port, radio_port, bandwidth, short_gi ? "short" : "long", stbc, mcs_index);
             fprintf(stderr, "Radio MTU: %lu\n", (unsigned long)MAX_PAYLOAD_SIZE);
             fprintf(stderr, "WFB version " WFB_VERSION "\n");
             exit(1);
@@ -316,6 +335,46 @@ int main(int argc, char * const *argv)
         goto show_usage;
     }
 
+    // Set flags in radiotap header
+    {
+        uint8_t flags = 0;
+        switch(bandwidth) {
+        case 20:
+            flags |= IEEE80211_RADIOTAP_MCS_BW_20;
+            break;
+        case 40:
+            flags |= IEEE80211_RADIOTAP_MCS_BW_40;
+            break;
+        default:
+            fprintf(stderr, "Unsupported bandwidth: %d\n", bandwidth);
+            exit(1);
+        }
+
+        if(short_gi)
+        {
+            flags |= IEEE80211_RADIOTAP_MCS_SGI;
+        }
+
+        switch(stbc) {
+        case 0:
+            break;
+        case 1:
+            flags |= (IEEE80211_RADIOTAP_MCS_STBC_1 << IEEE80211_RADIOTAP_MCS_STBC_SHIFT);
+            break;
+        case 2:
+            flags |= (IEEE80211_RADIOTAP_MCS_STBC_2 << IEEE80211_RADIOTAP_MCS_STBC_SHIFT);
+            break;
+        case 3:
+            flags |= (IEEE80211_RADIOTAP_MCS_STBC_3 << IEEE80211_RADIOTAP_MCS_STBC_SHIFT);
+            break;
+        default:
+            fprintf(stderr, "Unsupported STBC type: %d\n", stbc);
+            exit(1);
+        }
+
+        radiotap_header[MCS_FLAGS_OFF] = flags;
+        radiotap_header[MCS_IDX_OFF] = mcs_index;
+    }
     try
     {
         vector<int> tx_fd;
