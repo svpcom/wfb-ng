@@ -1,35 +1,41 @@
 Wifibroadcast
 =============
 
-This is transmitter and receiver of UDP packets using raw WiFi radio inspired by  https://befinitiv.wordpress.com/wifibroadcast-analog-like-transmission-of-live-video-data/ . The main difference is how the data are encapsulated into ieee80211 frames. The original wifibroadcast accepts stream of bytes and split them into packets without attention to x264 stream elements. This can emit up to 100ms latencies.  In my case wifibroadcast accepts UDP stream (for example x264 encapsulated into RTP packets). This provides low latency streaming.
+This is a transmitter and receiver of **UDP packets** using **raw WiFi radio**
 
-Other features:
----------------
- - Bidirectional mavlink telemetry. You can use it for mavlink up/down and video down link.
+
+Main features:
+--------------
+ - 1:1 map RTP to IEEE80211 packets for minimum latency (doesn't serialize to byte steam)
+ - Smart FEC support (immediately yeild packet to video decoder if FEC pipeline without gaps)
+ - [Bidirectional mavlink telemetry](https://github.com/svpcom/wifibroadcast/wiki/Setup-HOWTO). You can use it for mavlink up/down and video down link.
  - Automatic TX diversity (select TX card based on RX RSSI)
- - Stream encryption and authentication using libsodium.
+ - Stream encryption and authentication ([libsodium](https://download.libsodium.org/doc/))
  - Distributed operation. It can gather data from cards on different hosts. So you don't limited to bandwidth of single USB bus.
- - Aggreagation of mavlink packets. Don't send wifi packet for every mavlink packet.
- - Enhanced OSD https://github.com/svpcom/wifibroadcast_osd for raspberry pi (consume 10% CPU on PI Zero)
+ - Aggreagation of mavlink packets. Doesn't send wifi packet for every mavlink packet.
+ - Enhanced [OSD](https://github.com/svpcom/wifibroadcast_osd) for Raspberry PI (consume 10% CPU on PI Zero)
+   Compatible with any screen resolution. Supports aspect correction for PAL to HD scaling.
+   
+## FAQ
+Q: What is a difference from original wifibroadcast?
 
+A: Original version of wifibroadcast use a byte-stream as input and splits it to packets of fixed size (1024 by default). If radio packet was lost and this is not corrected by FEC you'll got a hole at random (unexpected) place of stream. This is especially bad if data protocol is not resistent to (was not desired for) such random erasures. So i've rewrite it to use UDP as data source and pack one source UDP packet into one radio packet. Radio packets now have variable size depends on payload size. This is reduces a video latency a lot.
 
-Theory:
--------
+Q: What type of data can be transmitted using wifibroadcast?
 
-Wifibroadcast puts the wifi cards into monitor mode. This mode allows to send and receive arbitrary packets without association.
-This way a true unidirectional connection is established which mimics the advantageous properties of an analog link. Those are:
+A: Any UDP with packet size <= 1466. For example x264 inside RTP or Mavlink.
 
- - The transmitter sends its data regardless of any associated receivers. Thus there is no risk of sudden video stall due to the loss of association
+Q: What are transmission guarancies?
 
- - The receiver receives video as long as it is in range of the transmitter. If it gets slowly out of range the video quality degrades but does not stall.
+A: Wifibrodcast use FEC (forward error correction) which can recover 4 lost packets from 12 packets block with default settings. You can tune it (both TX and RX simultaniuosly!) to fit your needs.
 
- - The traditional scheme “single broadcaster – multiple receivers” works out of the box. If bystanders want to watch the video stream with their devices they just have to “switch to the right channel”
+Q: Is only Raspberry PI supported?
 
- - Wifibroadcast allows you to use several low cost receivers in parallel and combine their data to increase probability of correct data reception. This so-called software diversity allows you to use identical receivers to improve relieability as well as complementary receivers (think of one receiver with an omnidirectional antenna covering 360° and several directional antennas for high distance all working in parallel)
+A: Wifibroadcast is not tied to any GPU - it operates with UDP packets. But to get RTP stream you need a video encoder (with encode raw data from camera to x264 stream). In my case RPI is only used for video encoding (becase RPI Zero is too slow to do anything else) and all other tasks (including wifibroadcast) are done by other board (NanoPI NEO2).
 
- - Wifibroadcast uses Forward Error Correction to achieve a high reliability at low bandwidth requirements. It is able to repair lost or corrupted packets at the receiver.
-
-
+## Theory
+Wifibroadcast puts the wifi cards into monitor mode. This mode allows to send and receive arbitrary packets without association and waiting for ACK packets.
+[Analysis of Injection Capabilities and Media Access of IEEE 802.11 Hardware in Monitor Mode](https://github.com/svpcom/wifibroadcast/blob/master/patches/Analysis%20of%20Injection%20Capabilities%20and%20Media%20Access%20of%20IEEE%20802.11%20Hardware%20in%20Monitor%20Mode.pdf)
 
 Sample usage chain:
 -------------------
