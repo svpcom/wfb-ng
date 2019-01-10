@@ -135,7 +135,7 @@ def init(stdscr, profile):
         i.scrollok(1)
 
     if cfg_video.stats_port is not None:
-        reactor.connectTCP('127.0.0.1', cfg_video.stats_port, AntennaStatClientFactory(status_win1, cfg_video.listen is not None))
+        reactor.connectTCP('127.0.0.1', cfg_video.stats_port, AntennaStatClientFactory(status_win1, cfg_video.peer.startswith('listen:')))
     else:
         status_win1.addstr(0, 0, '[statistics disabled]', curses.A_REVERSE)
         status_win1.refresh()

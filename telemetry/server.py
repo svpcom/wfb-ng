@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
 
-# Copyright (C) 2018 Vasily Evseenko <svpcom@p2ptech.org>
+# Copyright (C) 2018, 2019 Vasily Evseenko <svpcom@p2ptech.org>
 
 #
 #   This program is free software; you can redistribute it and/or modify
@@ -22,10 +22,11 @@ import sys
 import time
 import json
 import os
+import re
 
 from itertools import groupby
 from twisted.python import log
-from twisted.internet import reactor, defer
+from twisted.internet import reactor, defer, utils
 from twisted.internet.protocol import ProcessProtocol, DatagramProtocol, Protocol, Factory
 from twisted.protocols.basic import LineReceiver
 from twisted.internet.error import ReactorNotRunning
@@ -33,6 +34,36 @@ from twisted.internet.error import ReactorNotRunning
 from telemetry.common import abort_on_crash, exit_status
 from telemetry.proxy import UDPProxyProtocol
 from telemetry.conf import settings
+
+connect_re = re.compile(r'^connect://(?P<addr>[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+):(?P<port>[0-9]+)$', re.IGNORECASE)
+listen_re = re.compile(r'^listen://(?P<addr>[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+):(?P<port>[0-9]+)$', re.IGNORECASE)
+
+
+class ExecError(Exception):
+    pass
+
+
+def call_and_check_rc(cmd, *args):
+    def _check_rc((stdout, stderr, rc)):
+        if rc != 0:
+            err = ExecError('RC %d: %s %s' % (rc, cmd, ' '.join(args)))
+            err.stdout = stdout.strip()
+            err.stderr = stderr.strip()
+            raise err
+
+        log.msg('# %s' % (' '.join((cmd,) + args),))
+        if stdout:
+            log.msg(stdout)
+
+    def _got_signal(f):
+        f.trap(tuple)
+        stdout, stderr, signum = f.value
+        err = ExecError('Got signal %d: %s %s' % (signum, cmd, ' '.join(args)))
+        err.stdout = stdout.strip()
+        err.stderr = stderr.strip()
+        raise err
+
+    return utils.getProcessOutputAndValue(cmd, args, env=os.environ).addCallbacks(_check_rc, _got_signal)
 
 
 class BadTelemetry(Exception):
@@ -242,10 +273,38 @@ class TXProtocol(ProcessProtocol):
         return df.addCallback(lambda _: self.df)
 
 
+@defer.inlineCallbacks
+def init_wlans(profile, wlans):
+    max_bw = max(getattr(getattr(settings, '%s_mavlink' % profile), 'bandwidth'),
+                 getattr(getattr(settings, '%s_video' % profile), 'bandwidth'))
+
+    if max_bw == 20:
+        ht_mode = 'HT20'
+    elif max_bw == 40:
+        ht_mode = 'HT40+'
+    else:
+        raise Exception('Unsupported bandwith %d MHz' % (max_bw,))
+
+    try:
+        yield call_and_check_rc('iw', 'reg', 'set', settings.common.wifi_region)
+        for wlan in wlans:
+            yield call_and_check_rc('ifconfig', wlan, 'down')
+            yield call_and_check_rc('iw', 'dev', wlan, 'set', 'monitor', 'otherbss')
+            yield call_and_check_rc('ifconfig', wlan, 'up')
+            yield call_and_check_rc('iw', 'dev', wlan, 'set', 'channel', str(settings.common.wifi_channel), ht_mode)
+    except ExecError as v:
+        if v.stdout:
+            log.msg(v.stdout, isError=1)
+        if v.stderr:
+            log.msg(v.stderr, isError=1)
+        raise
+
 def init(profile, wlans):
-    return defer.gatherResults([defer.maybeDeferred(init_mavlink, profile, wlans),
-                                defer.maybeDeferred(init_video, profile, wlans)])\
-                .addErrback(lambda f: f.trap(defer.FirstError) and f.value.subFailure)
+    def _init_services(_):
+        return defer.gatherResults([defer.maybeDeferred(init_mavlink, profile, wlans),
+                                    defer.maybeDeferred(init_video, profile, wlans)])\
+                    .addErrback(lambda f: f.trap(defer.FirstError) and f.value.subFailure)
+    return init_wlans(profile, wlans).addCallback(_init_services)
 
 
 def init_mavlink(profile, wlans):
@@ -260,19 +319,27 @@ def init_mavlink(profile, wlans):
                cfg.stream_tx, cfg.port_tx, os.path.join(settings.path.conf_dir, cfg.keypair),
                cfg.bandwidth, "short" if cfg.short_gi else "long", cfg.stbc, cfg.mcs_index)).split() + wlans
 
-    if cfg.listen:
+    if connect_re.match(cfg.peer):
+        m = connect_re.match(cfg.peer)
+        connect = m.group('addr'), int(m.group('port'))
+        listen = None
+        log.msg('Connect telem stream %d(RX), %d(TX) to %s:%d' % (cfg.stream_rx, cfg.stream_tx, connect[0], connect[1]))
+    elif listen_re.match(cfg.peer):
+        m = listen_re.match(cfg.peer)
+        listen = m.group('addr'), int(m.group('port'))
         connect = None
-        listen = cfg.listen
+        log.msg('Listen for telem stream %d(RX), %d(TX) on %s:%d' % (cfg.stream_rx, cfg.stream_tx, listen[0], listen[1]))
     else:
-        connect = ('127.0.0.1', cfg.connect)
-        listen = 0
+        raise Exception('Unsupport peer address: %s' % (cfg.peer,))
 
+    # The first argument is not None only if we initiate mavlink connection
     p_in = UDPProxyProtocol(connect, agg_max_size=settings.common.radio_mtu,
                             agg_timeout=settings.common.mavlink_agg_timeout, inject_rssi=cfg.inject_rssi)
     p_tx_l = [UDPProxyProtocol(('127.0.0.1', cfg.port_tx + i)) for i, _ in enumerate(wlans)]
     p_rx = UDPProxyProtocol()
     p_rx.peer = p_in
-    sockets = [ reactor.listenUDP(listen, p_in), reactor.listenUDP(cfg.port_rx, p_rx) ]
+    sockets = [ reactor.listenUDP(listen[1] if listen else 0, p_in),
+                reactor.listenUDP(cfg.port_rx, p_rx) ]
     sockets += [ reactor.listenUDP(0, p_tx) for p_tx in p_tx_l ]
 
     log.msg('Telem RX: %s' % (' '.join(cmd_rx),))
@@ -296,33 +363,44 @@ def init_mavlink(profile, wlans):
 def init_video(profile, wlans):
     cfg = getattr(settings, '%s_video' % (profile,))
 
-    if cfg.listen:
+    if listen_re.match(cfg.peer):
+        m = listen_re.match(cfg.peer)
+        listen = m.group('addr'), int(m.group('port'))
+        log.msg('Listen for video stream %d on %s:%d' % (cfg.stream, listen[0], listen[1]))
+
         # We don't use TX diversity for video streaming due to only one transmitter on the vehichle
         cmd = ('%s -p %d -u %d -K %s -B %d -G %s -S %d -M %d %s' % \
                (os.path.join(settings.path.bin_dir, 'wfb_tx'), cfg.stream,
-                cfg.listen, os.path.join(settings.path.conf_dir, cfg.keypair),
+                listen[1], os.path.join(settings.path.conf_dir, cfg.keypair),
                 cfg.bandwidth, "short" if cfg.short_gi else "long", cfg.stbc, cfg.mcs_index,
                 wlans[0])).split()
 
         df = TXProtocol(cmd, 'video tx').start()
-    else:
+    elif connect_re.match(cfg.peer):
+        m = connect_re.match(cfg.peer)
+        connect = m.group('addr'), int(m.group('port'))
+        log.msg('Send video stream %d to %s:%d' % (cfg.stream, connect[0], connect[1]))
+
         ant_f = AntennaFactory(None, None)
         if cfg.stats_port:
             reactor.listenTCP(cfg.stats_port, ant_f)
 
-        cmd = ('%s -p %d -u %d -K %s' % \
-               (os.path.join(settings.path.bin_dir, 'wfb_rx'), cfg.stream, cfg.connect,
+        cmd = ('%s -p %d -c %s -u %d -K %s' % \
+               (os.path.join(settings.path.bin_dir, 'wfb_rx'),
+                cfg.stream, connect[0], connect[1],
                 os.path.join(settings.path.conf_dir, cfg.keypair))).split() + wlans
 
         df = RXProtocol(ant_f, cmd, 'video rx').start()
+    else:
+        raise Exception('Unsupport peer address: %s' % (cfg.peer,))
 
     log.msg('Video: %s' % (' '.join(cmd),))
     return df
 
 def main():
     log.startLogging(sys.stdout)
-
-    reactor.callWhenRunning(lambda: defer.maybeDeferred(init, sys.argv[1], sys.argv[2:])\
+    profile, wlans = sys.argv[1], sys.argv[2:]
+    reactor.callWhenRunning(lambda: defer.maybeDeferred(init, profile, wlans)\
                             .addErrback(abort_on_crash))
     reactor.run()
 

@@ -36,7 +36,7 @@ A: Wifibroadcast is not tied to any GPU - it operates with UDP packets. But to g
 ## Theory
 Wifibroadcast puts the wifi cards into monitor mode. This mode allows to send and receive arbitrary packets without association and waiting for ACK packets.
 [Analysis of Injection Capabilities and Media Access of IEEE 802.11 Hardware in Monitor Mode](https://github.com/svpcom/wifibroadcast/blob/master/patches/Analysis%20of%20Injection%20Capabilities%20and%20Media%20Access%20of%20IEEE%20802.11%20Hardware%20in%20Monitor%20Mode.pdf)
-
+[802.11 timings](https://github.com/ewa/802.11-data)
 Sample usage chain:
 -------------------
 ```
