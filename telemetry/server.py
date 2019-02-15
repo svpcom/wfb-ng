@@ -314,10 +314,10 @@ def init_mavlink(profile, wlans):
               (os.path.join(settings.path.bin_dir, 'wfb_rx'), cfg.stream_rx,
                cfg.port_rx, os.path.join(settings.path.conf_dir, cfg.keypair))).split() + wlans
 
-    cmd_tx = ('%s -p %d -u %d -K %s -B %d -G %s -S %d -M %d' % \
+    cmd_tx = ('%s -p %d -u %d -K %s -B %d -G %s -S %d -L %d -M %d' % \
               (os.path.join(settings.path.bin_dir, 'wfb_tx'),
                cfg.stream_tx, cfg.port_tx, os.path.join(settings.path.conf_dir, cfg.keypair),
-               cfg.bandwidth, "short" if cfg.short_gi else "long", cfg.stbc, cfg.mcs_index)).split() + wlans
+               cfg.bandwidth, "short" if cfg.short_gi else "long", cfg.stbc, cfg.ldpc, cfg.mcs_index)).split() + wlans
 
     if connect_re.match(cfg.peer):
         m = connect_re.match(cfg.peer)
@@ -369,10 +369,10 @@ def init_video(profile, wlans):
         log.msg('Listen for video stream %d on %s:%d' % (cfg.stream, listen[0], listen[1]))
 
         # We don't use TX diversity for video streaming due to only one transmitter on the vehichle
-        cmd = ('%s -p %d -u %d -K %s -B %d -G %s -S %d -M %d %s' % \
+        cmd = ('%s -p %d -u %d -K %s -B %d -G %s -S %d -L %d -M %d %s' % \
                (os.path.join(settings.path.bin_dir, 'wfb_tx'), cfg.stream,
                 listen[1], os.path.join(settings.path.conf_dir, cfg.keypair),
-                cfg.bandwidth, "short" if cfg.short_gi else "long", cfg.stbc, cfg.mcs_index,
+                cfg.bandwidth, "short" if cfg.short_gi else "long", cfg.stbc, cfg.ldpc, cfg.mcs_index,
                 wlans[0])).split()
 
         df = TXProtocol(cmd, 'video tx').start()

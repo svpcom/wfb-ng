@@ -1,6 +1,6 @@
 // -*- C++ -*-
 //
-// Copyright (C) 2017, 2018 Vasily Evseenko <svpcom@p2ptech.org>
+// Copyright (C) 2017, 2018, 2019 Vasily Evseenko <svpcom@p2ptech.org>
 
 /*
  *   This program is free software; you can redistribute it and/or modify
@@ -283,14 +283,15 @@ int main(int argc, char * const *argv)
     uint8_t k=8, n=12, radio_port=1;
     int udp_port=5600;
 
-    int bandwidth = 40;
-    int short_gi = 1;
-    int stbc = 1;
+    int bandwidth = 20;
+    int short_gi = 0;
+    int stbc = 0;
+    int ldpc = 0;
     int mcs_index = 1;
 
     string keypair = "tx.key";
 
-    while ((opt = getopt(argc, argv, "K:k:n:u:r:p:B:G:S:M:")) != -1) {
+    while ((opt = getopt(argc, argv, "K:k:n:u:r:p:B:G:S:L:M:")) != -1) {
         switch (opt) {
         case 'K':
             keypair = optarg;
@@ -316,15 +317,18 @@ int main(int argc, char * const *argv)
         case 'S':
             stbc = atoi(optarg);
             break;
+        case 'L':
+            ldpc = atoi(optarg);
+            break;
         case 'M':
             mcs_index = atoi(optarg);
             break;
         default: /* '?' */
         show_usage:
-            fprintf(stderr, "Usage: %s [-K tx_key] [-k RS_K] [-n RS_N] [-u udp_port] [-p radio_port] [-B bandwidth] [-G guard_interval] [-S stbc] [-M mcs_index] interface1 [interface2] ...\n",
+            fprintf(stderr, "Usage: %s [-K tx_key] [-k RS_K] [-n RS_N] [-u udp_port] [-p radio_port] [-B bandwidth] [-G guard_interval] [-S stbc] [-L ldpc] [-M mcs_index] interface1 [interface2] ...\n",
                     argv[0]);
-            fprintf(stderr, "Default: K='%s', k=%d, n=%d, udp_port=%d, radio_port=%d bandwidth=%d guard_interval=%s stbc=%d mcs_index=%d\n",
-                    keypair.c_str(), k, n, udp_port, radio_port, bandwidth, short_gi ? "short" : "long", stbc, mcs_index);
+            fprintf(stderr, "Default: K='%s', k=%d, n=%d, udp_port=%d, radio_port=%d bandwidth=%d guard_interval=%s stbc=%d ldpc=%d mcs_index=%d\n",
+                    keypair.c_str(), k, n, udp_port, radio_port, bandwidth, short_gi ? "short" : "long", stbc, ldpc, mcs_index);
             fprintf(stderr, "Radio MTU: %lu\n", (unsigned long)MAX_PAYLOAD_SIZE);
             fprintf(stderr, "WFB version " WFB_VERSION "\n");
             exit(1);
@@ -370,6 +374,11 @@ int main(int argc, char * const *argv)
         default:
             fprintf(stderr, "Unsupported STBC type: %d\n", stbc);
             exit(1);
+        }
+
+        if(ldpc)
+        {
+            flags |= IEEE80211_RADIOTAP_MCS_FEC_LDPC;
         }
 
         radiotap_header[MCS_FLAGS_OFF] = flags;
