@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
 
-# Copyright (C) 2018 Vasily Evseenko <svpcom@p2ptech.org>
+# Copyright (C) 2018, 2019 Vasily Evseenko <svpcom@p2ptech.org>
 
 #
 #   This program is free software; you can redistribute it and/or modify
@@ -114,23 +114,29 @@ class AntennaStatClientFactory(ReconnectingClientFactory):
 def init(stdscr, profile):
     cfg_video = getattr(settings, '%s_video' % (profile,))
     cfg_telem = getattr(settings, '%s_mavlink' % (profile,))
+    cfg_tunnel = getattr(settings, '%s_tunnel' % (profile,))
 
     height, width = stdscr.getmaxyx()
     height -= 1
-    w1h = height / 2
+    w1h = height / 3
     w1w = width
-    w2h = height - w1h
+    w2h = height / 3
     w2w = width
+    w3h = height - w1h - w2h
+    w3w = width
     status_win1 = stdscr.subpad(w1h - 2, w1w - 2, 1, 1)
     status_win2 = stdscr.subpad(w2h - 2, w2w - 2, w1h + 1, 1)
+    status_win3 = stdscr.subpad(w3h - 2, w3w - 2, w1h + w2h + 1, 1)
 
     curses.textpad.rectangle(stdscr, 0, 0, w1h - 1, w1w - 1)
     curses.textpad.rectangle(stdscr, w1h, 0, w1h + w2h - 1, w2w - 1)
+    curses.textpad.rectangle(stdscr, w1h + w2h, 0, w1h + w2h + w3h - 1, w3w - 1)
     stdscr.addstr(0, 3, '[video]')
     stdscr.addstr(w1h, 3, '[telem]')
+    stdscr.addstr(w1h + w2h, 3, '[tunnel]')
     stdscr.refresh()
 
-    for i in (status_win1, status_win2):
+    for i in (status_win1, status_win2, status_win3):
         i.idlok(1)
         i.scrollok(1)
 
@@ -145,6 +151,12 @@ def init(stdscr, profile):
     else:
         status_win2.addstr(0, 0, '[statistics disabled]', curses.A_REVERSE)
         status_win2.refresh()
+
+    if cfg_tunnel.stats_port is not None:
+        reactor.connectTCP('127.0.0.1', cfg_tunnel.stats_port, AntennaStatClientFactory(status_win3, True))
+    else:
+        status_win3.addstr(0, 0, '[statistics disabled]', curses.A_REVERSE)
+        status_win3.refresh()
 
 
 def main():

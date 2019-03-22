@@ -33,6 +33,7 @@ from twisted.internet.error import ReactorNotRunning
 
 from telemetry.common import abort_on_crash, exit_status
 from telemetry.proxy import UDPProxyProtocol
+from telemetry.tuntap import TUNTAPProtocol, TUNTAPTransport
 from telemetry.conf import settings
 
 connect_re = re.compile(r'^connect://(?P<addr>[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+):(?P<port>[0-9]+)$', re.IGNORECASE)
@@ -302,7 +303,8 @@ def init_wlans(profile, wlans):
 def init(profile, wlans):
     def _init_services(_):
         return defer.gatherResults([defer.maybeDeferred(init_mavlink, profile, wlans),
-                                    defer.maybeDeferred(init_video, profile, wlans)])\
+                                    defer.maybeDeferred(init_video, profile, wlans),
+                                    defer.maybeDeferred(init_tunnel, profile, wlans)])\
                     .addErrback(lambda f: f.trap(defer.FirstError) and f.value.subFailure)
     return init_wlans(profile, wlans).addCallback(_init_services)
 
@@ -396,6 +398,47 @@ def init_video(profile, wlans):
 
     log.msg('Video: %s' % (' '.join(cmd),))
     return df
+
+def init_tunnel(profile, wlans):
+    cfg = getattr(settings, '%s_tunnel' % (profile,))
+
+    cmd_rx = ('%s -p %d -u %d -K %s -k 1 -n 2' % \
+              (os.path.join(settings.path.bin_dir, 'wfb_rx'), cfg.stream_rx,
+               cfg.port_rx, os.path.join(settings.path.conf_dir, cfg.keypair))).split() + wlans
+
+    cmd_tx = ('%s -p %d -u %d -K %s -B %d -G %s -S %d -L %d -M %d -k 1 -n 2' % \
+              (os.path.join(settings.path.bin_dir, 'wfb_tx'),
+               cfg.stream_tx, cfg.port_tx, os.path.join(settings.path.conf_dir, cfg.keypair),
+               cfg.bandwidth, "short" if cfg.short_gi else "long", cfg.stbc, cfg.ldpc, cfg.mcs_index)).split() + wlans
+
+    p_in = TUNTAPProtocol()
+    p_tx_l = [UDPProxyProtocol(('127.0.0.1', cfg.port_tx + i)) for i, _ in enumerate(wlans)]
+    p_rx = UDPProxyProtocol()
+    p_rx.peer = p_in
+
+    tun_ep = TUNTAPTransport(reactor, p_in, cfg.ifname, cfg.ifaddr, mtu=settings.common.radio_mtu)
+    sockets = [ reactor.listenUDP(cfg.port_rx, p_rx) ]
+    sockets += [ reactor.listenUDP(0, p_tx) for p_tx in p_tx_l ]
+
+    log.msg('Tunnel RX: %s' % (' '.join(cmd_rx),))
+    log.msg('Tunnel TX: %s' % (' '.join(cmd_tx),))
+
+    ant_f = AntennaFactory(p_in, p_tx_l)
+
+    if cfg.stats_port:
+        reactor.listenTCP(cfg.stats_port, ant_f)
+
+    dl = [RXProtocol(ant_f, cmd_rx, 'tunnel rx').start(),
+          TXProtocol(cmd_tx, 'tunnel tx').start()]
+
+    def _cleanup(x):
+        tun_ep.loseConnection()
+        for s in sockets:
+            s.stopListening()
+        return x
+
+    return defer.gatherResults(dl, consumeErrors=True).addBoth(_cleanup)\
+                                                      .addErrback(lambda f: f.trap(defer.FirstError) and f.value.subFailure)
 
 def main():
     log.startLogging(sys.stdout)
