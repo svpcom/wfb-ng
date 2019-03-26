@@ -1,8 +1,35 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
 
+# Copyright (C) 2018, 2019 Vasily Evseenko <svpcom@p2ptech.org>
+
+#
+#   This program is free software; you can redistribute it and/or modify
+#   it under the terms of the GNU General Public License as published by
+#   the Free Software Foundation; version 3.
+#
+#   This program is distributed in the hope that it will be useful,
+#   but WITHOUT ANY WARRANTY; without even the implied warranty of
+#   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+#   GNU General Public License for more details.
+#
+#   You should have received a copy of the GNU General Public License along
+#   with this program; if not, write to the Free Software Foundation, Inc.,
+#   51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
+#
+
+from __future__ import absolute_import
+from __future__ import unicode_literals
+from __future__ import print_function
+from __future__ import division
+
+from future import standard_library
+standard_library.install_aliases()
+
+from builtins import *
+
 import os
-import mavlink
+from . import mavlink
 import fcntl
 import struct
 
@@ -20,7 +47,7 @@ class TUNTAPTransport(abstract.FileDescriptor):
     TUNSETIFF = 0x400454ca
     IFF_NO_PI = 0x1000
 
-    def __init__(self, reactor, protocol, name, addr, dev='/dev/net/tun', mtu=1400, mode=TUN):
+    def __init__(self, reactor, protocol, name, addr, dev=b'/dev/net/tun', mtu=1400, mode=TUN):
         abstract.FileDescriptor.__init__(self, reactor)
         self.queue = deque()
         self.mtu = mtu
@@ -30,7 +57,7 @@ class TUNTAPTransport(abstract.FileDescriptor):
         try:
             # We don't need packet info
             mode |= self.IFF_NO_PI
-            fcntl.ioctl(self.fd, self.TUNSETIFF, struct.pack('16sH', name, mode))
+            fcntl.ioctl(self.fd, self.TUNSETIFF, struct.pack('16sH', bytes(name, 'ascii'), mode))
             with closing(IPRoute()) as ip:
                 ifidx = ip.link_lookup(ifname=name)[0]
                 _addr, _mask = addr.split('/')
@@ -96,8 +123,8 @@ class TUNTAPTransport(abstract.FileDescriptor):
         return len(self.queue) > 1000
 
     def write(self, data):
-        if isinstance(data, unicode): # no, really, I mean it
-            raise TypeError("Data must not be unicode")
+        if not isinstance(data, (bytes, type(None))): # no, really, I mean it
+            raise TypeError("Only binary strings are supported")
 
         if not self.connected or self._writeDisconnected:
             return
@@ -129,7 +156,7 @@ class TUNTAPProtocol(Protocol):
 
     def send_keepalive(self):
         if self.peer is not None:
-            self.peer.write('')
+            self.peer.write(b'')
 
     def dataReceived(self, data):
         self.lc.reset()

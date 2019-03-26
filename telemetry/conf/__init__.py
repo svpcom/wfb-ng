@@ -1,6 +1,16 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
 
+from __future__ import print_function
+from __future__ import unicode_literals
+from __future__ import division
+from __future__ import absolute_import
+
+from future import standard_library
+standard_library.install_aliases()
+
+from builtins import *
+
 import os
 import sys
 from telemetry import config_parser
@@ -14,7 +24,7 @@ def _parse_config(telemetry_cfg=None):
 
 try:
     settings, cfg_files = _parse_config()
-except Exception, v:
-    print >>sys.stderr, 'ERROR: Unable to parse config: %s' % (v,)
+except Exception as v:
+    print('ERROR: Unable to parse config: %s' % (v,), file=sys.stderr)
     _cfg_files = [ 'master.cfg', 'site.cfg' ]
     settings, cfg_files = _parse_config()

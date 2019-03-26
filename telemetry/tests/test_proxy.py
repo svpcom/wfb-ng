@@ -1,6 +1,17 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
 
+from __future__ import unicode_literals
+from __future__ import print_function
+from __future__ import division
+from __future__ import absolute_import
+
+from future import standard_library
+standard_library.install_aliases()
+
+from builtins import *
+from builtins import range
+
 import time
 from twisted.python import log
 from twisted.trial import unittest
@@ -50,7 +61,7 @@ class UDPProxyTestCase(unittest.TestCase):
     @defer.inlineCallbacks
     def test_proxy(self):
         addr = ('127.0.0.1', 14551)
-        p = SendPacket('test', addr, 10)
+        p = SendPacket(b'test', addr, 10)
         ep3 = reactor.listenUDP(9999, p)
         ep4 = reactor.listenUDP(14553, Echo())
         try:
@@ -58,7 +69,7 @@ class UDPProxyTestCase(unittest.TestCase):
             _data, _addr = yield p.df
             self.assertGreater(time.time() - ts, 1.0)
             self.assertEqual(_addr, addr)
-            self.assertEqual(_data, 'test' * 10)
+            self.assertEqual(_data, b'test' * 10)
         finally:
             ep4.stopListening()
             ep3.stopListening()
@@ -66,7 +77,7 @@ class UDPProxyTestCase(unittest.TestCase):
     @defer.inlineCallbacks
     def test_rssi_injection(self):
         addr = ('127.0.0.1', 14551)
-        p = SendPacket('test', addr)
+        p = SendPacket(b'test', addr)
 
         ep3 = reactor.listenUDP(9999, p)
         yield df_sleep(0.1)
@@ -77,6 +88,6 @@ class UDPProxyTestCase(unittest.TestCase):
             _data, _addr = yield p.df
             self.assertLess(time.time() - ts, 1.0)
             self.assertEqual(_addr, addr)
-            self.assertEqual(_data, '\xfd\t\x00\x00\x00\x03\xf2m\x00\x00\x02\x00\x03\x00\x01\x01d\x00\x04\xa8\xad')
+            self.assertEqual(_data, b'\xfd\t\x00\x00\x00\x03\xf2m\x00\x00\x02\x00\x03\x00\x01\x01d\x00\x04\xa8\xad')
         finally:
             ep3.stopListening()

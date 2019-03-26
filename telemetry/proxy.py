@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
 
-# Copyright (C) 2018 Vasily Evseenko <svpcom@p2ptech.org>
+# Copyright (C) 2018, 2019 Vasily Evseenko <svpcom@p2ptech.org>
 
 #
 #   This program is free software; you can redistribute it and/or modify
@@ -18,7 +18,17 @@
 #   51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
 #
 
-import mavlink
+from __future__ import absolute_import
+from __future__ import unicode_literals
+from __future__ import print_function
+from __future__ import division
+
+from future import standard_library
+standard_library.install_aliases()
+
+from builtins import *
+
+from . import mavlink
 from twisted.python import log
 from twisted.internet import reactor, defer
 from twisted.internet.protocol import DatagramProtocol
@@ -52,7 +62,7 @@ class UDPProxyProtocol(DatagramProtocol):
                 if not self.agg_queue_timer.called:
                     self.agg_queue_timer.cancel()
             self.agg_queue_timer = None
-            self._send_to_peer(''.join(self.agg_queue))
+            self._send_to_peer(b''.join(self.agg_queue))
             self.agg_queue = []
             self.agg_queue_size = 0
 
@@ -85,7 +95,7 @@ class UDPProxyProtocol(DatagramProtocol):
                 self.agg_queue_timer.cancel()
                 self.agg_queue_timer = None
 
-            self._send_to_peer(''.join(self.agg_queue))
+            self._send_to_peer(b''.join(self.agg_queue))
             self.agg_queue = []
             self.agg_queue_size = 0
 

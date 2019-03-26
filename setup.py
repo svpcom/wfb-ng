@@ -1,11 +1,11 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
 
-
 import os
 from setuptools import setup, find_packages, command
 import distutils.command.bdist_rpm as orig
 import setuptools.command.bdist_rpm as orig2
+
 
 class bdist_rpm(orig.bdist_rpm):
     """

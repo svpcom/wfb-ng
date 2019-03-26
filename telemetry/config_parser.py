@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
 
-# Copyright (C) 2018 Vasily Evseenko <svpcom@p2ptech.org>
+# Copyright (C) 2018, 2019 Vasily Evseenko <svpcom@p2ptech.org>
 
 #
 #   This program is free software; you can redistribute it and/or modify
@@ -18,7 +18,18 @@
 #   51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
 #
 
-import ConfigParser
+from __future__ import unicode_literals
+from __future__ import print_function
+from __future__ import division
+from __future__ import absolute_import
+from builtins import *
+from future import standard_library
+standard_library.install_aliases()
+
+from builtins import str
+from builtins import object
+
+import configparser
 import ast
 import copy
 import glob
@@ -65,17 +76,17 @@ def parse_config(basedir, cfg_patterns, interpolate=True):
     used_files = []
 
     for g in cfg_patterns:
-        for f in (glob.glob(os.path.join(basedir, g)) if isinstance(g, basestring) else [g]):
-            fd = open(f) if isinstance(f, basestring) else f
+        for f in (glob.glob(os.path.join(basedir, g)) if isinstance(g, str) else [g]):
+            fd = open(f) if isinstance(f, str) else f
             filename = getattr(fd, 'filename', str(fd))
 
             try:
                 fd.seek(0) # handle case when source config is fd
-                config = ConfigParser.RawConfigParser()
+                config = configparser.RawConfigParser()
 
                 try:
                     config.readfp(fd, filename=filename)
-                except Exception, v:
+                except Exception as v:
                     raise ConfigError(v)
 
                 used_files.append(filename)
@@ -87,7 +98,7 @@ def parse_config(basedir, cfg_patterns, interpolate=True):
                     for item, value in config.items(section):
                         try:
                             value = ast.literal_eval(value)
-                            if interpolate and isinstance(value, basestring):
+                            if interpolate and isinstance(value, str):
                                 # Interpolate string using current settings
                                 value = value % settings
                         except:
@@ -100,7 +111,7 @@ def parse_config(basedir, cfg_patterns, interpolate=True):
                     s_name=str(section)
                     setattr(settings, s_name, _s)
             finally:
-                if isinstance(f, basestring):
+                if isinstance(f, str):
                     fd.close()
 
     return settings, used_files

@@ -18,6 +18,15 @@
 #   51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
 #
 
+from __future__ import division
+from __future__ import print_function
+from __future__ import unicode_literals
+from __future__ import absolute_import
+
+from future import standard_library
+standard_library.install_aliases()
+
+from builtins import *
 import sys
 import curses
 import curses.textpad
@@ -33,7 +42,7 @@ from telemetry.conf import settings
 
 
 class AntennaStat(LineReceiver):
-    delimiter = '\n'
+    delimiter = b'\n'
 
     def lineReceived(self, line):
         attrs = json.loads(line)
@@ -62,7 +71,7 @@ class AntennaStat(LineReceiver):
                 x += len(msg)
 
         if rssi_d:
-            for i, (k, v) in enumerate(sorted(rssi_d.iteritems())):
+            for i, (k, v) in enumerate(sorted(rssi_d.items())):
                 pkt_s, rssi_min, rssi_avg, rssi_max = v
                 self.factory.window.addstr(i + 4, 0, '%04x: %d pkt/s, rssi %d < %d < %d\n' % (int(k, 16), pkt_s, rssi_min, rssi_avg, rssi_max))
         else:
@@ -118,9 +127,9 @@ def init(stdscr, profile):
 
     height, width = stdscr.getmaxyx()
     height -= 1
-    w1h = height / 3
+    w1h = height // 3
     w1w = width
-    w2h = height / 3
+    w2h = height // 3
     w2w = width
     w3h = height - w1h - w2h
     w3w = width
@@ -163,7 +172,7 @@ def main():
     stderr = sys.stderr
 
     if len(sys.argv) != 2:
-        print >> stderr, "Usage: %s <profile>" % (sys.argv[0],)
+        print("Usage: %s <profile>" % (sys.argv[0],), file=stderr)
         sys.exit(1)
 
     fd = tempfile.TemporaryFile()

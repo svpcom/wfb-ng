@@ -1,6 +1,15 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
 
+from __future__ import unicode_literals
+from __future__ import print_function
+from __future__ import division
+from __future__ import absolute_import
+
+from future import standard_library
+standard_library.install_aliases()
+from builtins import *
+
 import time
 from twisted.python import log
 from twisted.trial import unittest
@@ -26,5 +35,5 @@ class TUNTAPTestCase(unittest.TestCase):
 
     def test_tuntap(self):
         # Test manually via "ping -I tuntest1 192.168.77.2" and "tcpdump -i tuntest2 -nn -p icmp"
-        return df_sleep(0)
+        return df_sleep(1)
 

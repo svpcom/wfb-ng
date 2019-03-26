@@ -18,6 +18,16 @@
 #   51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
 #
 
+from __future__ import absolute_import
+from __future__ import unicode_literals
+from __future__ import print_function
+from __future__ import division
+
+from future import standard_library
+standard_library.install_aliases()
+
+from builtins import *
+
 import sys
 import time
 import json
@@ -45,7 +55,8 @@ class ExecError(Exception):
 
 
 def call_and_check_rc(cmd, *args):
-    def _check_rc((stdout, stderr, rc)):
+    def _check_rc(_args):
+        (stdout, stderr, rc) = _args
         if rc != 0:
             err = ExecError('RC %d: %s %s' % (rc, cmd, ' '.join(args)))
             err.stdout = stdout.strip()
@@ -87,7 +98,7 @@ class StatisticsProtocol(Protocol):
         self.factory.sessions.remove(self)
 
     def send_stats(self, data):
-        self.transport.write(json.dumps(data) + '\n')
+        self.transport.write(json.dumps(data).encode('utf-8') + b'\n')
 
 
 class AntennaFactory(Factory):
@@ -110,13 +121,13 @@ class AntennaFactory(Factory):
     def select_tx_antenna(self, ant_rssi):
         wlan_rssi = {}
         for k, grp in groupby(sorted(((int(ant_id, 16) >> 8) & 0xff, rssi_avg) \
-                                     for ant_id, (pkt_s, rssi_min, rssi_avg, rssi_max) in ant_rssi.iteritems()),
+                                     for ant_id, (pkt_s, rssi_min, rssi_avg, rssi_max) in ant_rssi.items()),
                               lambda x: x[0]):
             # Select max average rssi from all wlan's antennas
             wlan_rssi[k] = max(rssi for _, rssi in grp)
 
         tx_max = 0
-        for k, v in wlan_rssi.iteritems():
+        for k, v in wlan_rssi.items():
             if k != tx_max and v > wlan_rssi[tx_max]:
                 tx_max = k
 
@@ -132,7 +143,7 @@ class AntennaFactory(Factory):
         mav_rssi = []
         flags = 0
 
-        for i, (k, v) in enumerate(sorted(ant_rssi.iteritems())):
+        for i, (k, v) in enumerate(sorted(ant_rssi.items())):
             pkt_s, rssi_min, rssi_avg, rssi_max = v
             mav_rssi.append(rssi_avg)
 
@@ -158,7 +169,7 @@ class AntennaFactory(Factory):
 
 
 class AntennaProtocol(LineReceiver):
-    delimiter = '\n'
+    delimiter = b'\n'
 
     def __init__(self, antenna_f, rx_id):
         self.antenna_f = antenna_f
@@ -167,7 +178,7 @@ class AntennaProtocol(LineReceiver):
         self.count_all = None
 
     def lineReceived(self, line):
-        cols = line.strip().split('\t')
+        cols = line.decode('utf-8').strip().split('\t')
         try:
             if len(cols) < 2:
                 raise BadTelemetry()
@@ -183,7 +194,7 @@ class AntennaProtocol(LineReceiver):
                 if len(cols) != 3:
                     raise BadTelemetry()
 
-                p_all, p_dec_err, p_dec_ok, p_fec_rec, p_lost, p_bad = map(int, cols[2].split(':'))
+                p_all, p_dec_err, p_dec_ok, p_fec_rec, p_lost, p_bad = list(int(i) for i in cols[2].split(':'))
 
                 if not self.count_all:
                     self.count_all = (p_all, p_dec_ok, p_fec_rec, p_lost, p_dec_err, p_bad)
@@ -203,13 +214,13 @@ class AntennaProtocol(LineReceiver):
 
 
 class DbgProtocol(LineReceiver):
-    delimiter = '\n'
+    delimiter = b'\n'
 
     def __init__(self, rx_id):
         self.rx_id = rx_id
 
     def lineReceived(self, line):
-        log.msg('%s: %s' % (self.rx_id, line))
+        log.msg('%s: %s' % (self.rx_id, line.decode('utf-8')))
 
 
 class RXProtocol(ProcessProtocol):
