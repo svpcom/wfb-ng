@@ -453,7 +453,7 @@ def init_tunnel(profile, wlans):
 
 def main():
     log.startLogging(sys.stdout)
-    profile, wlans = sys.argv[1], sys.argv[2:]
+    profile, wlans = sys.argv[1], list(wlan for arg in sys.argv[2:] for wlan in arg.split())
     reactor.callWhenRunning(lambda: defer.maybeDeferred(init, profile, wlans)\
                             .addErrback(abort_on_crash))
     reactor.run()
