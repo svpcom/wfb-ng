@@ -323,14 +323,15 @@ def init(profile, wlans):
 def init_mavlink(profile, wlans):
     cfg = getattr(settings, '%s_mavlink' % (profile,))
 
-    cmd_rx = ('%s -p %d -u %d -K %s' % \
+    cmd_rx = ('%s -p %d -u %d -K %s -k %d -n %d' % \
               (os.path.join(settings.path.bin_dir, 'wfb_rx'), cfg.stream_rx,
-               cfg.port_rx, os.path.join(settings.path.conf_dir, cfg.keypair))).split() + wlans
+               cfg.port_rx, os.path.join(settings.path.conf_dir, cfg.keypair), cfg.fec_k, cfg.fec_n)).split() + wlans
 
-    cmd_tx = ('%s -p %d -u %d -K %s -B %d -G %s -S %d -L %d -M %d' % \
+    cmd_tx = ('%s -p %d -u %d -K %s -B %d -G %s -S %d -L %d -M %d -k %d -n %d' % \
               (os.path.join(settings.path.bin_dir, 'wfb_tx'),
                cfg.stream_tx, cfg.port_tx, os.path.join(settings.path.conf_dir, cfg.keypair),
-               cfg.bandwidth, "short" if cfg.short_gi else "long", cfg.stbc, cfg.ldpc, cfg.mcs_index)).split() + wlans
+               cfg.bandwidth, "short" if cfg.short_gi else "long", cfg.stbc, cfg.ldpc, cfg.mcs_index,
+               cfg.fec_k, cfg.fec_n)).split() + wlans
 
     if connect_re.match(cfg.peer):
         m = connect_re.match(cfg.peer)
@@ -382,11 +383,11 @@ def init_video(profile, wlans):
         log.msg('Listen for video stream %d on %s:%d' % (cfg.stream, listen[0], listen[1]))
 
         # We don't use TX diversity for video streaming due to only one transmitter on the vehichle
-        cmd = ('%s -p %d -u %d -K %s -B %d -G %s -S %d -L %d -M %d %s' % \
+        cmd = ('%s -p %d -u %d -K %s -B %d -G %s -S %d -L %d -M %d -k %d -n %d %s' % \
                (os.path.join(settings.path.bin_dir, 'wfb_tx'), cfg.stream,
                 listen[1], os.path.join(settings.path.conf_dir, cfg.keypair),
                 cfg.bandwidth, "short" if cfg.short_gi else "long", cfg.stbc, cfg.ldpc, cfg.mcs_index,
-                wlans[0])).split()
+                cfg.fec_k, cfg.fec_n, wlans[0])).split()
 
         df = TXProtocol(cmd, 'video tx').start()
     elif connect_re.match(cfg.peer):
@@ -398,10 +399,11 @@ def init_video(profile, wlans):
         if cfg.stats_port:
             reactor.listenTCP(cfg.stats_port, ant_f)
 
-        cmd = ('%s -p %d -c %s -u %d -K %s' % \
+        cmd = ('%s -p %d -c %s -u %d -K %s -k %d -n %d' % \
                (os.path.join(settings.path.bin_dir, 'wfb_rx'),
                 cfg.stream, connect[0], connect[1],
-                os.path.join(settings.path.conf_dir, cfg.keypair))).split() + wlans
+                os.path.join(settings.path.conf_dir, cfg.keypair),
+                cfg.fec_k, cfg.fec_n)).split() + wlans
 
         df = RXProtocol(ant_f, cmd, 'video rx').start()
     else:
@@ -413,14 +415,15 @@ def init_video(profile, wlans):
 def init_tunnel(profile, wlans):
     cfg = getattr(settings, '%s_tunnel' % (profile,))
 
-    cmd_rx = ('%s -p %d -u %d -K %s -k 1 -n 2' % \
+    cmd_rx = ('%s -p %d -u %d -K %s -k %d -n %d' % \
               (os.path.join(settings.path.bin_dir, 'wfb_rx'), cfg.stream_rx,
-               cfg.port_rx, os.path.join(settings.path.conf_dir, cfg.keypair))).split() + wlans
+               cfg.port_rx, os.path.join(settings.path.conf_dir, cfg.keypair), cfg.fec_k, cfg.fec_n)).split() + wlans
 
-    cmd_tx = ('%s -p %d -u %d -K %s -B %d -G %s -S %d -L %d -M %d -k 1 -n 2' % \
+    cmd_tx = ('%s -p %d -u %d -K %s -B %d -G %s -S %d -L %d -M %d -k %d -n %d' % \
               (os.path.join(settings.path.bin_dir, 'wfb_tx'),
                cfg.stream_tx, cfg.port_tx, os.path.join(settings.path.conf_dir, cfg.keypair),
-               cfg.bandwidth, "short" if cfg.short_gi else "long", cfg.stbc, cfg.ldpc, cfg.mcs_index)).split() + wlans
+               cfg.bandwidth, "short" if cfg.short_gi else "long", cfg.stbc, cfg.ldpc, cfg.mcs_index,
+               cfg.fec_k, cfg.fec_n)).split() + wlans
 
     p_in = TUNTAPProtocol()
     p_tx_l = [UDPProxyProtocol(('127.0.0.1', cfg.port_tx + i)) for i, _ in enumerate(wlans)]
