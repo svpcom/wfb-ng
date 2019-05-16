@@ -22,9 +22,4 @@ def _parse_config(telemetry_cfg=None):
     return config_parser.parse_config(os.path.join(os.getcwd(), os.path.dirname(__file__)), telemetry_cfg or _cfg_files)
 
 
-try:
-    settings, cfg_files = _parse_config()
-except Exception as v:
-    print('ERROR: Unable to parse config: %s' % (v,), file=sys.stderr)
-    _cfg_files = [ 'master.cfg', 'site.cfg' ]
-    settings, cfg_files = _parse_config()
+settings, cfg_files = _parse_config()
