@@ -126,18 +126,17 @@ class AntennaFactory(Factory):
             # Select max average rssi from all wlan's antennas
             wlan_rssi[k] = max(rssi for _, rssi in grp)
 
-        tx_max = 0
+        tx_max = None
         for k, v in wlan_rssi.items():
-            if k != tx_max and v > wlan_rssi[tx_max]:
+            if tx_max is None or k != tx_max and v > wlan_rssi[tx_max]:
                 tx_max = k
 
-        if tx_max == self.tx_sel:
+        if tx_max is None or wlan_rssi[tx_max] <= wlan_rssi.get(self.tx_sel, -200) + self.tx_sel_delta:
             return
 
-        if wlan_rssi[tx_max] > wlan_rssi[self.tx_sel] + self.tx_sel_delta:
-            log.msg('Swith TX antenna from %d to %d' % (self.tx_sel, tx_max))
-            self.tx_sel = tx_max
-            self.p_in.peer = self.p_tx_l[tx_max]
+        log.msg('Swith TX antenna from %d to %d' % (self.tx_sel, tx_max))
+        self.tx_sel = tx_max
+        self.p_in.peer = self.p_tx_l[tx_max]
 
     def update_stats(self, rx_id, packet_stats, ant_rssi):
         mav_rssi = []
