@@ -303,6 +303,7 @@ def init_wlans(profile, wlans):
             yield call_and_check_rc('iw', 'dev', wlan, 'set', 'monitor', 'otherbss')
             yield call_and_check_rc('ifconfig', wlan, 'up')
             yield call_and_check_rc('iw', 'dev', wlan, 'set', 'channel', str(settings.common.wifi_channel), ht_mode)
+            yield call_and_check_rc('iw', 'dev', wlan, 'set', 'txpower', 'fixed', str(settings.common.wifi_txpower))
     except ExecError as v:
         if v.stdout:
             log.msg(v.stdout, isError=1)
