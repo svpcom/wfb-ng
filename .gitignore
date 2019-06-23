@@ -12,3 +12,4 @@ gs.key
 drone.key
 wfb_keygen
 telemetry/conf/site.cfg
+telemetry/conf/local.cfg

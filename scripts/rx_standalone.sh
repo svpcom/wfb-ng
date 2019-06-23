@@ -1,5 +1,12 @@
 #!/bin/bash
 
+####
+#### WARNING!!!
+#### This script is depricated and **not supported** by author!
+#### I leave it only for reference for **developers**.
+#### Use python services instead.
+####
+
 WLANS=$@
 BAND="5G"
 #BAND="2G"

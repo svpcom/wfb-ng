@@ -1,5 +1,13 @@
 #!/bin/bash
 
+####
+#### WARNING!!!
+#### This script is depricated and **not supported** by author!
+#### I leave it only for reference for **developers**.
+#### Use python services instead.
+####
+
+
 WLAN=$1
 
 BAND="5G"
