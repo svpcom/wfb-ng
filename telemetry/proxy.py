@@ -82,7 +82,7 @@ class UDPProxyProtocol(DatagramProtocol):
         self.reply_addr = addr
 
         # send message to local transport
-        if self.agg_max_size is None:
+        if self.agg_max_size is None or self.agg_timeout is None:
             return self._send_to_peer(data)
 
         if len(data) > self.agg_max_size:

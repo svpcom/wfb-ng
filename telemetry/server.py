@@ -348,8 +348,7 @@ def init_mavlink(profile, wlans):
         raise Exception('Unsupport peer address: %s' % (cfg.peer,))
 
     # The first argument is not None only if we initiate mavlink connection
-    agg_max_size = None if settings.common.mavlink_agg_timeout is None else settings.common.radio_mtu
-    p_in = UDPProxyProtocol(connect, agg_max_size=agg_max_size,
+    p_in = UDPProxyProtocol(connect, agg_max_size=settings.common.radio_mtu,
                             agg_timeout=settings.common.mavlink_agg_timeout,
                             inject_rssi=cfg.inject_rssi)
     p_tx_l = [UDPProxyProtocol(('127.0.0.1', cfg.port_tx + i)) for i, _ in enumerate(wlans)]
