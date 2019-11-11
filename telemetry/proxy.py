@@ -89,6 +89,9 @@ class UDPProxyProtocol(DatagramProtocol):
             log.msg('Message too big: %d > %d' % (len(data), self.agg_max_size), isError=1)
             return
 
+        if not self.agg_timeout:
+            return self._send_to_peer(data)
+
         if self.agg_queue_size + len(data) > self.agg_max_size:
             # message doesn't fit into agg queue
             if self.agg_queue_timer is not None:
