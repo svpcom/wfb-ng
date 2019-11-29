@@ -232,8 +232,16 @@ Aggregator::Aggregator(const string &client_addr, int client_port, int k, int n,
     {
         throw runtime_error(string_format("Unable to open %s: %s", keypair.c_str(), strerror(errno)));
     }
-    if (fread(rx_secretkey, crypto_box_SECRETKEYBYTES, 1, fp) != 1) throw runtime_error(string_format("Unable to read rx secret key: %s", strerror(errno)));
-    if (fread(tx_publickey, crypto_box_PUBLICKEYBYTES, 1, fp) != 1) throw runtime_error(string_format("Unable to read tx public key: %s", strerror(errno)));
+    if (fread(rx_secretkey, crypto_box_SECRETKEYBYTES, 1, fp) != 1)
+    {
+        fclose(fp);
+        throw runtime_error(string_format("Unable to read rx secret key: %s", strerror(errno)));
+    }
+    if (fread(tx_publickey, crypto_box_PUBLICKEYBYTES, 1, fp) != 1)
+    {
+        fclose(fp);
+        throw runtime_error(string_format("Unable to read tx public key: %s", strerror(errno)));
+    }
     fclose(fp);
 }
 
