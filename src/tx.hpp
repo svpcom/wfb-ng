@@ -20,13 +20,19 @@
 #include <sys/socket.h>
 #include <netinet/in.h>
 #include <arpa/inet.h>
-
-using namespace std;
+#include <stdint.h>
+#include <errno.h>
+#include <string>
+#include <vector>
+#include <string.h>
+#include "fec.h"
+#include "wifibroadcast.hpp"
+#include <stdexcept>
 
 class Transmitter
 {
 public:
-    Transmitter(int k, int m, const string &keypair);
+    Transmitter(int k, int m, const std::string &keypair);
     virtual ~Transmitter();
     void send_packet(const uint8_t *buf, size_t size);
     void send_session_key(void);
@@ -57,7 +63,7 @@ private:
 class PcapTransmitter : public Transmitter
 {
 public:
-    PcapTransmitter(int k, int m, const string &keypair, uint8_t radio_port, const vector<string> &wlans);
+    PcapTransmitter(int k, int m, const std::string &keypair, uint8_t radio_port, const std::vector<std::string> &wlans);
     virtual ~PcapTransmitter();
     virtual void select_output(int idx) { current_output = idx; }
 private:
@@ -65,14 +71,14 @@ private:
     uint8_t radio_port;
     int current_output;
     uint16_t ieee80211_seq;
-    vector<pcap_t*> ppcap;
+    std::vector<pcap_t*> ppcap;
 };
 
 
 class UdpTransmitter : public Transmitter
 {
 public:
-    UdpTransmitter(int k, int m, const string &keypair, const string &client_addr, int client_port) : Transmitter(k, m, keypair)
+    UdpTransmitter(int k, int m, const std::string &keypair, const std::string &client_addr, int client_port) : Transmitter(k, m, keypair)
     {
         sockfd = open_udp_socket(client_addr, client_port);
     }
@@ -82,7 +88,7 @@ public:
         close(sockfd);
     }
 
-    virtual void select_output(int idx){}
+    virtual void select_output(int /*idx*/){}
 
 private:
     virtual void inject_packet(const uint8_t *buf, size_t size)
@@ -111,11 +117,11 @@ private:
         sendmsg(sockfd, &msghdr, MSG_DONTWAIT);
     }
 
-    int open_udp_socket(const string &client_addr, int client_port)
+    int open_udp_socket(const std::string &client_addr, int client_port)
     {
         struct sockaddr_in saddr;
         int fd = socket(AF_INET, SOCK_DGRAM, 0);
-        if (fd < 0) throw runtime_error(string_format("Error opening socket: %s", strerror(errno)));
+        if (fd < 0) throw std::runtime_error(string_format("Error opening socket: %s", strerror(errno)));
 
         bzero((char *) &saddr, sizeof(saddr));
         saddr.sin_family = AF_INET;
@@ -124,7 +130,7 @@ private:
 
         if (connect(fd, (struct sockaddr *) &saddr, sizeof(saddr)) < 0)
         {
-            throw runtime_error(string_format("Connect error: %s", strerror(errno)));
+            throw std::runtime_error(string_format("Connect error: %s", strerror(errno)));
         }
         return fd;
     }

@@ -40,6 +40,8 @@ extern "C"
 #include "wifibroadcast.hpp"
 #include "tx.hpp"
 
+using namespace std;
+
 Transmitter::Transmitter(int k, int n, const string &keypair):  fec_k(k), fec_n(n), block_idx(0),
                                                                 fragment_idx(0),
                                                                 max_packet_size(0)

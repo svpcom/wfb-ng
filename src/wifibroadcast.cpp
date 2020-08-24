@@ -7,8 +7,11 @@
 #include <arpa/inet.h>
 #include <string>
 #include <memory>
+#include <stdexcept>
 
 #include "wifibroadcast.hpp"
+
+using namespace std;
 
 string string_format(const char *format, ...)
 {

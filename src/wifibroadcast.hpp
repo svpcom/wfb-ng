@@ -34,13 +34,12 @@
 #include <sys/mman.h>
 #include <sodium.h>
 #include <endian.h>
+#include <string>
 
 #define MAX_PACKET_SIZE 1510
 #define MAX_RX_INTERFACES 8
 
-using namespace std;
-
-extern string string_format(const char *format, ...);
+extern std::string string_format(const char *format, ...);
 
 /* this is the template radiotap header we send packets out with */
 

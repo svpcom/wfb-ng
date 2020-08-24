@@ -1,3 +1,5 @@
+#pragma once
+
 /**
  * zfec -- fast forward error correction library with Python interface
  * https://tahoe-lafs.org/trac/zfec/

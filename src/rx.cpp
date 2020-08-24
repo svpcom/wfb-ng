@@ -45,6 +45,8 @@ extern "C"
 #include "wifibroadcast.hpp"
 #include "rx.hpp"
 
+using namespace std;
+
 
 Receiver::Receiver(const char *wlan, int wlan_idx, int radio_port, BaseAggregator *agg) : wlan_idx(wlan_idx), agg(agg)
 {
