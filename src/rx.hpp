@@ -18,6 +18,17 @@
  */
 
 #include <unordered_map>
+#include <stdint.h>
+#include <sys/socket.h>
+#include <netinet/in.h>
+#include <arpa/inet.h>
+#include <stdio.h>
+#include <errno.h>
+#include <string>
+#include <string.h>
+#include "fec.h"
+#include "wifibroadcast.hpp"
+#include <stdexcept>
 
 typedef enum {
     LOCAL,
@@ -31,11 +42,11 @@ public:
     virtual void process_packet(const uint8_t *buf, size_t size, uint8_t wlan_idx, const uint8_t *antenna, const int8_t *rssi, sockaddr_in *sockaddr) = 0;
     virtual void dump_stats(FILE *fp) = 0;
 protected:
-    int open_udp_socket_for_tx(const string &client_addr, int client_port)
+    int open_udp_socket_for_tx(const std::string &client_addr, int client_port)
     {
         struct sockaddr_in saddr;
         int fd = socket(AF_INET, SOCK_DGRAM, 0);
-        if (fd < 0) throw runtime_error(string_format("Error opening socket: %s", strerror(errno)));
+        if (fd < 0) throw std::runtime_error(string_format("Error opening socket: %s", strerror(errno)));
 
         bzero((char *) &saddr, sizeof(saddr));
         saddr.sin_family = AF_INET;
@@ -44,7 +55,7 @@ protected:
 
         if (connect(fd, (struct sockaddr *) &saddr, sizeof(saddr)) < 0)
         {
-            throw runtime_error(string_format("Connect error: %s", strerror(errno)));
+            throw std::runtime_error(string_format("Connect error: %s", strerror(errno)));
         }
         return fd;
     }
@@ -54,10 +65,10 @@ protected:
 class Forwarder : public BaseAggregator
 {
 public:
-    Forwarder(const string &client_addr, int client_port);
+    Forwarder(const std::string &client_addr, int client_port);
     ~Forwarder();
     virtual void process_packet(const uint8_t *buf, size_t size, uint8_t wlan_idx, const uint8_t *antenna, const int8_t *rssi, sockaddr_in *sockaddr);
-    virtual void dump_stats(FILE *fp) {}
+    virtual void dump_stats(FILE *) {}
 private:
     int sockfd;
 };
@@ -89,8 +100,8 @@ public:
             rssi_min = rssi;
             rssi_max = rssi;
         } else {
-            rssi_min = min(rssi, rssi_min);
-            rssi_max = max(rssi, rssi_max);
+            rssi_min = std::min(rssi, rssi_min);
+            rssi_max = std::max(rssi, rssi_max);
         }
         rssi_sum += rssi;
         count_all += 1;
@@ -107,7 +118,7 @@ typedef std::unordered_map<uint64_t, antennaItem> antenna_stat_t;
 class Aggregator : public BaseAggregator
 {
 public:
-    Aggregator(const string &client_addr, int client_port, int k, int n, const string &keypair);
+    Aggregator(const std::string &client_addr, int client_port, int k, int n, const std::string &keypair);
     ~Aggregator();
     virtual void process_packet(const uint8_t *buf, size_t size, uint8_t wlan_idx, const uint8_t *antenna, const int8_t *rssi, sockaddr_in *sockaddr);
     virtual void dump_stats(FILE *fp);
