@@ -1,4 +1,4 @@
-VERSION ?= $(shell ./version.py)
+VERSION ?= $(shell ./version.py 20.08)
 ARCH ?= $(shell uname -i)
 COMMIT ?= $(shell git rev-parse HEAD)
 
