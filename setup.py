@@ -72,7 +72,8 @@ setup(
                   ('/lib/systemd/system', ['scripts/storm32.service',
                                            'scripts/wifibroadcast.service',
                                            'scripts/wifibroadcast@.service']),
-                  ('/etc/default', ['scripts/default/wifibroadcast'])],
+                  ('/etc/default', ['scripts/default/wifibroadcast']),
+                  ('/etc/sysctl.d', ['scripts/98-wifibroadcast.conf'])],
 
     keywords="wifibroadcast",
     author="Vasily Evseenko",
