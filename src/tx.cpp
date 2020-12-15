@@ -1,6 +1,6 @@
 // -*- C++ -*-
 //
-// Copyright (C) 2017, 2018, 2019 Vasily Evseenko <svpcom@p2ptech.org>
+// Copyright (C) 2017 - 2020 Vasily Evseenko <svpcom@p2ptech.org>
 
 /*
  *   This program is free software; you can redistribute it and/or modify
@@ -116,6 +116,7 @@ PcapTransmitter::PcapTransmitter(int k, int n, const string &keypair, uint8_t ra
         //if (pcap_set_rfmon(p, 1) !=0) throw runtime_error("set_rfmon failed");
         if (pcap_set_timeout(p, -1) !=0) throw runtime_error("set_timeout failed");
         //if (pcap_set_buffer_size(p, 2048) !=0) throw runtime_error("set_buffer_size failed");
+        if (pcap_set_immediate_mode(p, 1) != 0) throw runtime_error(string_format("pcap_set_immediate_mode failed: %s", pcap_geterr(p)));
         if (pcap_activate(p) !=0) throw runtime_error(string_format("pcap_activate failed: %s", pcap_geterr(p)));
         //if (pcap_setnonblock(p, 1, errbuf) != 0) throw runtime_error(string_format("set_nonblock failed: %s", errbuf));
 

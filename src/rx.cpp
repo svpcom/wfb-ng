@@ -1,6 +1,6 @@
 // -*- C++ -*-
 //
-// Copyright (C) 2017, 2018 Vasily Evseenko <svpcom@p2ptech.org>
+// Copyright (C) 2017 - 2020 Vasily Evseenko <svpcom@p2ptech.org>
 
 /*
  *   This program is free software; you can redistribute it and/or modify
@@ -63,6 +63,7 @@ Receiver::Receiver(const char *wlan, int wlan_idx, int radio_port, BaseAggregato
     //if (pcap_set_rfmon(ppcap, 1) !=0) throw runtime_error("set_rfmon failed");
     if (pcap_set_timeout(ppcap, -1) !=0) throw runtime_error("set_timeout failed");
     //if (pcap_set_buffer_size(ppcap, 2048) !=0) throw runtime_error("set_buffer_size failed");
+    if (pcap_set_immediate_mode(ppcap, 1) != 0) throw runtime_error(string_format("pcap_set_immediate_mode failed: %s", pcap_geterr(ppcap)));
     if (pcap_activate(ppcap) !=0) throw runtime_error(string_format("pcap_activate failed: %s", pcap_geterr(ppcap)));
     if (pcap_setnonblock(ppcap, 1, errbuf) != 0) throw runtime_error(string_format("set_nonblock failed: %s", errbuf));
 
