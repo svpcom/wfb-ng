@@ -12,6 +12,7 @@ from builtins import *
 import sys
 import time
 import struct
+import os
 from twisted.python import log
 from twisted.internet import reactor, defer, task
 from twisted.internet.protocol import DatagramProtocol
@@ -21,25 +22,26 @@ from telemetry.common import df_sleep, abort_on_crash, exit_status
 
 class PacketSource(DatagramProtocol):
     noisy = False
-    def __init__(self, addr, size, count, rate):
+    def __init__(self, addr, size, count, rate, key):
         self.df = defer.Deferred()
         self.addr = addr
         self.size = size
         self.count = count
         self.rate = rate
+        self.key = key
 
     def startProtocol(self):
         self.df.callback(None)
 
     def start(self):
-        msg = bytearray('\0' * self.size)
+        msg = bytearray(b'\0' * self.size)
         i = [0]
 
         def _sendmsg(c):
             if c > 1:
-                log.msg('Packet source freeze for %d intervals at iter %d' % (c, i[0]))
+                log.msg('Packet source freeze for %.2f ms at iter %d/%d' % (1000.0 * float(c) / self.rate, i[0], self.count))
 
-            struct.pack_into('!HId', msg, 0, self.size, i[0], reactor.seconds())
+            struct.pack_into('!HIdd', msg, 0, self.size, i[0], reactor.seconds(), self.key)
             self.transport.write(msg, self.addr)
             i[0] += 1
 
@@ -51,27 +53,35 @@ class PacketSource(DatagramProtocol):
 
 class PacketSink(DatagramProtocol):
     noisy = False
-    def __init__(self):
+    def __init__(self, key):
         self.df = defer.Deferred()
         self.count = 0
         self.lmin = -1
         self.lmax = -1
         self.lavg = 0
+        self.key = key
+        self.id_set = set()
 
     def startProtocol(self):
         self.df.callback(None)
 
     def datagramReceived(self, data, addr):
-        size, i, ts = struct.unpack_from('!HId', data)
+        size, i, ts, key = struct.unpack_from('!HIdd', data)
 
         if size != len(data):
             log.msg('bad size %d != %d' % (len(data), size), isError=1)
+            return
+
+        if self.key != key:
+            log.msg('bad session %d != %d #%d, already got %d packets' % (key, self.key, i, self.count))
+            return
 
         latency = reactor.seconds() - ts
         if latency < 0:
             log.msg('bad latency %f' % (latency,))
             return
 
+        self.id_set.add(i)
         self.lmin = latency if self.lmin < 0 else min(latency, self.lmin)
         self.lmax = latency if self.lmax < 0 else max(latency, self.lmax)
         self.lavg += latency
@@ -80,8 +90,10 @@ class PacketSink(DatagramProtocol):
 
 @defer.inlineCallbacks
 def run_test(port_in, port_out, size, count, rate):
-    p1 = PacketSource(('127.0.0.1', port_in), size, count, rate)
-    p2 = PacketSink()
+    key = int(os.urandom(2).encode('hex'), 16)
+    log.msg('Session: %d' % (key,))
+    p1 = PacketSource(('127.0.0.1', port_in), size, count, rate, key)
+    p2 = PacketSink(key)
 
     ep1 = reactor.listenUDP(0, p1)
     ep2 = reactor.listenUDP(port_out, p2)
@@ -89,14 +101,16 @@ def run_test(port_in, port_out, size, count, rate):
     yield p1.df
     yield p2.df
     yield p1.start()
-    yield df_sleep(1)
+    yield df_sleep(2)
 
     sent = count
     lost = count - p2.count
+    dup = p2.count - len(p2.id_set)
+
     bitrate = rate * size * 8 / 1e6
 
-    log.msg('Sent %d, Lost %d, Packet rate: %d pkt/s, Bitrate: %.2f MBit/s, Lmin %f, Lmax %f, Lavg %f' % \
-            (sent, lost, rate, bitrate, p2.lmin, p2.lmax, p2.lavg / p2.count if p2.count else -1))
+    log.msg('Sent %d, Lost %d, Dup: %d, Packet rate: %d pkt/s, Bitrate: %.2f MBit/s, Lmin %.2f ms, Lmax %.2f ms, Lavg %.2f ms' % \
+            (sent, lost, dup, rate, bitrate, 1000.0 * p2.lmin, 1000.0 * p2.lmax, 1000.0 * p2.lavg / p2.count if p2.count else -1))
 
     yield ep1.stopListening()
     yield ep2.stopListening()
@@ -114,7 +128,7 @@ def eval_max_rate(port_in, port_out, size, max_rate):
         rate = min_rate + dr
         count = 3 * rate # run each test for 3s
         lost, lavg, bitrate = yield run_test(port_in, port_out, size, count, rate)
-        if lost >= max(count * 0.01, 1) or lavg > 0.01:
+        if lost >= max(count * 0.01, 1) or lavg > 0.005:
             # rate too big
             max_rate = rate
         else:
