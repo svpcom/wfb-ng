@@ -61,6 +61,7 @@ class PacketSink(DatagramProtocol):
         self.lavg = 0
         self.key = key
         self.id_set = set()
+        self.last_id = 0
 
     def startProtocol(self):
         self.df.callback(None)
@@ -80,6 +81,11 @@ class PacketSink(DatagramProtocol):
         if latency < 0:
             log.msg('bad latency %f' % (latency,))
             return
+
+        if i < self.last_id:
+            log.msg('Out of order #%d (prev #%d)' % (i, self.last_id))
+        else:
+            self.last_id = i
 
         self.id_set.add(i)
         self.lmin = latency if self.lmin < 0 else min(latency, self.lmin)
@@ -128,7 +134,7 @@ def eval_max_rate(port_in, port_out, size, max_rate):
         rate = min_rate + dr
         count = 3 * rate # run each test for 3s
         lost, lavg, bitrate = yield run_test(port_in, port_out, size, count, rate)
-        if lost >= max(count * 0.01, 1) or lavg > 0.005:
+        if lost >= max(count * 0.01, 10) or lavg > 0.005:
             # rate too big
             max_rate = rate
         else:
