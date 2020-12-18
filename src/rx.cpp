@@ -570,12 +570,28 @@ void Aggregator::process_packet(const uint8_t *buf, size_t size, uint8_t wlan_id
         assert(rx_ring_alloc > 0);
         assert(ring_idx == rx_ring_front);
 
-        //Recover missed fragments using FEC
-        apply_fec(ring_idx);
+        // Search for missed data fragments
+        for(int f_idx=p->send_fragment_idx; f_idx < fec_k; f_idx++)
+        {
+            if(! p->fragment_map[p->send_fragment_idx])
+            {
+                //Recover missed fragments using FEC
+                apply_fec(ring_idx);
+
+                // Count total number of recovered fragments
+                for(; f_idx < fec_k; f_idx++)
+                {
+                    if(! p->fragment_map[p->send_fragment_idx])
+                    {
+                        count_p_fec_recovered += 1;
+                    }
+                }
+                break;
+            }
+        }
 
         while(p->send_fragment_idx < fec_k)
         {
-            count_p_fec_recovered += 1;
             send_packet(ring_idx, p->send_fragment_idx);
             p->send_fragment_idx += 1;
         }
