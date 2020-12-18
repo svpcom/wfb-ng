@@ -329,7 +329,7 @@ int Aggregator::rx_ring_push(void)
 
 int Aggregator::get_block_ring_idx(uint64_t block_idx)
 {
-    // check if block is already to the ring
+    // check if block is already in the ring
     for(int i = rx_ring_front, c = rx_ring_alloc; c > 0; i = modN(i + 1, RX_RING_SIZE), c--)
     {
         if (rx_ring[i].block_idx == block_idx) return i;
@@ -526,6 +526,9 @@ void Aggregator::process_packet(const uint8_t *buf, size_t size, uint8_t wlan_id
     p->fragment_map[fragment_idx] = 1;
     p->has_fragments += 1;
 
+    // Check if we use current (oldest) block
+    // then we can optimize and don't wait for all K fragments
+    // and yield packets if there are no gaps in fragments from the beginning of this block
     if(ring_idx == rx_ring_front)
     {
         // check if any packets without gaps
@@ -536,7 +539,8 @@ void Aggregator::process_packet(const uint8_t *buf, size_t size, uint8_t wlan_id
         }
     }
 
-    // or we can reconstruct gaps via FEC
+    // 1. This is the not oldest block but with sufficient number of fragments (K) to decode
+    // 2. This is the the oldest block but with gaps and total number of fragments is K
     if(p->send_fragment_idx < fec_k && p->has_fragments == fec_k)
     {
         //printf("do fec\n");
@@ -549,6 +553,7 @@ void Aggregator::process_packet(const uint8_t *buf, size_t size, uint8_t wlan_id
         }
     }
 
+    // If we successfuly decode a block, then remove ALL unfinished blocks BEFORE it
     if(p->send_fragment_idx == fec_k)
     {
         int nrm = modN(ring_idx - rx_ring_front, RX_RING_SIZE);
