@@ -309,9 +309,6 @@ int Aggregator::rx_ring_push(void)
         return idx;
     }
 
-    // override existing data
-    int idx = rx_ring_front;
-
     /*
       Ring overflow. This means that there are more unfinished blocks than ring size
       Possible solutions:
@@ -320,10 +317,20 @@ int Aggregator::rx_ring_push(void)
       2. Reduce packet injection speed or try to unify RX hardware.
     */
 
-    fprintf(stderr, "override block 0x%" PRIx64 " with %d fragments\n", rx_ring[idx].block_idx, rx_ring[idx].has_fragments);
+    fprintf(stderr, "override block 0x%" PRIx64 " flush %d fragments\n", rx_ring[rx_ring_front].block_idx, rx_ring[rx_ring_front].has_fragments);
 
+    for(int f_idx=rx_ring[rx_ring_front].send_fragment_idx; f_idx < fec_k; f_idx++)
+    {
+        if(rx_ring[rx_ring_front].fragment_map[f_idx])
+        {
+            send_packet(rx_ring_front, f_idx);
+        }
+    }
+
+    // override last item in ring
+    int ring_idx = rx_ring_front;
     rx_ring_front = modN(rx_ring_front + 1, RX_RING_SIZE);
-    return idx;
+    return ring_idx;
 }
 
 
