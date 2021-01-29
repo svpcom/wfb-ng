@@ -241,6 +241,7 @@ enum ieee80211_radiotap_type {
         IEEE80211_RADIOTAP_MCS = 19,
         IEEE80211_RADIOTAP_AMPDU_STATUS = 20,
         IEEE80211_RADIOTAP_VHT = 21,
+        IEEE80211_RADIOTAP_TIMESTAMP = 22,
 
         /* valid in every it_present bitmap, even vendor namespaces */
         IEEE80211_RADIOTAP_RADIOTAP_NAMESPACE = 29,
