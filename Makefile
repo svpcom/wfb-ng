@@ -11,7 +11,7 @@ all: all_bin gs.key test
 
 env:
 	virtualenv env
-	./env/bin/pip install --upgrade pip setuptools stdeb
+	./env/bin/pip install --upgrade pip==20.2.3 setuptools==44.1.1 stdeb
 
 all_bin: wfb_rx wfb_tx wfb_keygen
 
