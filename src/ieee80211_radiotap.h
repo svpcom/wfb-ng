@@ -57,12 +57,14 @@ static inline u32 __get_unaligned_memmove32(const void *p)
 
 static inline u16 get_unaligned_le16(const void *p)
 {
-        return __get_unaligned_memmove16((const u8 *)p);
+        u16 tmp = __get_unaligned_memmove16((const u8 *)p);
+        return le16_to_cpu(tmp);
 }
 
 static inline u32 get_unaligned_le32(const void *p)
 {
-        return __get_unaligned_memmove32((const u8 *)p);
+        u32 tmp = __get_unaligned_memmove32((const u8 *)p);
+        return le32_to_cpu(tmp);
 }
 
 
