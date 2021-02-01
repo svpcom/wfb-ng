@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
 
-# Copyright (C) 2018, 2019 Vasily Evseenko <svpcom@p2ptech.org>
+# Copyright (C) 2018-2021 Vasily Evseenko <svpcom@p2ptech.org>
 
 #
 #   This program is free software; you can redistribute it and/or modify
@@ -28,6 +28,7 @@ standard_library.install_aliases()
 
 from builtins import *
 
+import struct
 from . import mavlink
 from twisted.python import log
 from twisted.internet import reactor, defer
@@ -68,8 +69,46 @@ class UDPProxyProtocol(DatagramProtocol):
 
     # call from peer and from mavlink rssi injector only!
     def write(self, msg):
-        if self.transport is not None and self.reply_addr is not None:
+        if self.transport is None or self.reply_addr is None:
+            return
+
+        if self.agg_max_size is None or self.agg_timeout is None:
             self.transport.write(msg, self.reply_addr)
+            return
+
+        # Split batch of mavlink packets due to issues with mavlink-router
+
+        i = 0
+        while i < len(msg):
+            if len(msg) - i < 8:
+                log.msg('Too short mavlink packet: %r' % (msg[i:],))
+                break
+
+            version = struct.unpack('B', msg[i])[0]
+
+            # mavlink 1
+            if version == 0xfe:
+                mlen = 8 + struct.unpack('B', msg[i + 1])[0]
+                self.transport.write(msg[i:i + mlen], self.reply_addr)
+                i += mlen
+
+            # mavlink 2
+            elif version == 0xfd:
+                mlen, flags = struct.unpack('BB', msg[i + 1 : i + 3])
+
+                if flags & ~0x01:
+                    log.msg('Unsupported mavlink flags: 0x%x' % (flags,))
+                    self.transport.write(msg[i:], self.reply_addr)
+                    break
+
+                mlen += (25 if flags & 0x01 else 12)
+                self.transport.write(msg[i:i + mlen], self.reply_addr)
+                i += mlen
+
+            else:
+                log.msg('Unsupported mavlink version: 0x%x' % (version,))
+                self.transport.write(msg[i:], self.reply_addr)
+                break
 
     def _send_to_peer(self, data):
         if self.peer is not None:
