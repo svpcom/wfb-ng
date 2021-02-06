@@ -60,6 +60,7 @@ jobs:
     #    uses a compiled language
 
     - run: |
+       apt-get -y install python-twisted libpcap-dev libsodium-dev python-pyroute2 python-future python-configparser
        make all_bin
 
     - name: Perform CodeQL Analysis
