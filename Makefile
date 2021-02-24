@@ -55,7 +55,7 @@ deb:  all_bin env
 
 bdist: all_bin
 	rm -rf dist
-	python ./setup.py bdist --plat-name linux-$(ARCH)
+	$(PYTHON) ./setup.py bdist --plat-name linux-$(ARCH)
 	rm -rf wifibroadcast.egg-info/
 
 clean:
