@@ -84,12 +84,12 @@ class UDPProxyProtocol(DatagramProtocol):
                 log.msg('Too short mavlink packet: %r' % (msg[i:],))
                 break
 
-            version = struct.unpack('B', msg[i])[0]
+            version = struct.unpack('B', msg[i : i + 1])[0]
 
             # mavlink 1
             if version == 0xfe:
-                mlen = 8 + struct.unpack('B', msg[i + 1])[0]
-                self.transport.write(msg[i:i + mlen], self.reply_addr)
+                mlen = 8 + struct.unpack('B', msg[i + 1 : i + 2])[0]
+                self.transport.write(msg[i: i + mlen], self.reply_addr)
                 i += mlen
 
             # mavlink 2
@@ -102,7 +102,7 @@ class UDPProxyProtocol(DatagramProtocol):
                     break
 
                 mlen += (25 if flags & 0x01 else 12)
-                self.transport.write(msg[i:i + mlen], self.reply_addr)
+                self.transport.write(msg[i : i + mlen], self.reply_addr)
                 i += mlen
 
             else:

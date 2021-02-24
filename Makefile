@@ -1,6 +1,7 @@
 VERSION ?= $(shell ./version.py)
 ARCH ?= $(shell uname -i)
 COMMIT ?= $(shell git rev-parse HEAD)
+PYTHON ?= /usr/bin/python
 
 export VERSION COMMIT
 
@@ -10,7 +11,7 @@ _CFLAGS := $(CFLAGS) -Wall -O2 -DWFB_VERSION='"$(VERSION)-$(shell /bin/bash -c '
 all: all_bin gs.key test
 
 env:
-	virtualenv env
+	virtualenv env --python=$(PYTHON)
 	./env/bin/pip install --upgrade pip==20.2.3 setuptools==44.1.1 stdeb
 
 all_bin: wfb_rx wfb_tx wfb_keygen
