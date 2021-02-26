@@ -38,7 +38,10 @@ class x25crc(object):
         accum = self.crc
         import array
         bytes = array.array('B')
-        bytes.fromstring(buf)
+        if not (sys.version_info.major == 3 and sys.version_info.minor >= 2):
+                bytes.fromstring(buf)
+        else:
+                bytes.frombytes(buf)
         self.accumulate(bytes)
 
 
