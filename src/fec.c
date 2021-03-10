@@ -324,6 +324,10 @@ _invert_mat(gf* src, size_t k) {
         if (indxr[col-1] != indxc[col-1])
             for (size_t row = 0; row < k; row++)
                 SWAP (src[row * k + indxr[col-1]], src[row * k + indxc[col-1]], gf);
+    free(indxc);
+    free(indxr);
+    free(ipiv);
+    free(id_row);
 }
 
 /*
