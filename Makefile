@@ -1,7 +1,7 @@
 VERSION ?= $(shell ./version.py)
 ARCH ?= $(shell uname -i)
 COMMIT ?= $(shell git rev-parse HEAD)
-PYTHON ?= /usr/bin/python
+PYTHON ?= /usr/bin/python3
 
 export VERSION COMMIT
 
