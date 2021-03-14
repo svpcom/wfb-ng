@@ -6,7 +6,7 @@ ReloadPropagatedFrom=wifibroadcast.service
 [Service]
 Type=simple
 EnvironmentFile=/etc/default/wifibroadcast
-ExecStart=/usr/bin/python -m telemetry.server %i ${WFB_NICS}
+ExecStart=/usr/bin/wfb-server %i ${WFB_NICS}
 TimeoutStopSec=5s
 Restart=on-failure
 RestartSec=5s
