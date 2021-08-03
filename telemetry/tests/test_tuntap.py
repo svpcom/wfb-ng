@@ -10,6 +10,7 @@ from future import standard_library
 standard_library.install_aliases()
 from builtins import *
 
+import os
 import time
 from twisted.python import log
 from twisted.trial import unittest
@@ -19,6 +20,8 @@ from telemetry.common import df_sleep
 
 
 class TUNTAPTestCase(unittest.TestCase):
+    skip = ("Root permission is required to test tunnel" if os.geteuid() != 0 else False)
+
     def setUp(self):
         self.p1 = TUNTAPProtocol()
         self.p2 = TUNTAPProtocol()
