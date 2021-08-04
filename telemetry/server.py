@@ -339,6 +339,7 @@ def init_mavlink(profile, wlans):
     listen = None
     connect = None
     serial = None
+    mirror = None
 
     if connect_re.match(cfg.peer):
         m = connect_re.match(cfg.peer)
@@ -358,6 +359,11 @@ def init_mavlink(profile, wlans):
     else:
         raise Exception('Unsupport peer address: %s' % (cfg.peer,))
 
+    if cfg.mirror is not None and connect_re.match(cfg.mirror):
+        m = connect_re.match(cfg.mirror)
+        mirror = m.group('addr'), int(m.group('port'))
+        log.msg('Mirror telem stream to %s:%d' % (mirror[0], mirror[1]))
+
     if serial:
         p_in = SerialProxyProtocol(agg_max_size=settings.common.radio_mtu,
                                    agg_timeout=settings.common.mavlink_agg_timeout,
@@ -366,7 +372,8 @@ def init_mavlink(profile, wlans):
         # The first argument is not None only if we initiate mavlink connection
         p_in = UDPProxyProtocol(connect, agg_max_size=settings.common.radio_mtu,
                                 agg_timeout=settings.common.mavlink_agg_timeout,
-                                inject_rssi=cfg.inject_rssi)
+                                inject_rssi=cfg.inject_rssi,
+                                mirror=mirror)
 
     p_tx_l = [UDPProxyProtocol(('127.0.0.1', cfg.port_tx + i)) for i, _ in enumerate(wlans)]
     p_rx = UDPProxyProtocol()

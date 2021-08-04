@@ -108,20 +108,28 @@ class ProxyProtocol:
 class UDPProxyProtocol(DatagramProtocol, ProxyProtocol):
     noisy = False
 
-    def __init__(self, addr=None, agg_max_size=None, agg_timeout=None, inject_rssi=False):
+    def __init__(self, addr=None, agg_max_size=None, agg_timeout=None, inject_rssi=False, mirror=None):
         ProxyProtocol.__init__(self, agg_max_size, agg_timeout, inject_rssi)
         self.reply_addr = addr
+        self.fixed_addr = bool(addr)
+        self.mirror = mirror
 
     def datagramReceived(self, data, addr):
         if settings.common.debug:
             log.msg('Got a message from %s' % (addr,))
 
-        self.reply_addr = addr
+        if not self.fixed_addr:
+            self.reply_addr = addr
+
         return self.messageReceived(data)
 
     def write(self, msg):
         if self.transport is None or self.reply_addr is None:
             return
+
+        # Mirror packets as is
+        if self.mirror:
+            self.transport.write(msg, self.mirror)
 
         # Send non-aggregated packets directly
         if self.agg_max_size is None or self.agg_timeout is None:
