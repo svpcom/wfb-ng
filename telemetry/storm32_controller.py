@@ -53,8 +53,12 @@ class ST32Message(mavlink.MAVLink_command_long_message):
 
 class ST32Protocol(MAVLinkSerialProtocol):
     def messageReceived(self, message):
-        if message.id != mavlink.MAVLINK_MSG_ID_RC_CHANNELS:
+        print(message)
+        if message.id != mavlink.MAVLINK_MSG_ID_MANUAL_CONTROL:
             return
+
+        print(message)
+        return
 
         pitch = (message.chan6_raw - 1500.0) / 500.0 * 90.0
         yaw = (message.chan7_raw - 1500.0) / 500.0 * 90.0

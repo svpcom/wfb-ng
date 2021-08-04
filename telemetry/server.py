@@ -35,20 +35,21 @@ import os
 import re
 
 from itertools import groupby
-from twisted.python import log
-from twisted.internet import reactor, defer, utils
+from twisted.python import log, failure
+from twisted.internet import reactor, defer, utils, main as ti_main
 from twisted.internet.protocol import ProcessProtocol, DatagramProtocol, Protocol, Factory
 from twisted.protocols.basic import LineReceiver
 from twisted.internet.error import ReactorNotRunning
+from twisted.internet.serialport import SerialPort
 
 from telemetry.common import abort_on_crash, exit_status
-from telemetry.proxy import UDPProxyProtocol
+from telemetry.proxy import UDPProxyProtocol, SerialProxyProtocol
 from telemetry.tuntap import TUNTAPProtocol, TUNTAPTransport
 from telemetry.conf import settings
 
 connect_re = re.compile(r'^connect://(?P<addr>[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+):(?P<port>[0-9]+)$', re.IGNORECASE)
 listen_re = re.compile(r'^listen://(?P<addr>[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+):(?P<port>[0-9]+)$', re.IGNORECASE)
-
+serial_re = re.compile(r'^serial:(?P<dev>[a-z0-9\-\_/]+):(?P<baud>[0-9]+)$', re.IGNORECASE)
 
 class ExecError(Exception):
     pass
@@ -318,7 +319,8 @@ def init(profile, wlans):
                                     defer.maybeDeferred(init_video, profile, wlans),
                                     defer.maybeDeferred(init_tunnel, profile, wlans)])\
                     .addErrback(lambda f: f.trap(defer.FirstError) and f.value.subFailure)
-    return init_wlans(profile, wlans).addCallback(_init_services)
+
+    return defer.maybeDeferred(init_wlans, profile, wlans).addCallback(_init_services)
 
 
 def init_mavlink(profile, wlans):
@@ -334,28 +336,52 @@ def init_mavlink(profile, wlans):
                cfg.bandwidth, "short" if cfg.short_gi else "long", cfg.stbc, cfg.ldpc, cfg.mcs_index,
                cfg.fec_k, cfg.fec_n)).split() + wlans
 
+    listen = None
+    connect = None
+    serial = None
+
     if connect_re.match(cfg.peer):
         m = connect_re.match(cfg.peer)
         connect = m.group('addr'), int(m.group('port'))
-        listen = None
         log.msg('Connect telem stream %d(RX), %d(TX) to %s:%d' % (cfg.stream_rx, cfg.stream_tx, connect[0], connect[1]))
+
     elif listen_re.match(cfg.peer):
         m = listen_re.match(cfg.peer)
         listen = m.group('addr'), int(m.group('port'))
-        connect = None
         log.msg('Listen for telem stream %d(RX), %d(TX) on %s:%d' % (cfg.stream_rx, cfg.stream_tx, listen[0], listen[1]))
+
+    elif serial_re.match(cfg.peer):
+        m = serial_re.match(cfg.peer)
+        serial = m.group('dev'), int(m.group('baud'))
+        log.msg('Open serial port %s on speed %d' % (serial[0], serial[1]))
+
     else:
         raise Exception('Unsupport peer address: %s' % (cfg.peer,))
 
-    # The first argument is not None only if we initiate mavlink connection
-    p_in = UDPProxyProtocol(connect, agg_max_size=settings.common.radio_mtu,
-                            agg_timeout=settings.common.mavlink_agg_timeout,
-                            inject_rssi=cfg.inject_rssi)
+    if serial:
+        p_in = SerialProxyProtocol(agg_max_size=settings.common.radio_mtu,
+                                   agg_timeout=settings.common.mavlink_agg_timeout,
+                                   inject_rssi=cfg.inject_rssi)
+    else:
+        # The first argument is not None only if we initiate mavlink connection
+        p_in = UDPProxyProtocol(connect, agg_max_size=settings.common.radio_mtu,
+                                agg_timeout=settings.common.mavlink_agg_timeout,
+                                inject_rssi=cfg.inject_rssi)
+
     p_tx_l = [UDPProxyProtocol(('127.0.0.1', cfg.port_tx + i)) for i, _ in enumerate(wlans)]
     p_rx = UDPProxyProtocol()
     p_rx.peer = p_in
-    sockets = [ reactor.listenUDP(listen[1] if listen else 0, p_in),
-                reactor.listenUDP(cfg.port_rx, p_rx) ]
+
+    if serial:
+        serial_port = SerialPort(p_in, os.path.join('/dev', serial[0]), reactor, baudrate=serial[1])
+        serial_port._serial.exclusive = True
+        sockets = []
+
+    else:
+        serial_port = None
+        sockets = [ reactor.listenUDP(listen[1] if listen else 0, p_in) ]
+
+    sockets += [ reactor.listenUDP(cfg.port_rx, p_rx) ]
     sockets += [ reactor.listenUDP(0, p_tx) for p_tx in p_tx_l ]
 
     log.msg('Telem RX: %s' % (' '.join(cmd_rx),))
@@ -369,8 +395,13 @@ def init_mavlink(profile, wlans):
           TXProtocol(cmd_tx, 'telem tx').start()]
 
     def _cleanup(x):
+        if serial_port is not None:
+            serial_port.loseConnection()
+            serial_port.connectionLost(failure.Failure(ti_main.CONNECTION_DONE))
+
         for s in sockets:
             s.stopListening()
+
         return x
 
     return defer.gatherResults(dl, consumeErrors=True).addBoth(_cleanup)\
