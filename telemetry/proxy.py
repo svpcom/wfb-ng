@@ -184,6 +184,7 @@ class SerialProxyProtocol(Protocol, ProxyProtocol):
         buffer = bytearray()
         mlist = []
         skip = 0
+        bad = 0
 
         while True:
             # GC
@@ -215,9 +216,13 @@ class SerialProxyProtocol(Protocol, ProxyProtocol):
 
                     mlen += (25 if flags & 0x01 else 12)
                 else:
-                    log.msg('skip bad byte %x' % (version,))
                     skip += 1
+                    bad += 1
                     continue
+
+                if bad:
+                    log.msg('skip %d bad bytes before sync' % (bad,))
+                    bad = 0
 
                 if len(buffer) - skip < mlen:
                     break
