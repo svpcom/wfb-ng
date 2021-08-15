@@ -580,7 +580,7 @@ void Aggregator::process_packet(const uint8_t *buf, size_t size, uint8_t wlan_id
         // Search for missed data fragments
         for(int f_idx=p->send_fragment_idx; f_idx < fec_k; f_idx++)
         {
-            if(! p->fragment_map[p->send_fragment_idx])
+            if(! p->fragment_map[f_idx])
             {
                 //Recover missed fragments using FEC
                 apply_fec(ring_idx);
@@ -588,7 +588,7 @@ void Aggregator::process_packet(const uint8_t *buf, size_t size, uint8_t wlan_id
                 // Count total number of recovered fragments
                 for(; f_idx < fec_k; f_idx++)
                 {
-                    if(! p->fragment_map[p->send_fragment_idx])
+                    if(! p->fragment_map[f_idx])
                     {
                         count_p_fec_recovered += 1;
                     }
