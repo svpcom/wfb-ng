@@ -189,15 +189,23 @@ void Transmitter::send_session_key(void)
     inject_packet((uint8_t*)&session_key_packet, sizeof(session_key_packet));
 }
 
-void Transmitter::send_packet(const uint8_t *buf, size_t size)
+void Transmitter::send_packet(const uint8_t *buf, size_t size, uint8_t flags)
 {
     wpacket_hdr_t packet_hdr;
     assert(size <= MAX_PAYLOAD_SIZE);
 
+    // FEC-only packets are only for closing already opened blocks
+    if(fragment_idx == 0 && flags & WFB_PACKET_FEC_ONLY)
+    {
+        return;
+    }
+
     packet_hdr.packet_size = htobe16(size);
+    packet_hdr.flags = flags;
     memset(block[fragment_idx], '\0', MAX_FEC_PAYLOAD);
     memcpy(block[fragment_idx], &packet_hdr, sizeof(packet_hdr));
     memcpy(block[fragment_idx] + sizeof(packet_hdr), buf, size);
+
     send_block_fragment(sizeof(packet_hdr) + size);
     max_packet_size = max(max_packet_size, sizeof(packet_hdr) + size);
     fragment_idx += 1;
@@ -223,14 +231,14 @@ void Transmitter::send_packet(const uint8_t *buf, size_t size)
     }
 }
 
-void video_source(shared_ptr<Transmitter> &t, vector<int> &tx_fd)
+void data_source(shared_ptr<Transmitter> &t, vector<int> &rx_fd, int poll_timeout)
 {
-    int nfds = tx_fd.size();
+    int nfds = rx_fd.size();
     struct pollfd fds[nfds];
     memset(fds, '\0', sizeof(fds));
 
     int i = 0;
-    for(auto it=tx_fd.begin(); it != tx_fd.end(); it++, i++)
+    for(auto it=rx_fd.begin(); it != rx_fd.end(); it++, i++)
     {
         int fd = *it;
         if(fcntl(fd, F_SETFL, fcntl(fd, F_GETFL, 0) | O_NONBLOCK) < 0)
@@ -246,14 +254,18 @@ void video_source(shared_ptr<Transmitter> &t, vector<int> &tx_fd)
 
     for(;;)
     {
-        int rc = poll(fds, nfds, -1);
+        int rc = poll(fds, nfds, poll_timeout > 0 ? poll_timeout : -1);
 
         if (rc < 0){
             if (errno == EINTR || errno == EAGAIN) continue;
             throw runtime_error(string_format("poll error: %s", strerror(errno)));
         }
 
-        if (rc == 0) continue;  // timeout expired
+        if (rc == 0) // timeout expired
+        {
+            t->send_packet(NULL, 0, WFB_PACKET_FEC_ONLY);
+            continue;
+        }
 
         for(i = 0; i < nfds; i++)
         {
@@ -267,7 +279,7 @@ void video_source(shared_ptr<Transmitter> &t, vector<int> &tx_fd)
             {
                 uint8_t buf[MAX_PAYLOAD_SIZE];
                 ssize_t rsize;
-                int fd = tx_fd[i];
+                int fd = rx_fd[i];
 
                 t->select_output(i);
                 while((rsize = recv(fd, buf, sizeof(buf), 0)) >= 0)
@@ -279,7 +291,7 @@ void video_source(shared_ptr<Transmitter> &t, vector<int> &tx_fd)
                         t->send_session_key();
                         session_key_announce_ts = cur_ts + SESSION_KEY_ANNOUNCE_MSEC;
                     }
-                    t->send_packet(buf, rsize);
+                    t->send_packet(buf, rsize, 0);
                 }
                 if(errno != EWOULDBLOCK) throw runtime_error(string_format("Error receiving packet: %s", strerror(errno)));
             }
@@ -299,10 +311,12 @@ int main(int argc, char * const *argv)
     int stbc = 0;
     int ldpc = 0;
     int mcs_index = 1;
+    int debug_port = 0;
+    int poll_timeout = 0;
 
     string keypair = "tx.key";
 
-    while ((opt = getopt(argc, argv, "K:k:n:u:r:p:B:G:S:L:M:")) != -1) {
+    while ((opt = getopt(argc, argv, "K:k:n:u:r:p:B:G:S:L:M:D:T:")) != -1) {
         switch (opt) {
         case 'K':
             keypair = optarg;
@@ -334,12 +348,18 @@ int main(int argc, char * const *argv)
         case 'M':
             mcs_index = atoi(optarg);
             break;
+        case 'D':
+            debug_port = atoi(optarg);
+            break;
+        case 'T':
+            poll_timeout = atoi(optarg);
+            break;
         default: /* '?' */
         show_usage:
-            fprintf(stderr, "Usage: %s [-K tx_key] [-k RS_K] [-n RS_N] [-u udp_port] [-p radio_port] [-B bandwidth] [-G guard_interval] [-S stbc] [-L ldpc] [-M mcs_index] interface1 [interface2] ...\n",
+            fprintf(stderr, "Usage: %s [-K tx_key] [-k RS_K] [-n RS_N] [-u udp_port] [-p radio_port] [-B bandwidth] [-G guard_interval] [-S stbc] [-L ldpc] [-M mcs_index] [ -T poll_timeout ] interface1 [interface2] ...\n",
                     argv[0]);
-            fprintf(stderr, "Default: K='%s', k=%d, n=%d, udp_port=%d, radio_port=%d bandwidth=%d guard_interval=%s stbc=%d ldpc=%d mcs_index=%d\n",
-                    keypair.c_str(), k, n, udp_port, radio_port, bandwidth, short_gi ? "short" : "long", stbc, ldpc, mcs_index);
+            fprintf(stderr, "Default: K='%s', k=%d, n=%d, udp_port=%d, radio_port=%d bandwidth=%d guard_interval=%s stbc=%d ldpc=%d mcs_index=%d, poll_timeout=%d\n",
+                    keypair.c_str(), k, n, udp_port, radio_port, bandwidth, short_gi ? "short" : "long", stbc, ldpc, mcs_index, poll_timeout);
             fprintf(stderr, "Radio MTU: %lu\n", (unsigned long)MAX_PAYLOAD_SIZE);
             fprintf(stderr, "WFB version " WFB_VERSION "\n");
             exit(1);
@@ -397,23 +417,27 @@ int main(int argc, char * const *argv)
     }
     try
     {
-        vector<int> tx_fd;
+        vector<int> rx_fd;
         vector<string> wlans;
         for(int i = 0; optind + i < argc; i++)
         {
             int fd = open_udp_socket_for_rx(udp_port + i);
             fprintf(stderr, "Listen on %d for %s\n", udp_port + i, argv[optind + i]);
-            tx_fd.push_back(fd);
+            rx_fd.push_back(fd);
             wlans.push_back(string(argv[optind + i]));
         }
 
-#ifdef DEBUG_TX
-        shared_ptr<Transmitter>t = shared_ptr<UdpTransmitter>(new UdpTransmitter(k, n, keypair, "127.0.0.1", 5601 + i));
-#else
-        shared_ptr<Transmitter>t = shared_ptr<PcapTransmitter>(new PcapTransmitter(k, n, keypair, radio_port, wlans));
-#endif
+        shared_ptr<Transmitter> t;
 
-        video_source(t, tx_fd);
+        if(debug_port)
+        {
+            fprintf(stderr, "Using %lu ports from %d for wlan emulation\n", wlans.size(), debug_port);
+            t = shared_ptr<UdpTransmitter>(new UdpTransmitter(k, n, keypair, "127.0.0.1", debug_port));
+        } else {
+            t = shared_ptr<PcapTransmitter>(new PcapTransmitter(k, n, keypair, radio_port, wlans));
+        }
+
+        data_source(t, rx_fd, poll_timeout);
     }catch(runtime_error &e)
     {
         fprintf(stderr, "Error: %s\n", e.what());

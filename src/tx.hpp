@@ -34,7 +34,7 @@ class Transmitter
 public:
     Transmitter(int k, int m, const std::string &keypair);
     virtual ~Transmitter();
-    void send_packet(const uint8_t *buf, size_t size);
+    void send_packet(const uint8_t *buf, size_t size, uint8_t flags);
     void send_session_key(void);
     virtual void select_output(int idx) = 0;
 protected:
@@ -78,9 +78,16 @@ private:
 class UdpTransmitter : public Transmitter
 {
 public:
-    UdpTransmitter(int k, int m, const std::string &keypair, const std::string &client_addr, int client_port) : Transmitter(k, m, keypair)
+    UdpTransmitter(int k, int m, const std::string &keypair, const std::string &client_addr, int base_port) : Transmitter(k, m, keypair),\
+                                                                                                              base_port(base_port)
     {
-        sockfd = open_udp_socket(client_addr, client_port);
+        sockfd = socket(AF_INET, SOCK_DGRAM, 0);
+        if (sockfd < 0) throw std::runtime_error(string_format("Error opening socket: %s", strerror(errno)));
+
+        bzero((char *) &saddr, sizeof(saddr));
+        saddr.sin_family = AF_INET;
+        saddr.sin_addr.s_addr = inet_addr(client_addr.c_str());
+        saddr.sin_port = htons((unsigned short)base_port);
     }
 
     virtual ~UdpTransmitter()
@@ -88,7 +95,10 @@ public:
         close(sockfd);
     }
 
-    virtual void select_output(int /*idx*/){}
+    virtual void select_output(int idx)
+    {
+        saddr.sin_port = htons((unsigned short)(base_port + idx));
+    }
 
 private:
     virtual void inject_packet(const uint8_t *buf, size_t size)
@@ -106,8 +116,8 @@ private:
                                { .iov_base = (void*)buf,
                                  .iov_len = size }};
 
-        struct msghdr msghdr = { .msg_name = NULL,
-                                 .msg_namelen = 0,
+        struct msghdr msghdr = { .msg_name = &saddr,
+                                 .msg_namelen = sizeof(saddr),
                                  .msg_iov = iov,
                                  .msg_iovlen = 2,
                                  .msg_control = NULL,
@@ -117,23 +127,7 @@ private:
         sendmsg(sockfd, &msghdr, MSG_DONTWAIT);
     }
 
-    int open_udp_socket(const std::string &client_addr, int client_port)
-    {
-        struct sockaddr_in saddr;
-        int fd = socket(AF_INET, SOCK_DGRAM, 0);
-        if (fd < 0) throw std::runtime_error(string_format("Error opening socket: %s", strerror(errno)));
-
-        bzero((char *) &saddr, sizeof(saddr));
-        saddr.sin_family = AF_INET;
-        saddr.sin_addr.s_addr = inet_addr(client_addr.c_str());
-        saddr.sin_port = htons((unsigned short)client_port);
-
-        if (connect(fd, (struct sockaddr *) &saddr, sizeof(saddr)) < 0)
-        {
-            throw std::runtime_error(string_format("Connect error: %s", strerror(errno)));
-        }
-        return fd;
-    }
-
     int sockfd;
+    int base_port;
+    struct sockaddr_in saddr;
 };

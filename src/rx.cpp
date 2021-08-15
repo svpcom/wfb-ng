@@ -219,7 +219,7 @@ Aggregator::Aggregator(const string &client_addr, int client_port, int k, int n,
     for(int ring_idx = 0; ring_idx < RX_RING_SIZE; ring_idx++)
     {
         rx_ring[ring_idx].block_idx = 0;
-        rx_ring[ring_idx].send_fragment_idx = 0;
+        rx_ring[ring_idx].fragment_to_send_idx = 0;
         rx_ring[ring_idx].has_fragments = 0;
         rx_ring[ring_idx].fragments = new uint8_t*[fec_n];
         for(int i=0; i < fec_n; i++)
@@ -319,7 +319,7 @@ int Aggregator::rx_ring_push(void)
 
     fprintf(stderr, "override block 0x%" PRIx64 " flush %d fragments\n", rx_ring[rx_ring_front].block_idx, rx_ring[rx_ring_front].has_fragments);
 
-    for(int f_idx=rx_ring[rx_ring_front].send_fragment_idx; f_idx < fec_k; f_idx++)
+    for(int f_idx=rx_ring[rx_ring_front].fragment_to_send_idx; f_idx < fec_k; f_idx++)
     {
         if(rx_ring[rx_ring_front].fragment_map[f_idx])
         {
@@ -358,7 +358,7 @@ int Aggregator::get_block_ring_idx(uint64_t block_idx)
     {
         ring_idx = rx_ring_push();
         rx_ring[ring_idx].block_idx = block_idx + i + 1 - new_blocks;
-        rx_ring[ring_idx].send_fragment_idx = 0;
+        rx_ring[ring_idx].fragment_to_send_idx = 0;
         rx_ring[ring_idx].has_fragments = 0;
         memset(rx_ring[ring_idx].fragment_map, '\0', fec_n * sizeof(uint8_t));
     }
@@ -463,7 +463,7 @@ void Aggregator::process_packet(const uint8_t *buf, size_t size, uint8_t wlan_id
             for(int ring_idx = 0; ring_idx < RX_RING_SIZE; ring_idx++)
             {
                 rx_ring[ring_idx].block_idx = 0;
-                rx_ring[ring_idx].send_fragment_idx = 0;
+                rx_ring[ring_idx].fragment_to_send_idx = 0;
                 rx_ring[ring_idx].has_fragments = 0;
                 memset(rx_ring[ring_idx].fragment_map, '\0', fec_n * sizeof(uint8_t));
             }
@@ -537,14 +537,14 @@ void Aggregator::process_packet(const uint8_t *buf, size_t size, uint8_t wlan_id
     if(ring_idx == rx_ring_front)
     {
         // check if any packets without gaps
-        while(p->send_fragment_idx < fec_k && p->fragment_map[p->send_fragment_idx])
+        while(p->fragment_to_send_idx < fec_k && p->fragment_map[p->fragment_to_send_idx])
         {
-            send_packet(ring_idx, p->send_fragment_idx);
-            p->send_fragment_idx += 1;
+            send_packet(ring_idx, p->fragment_to_send_idx);
+            p->fragment_to_send_idx += 1;
         }
 
         // remove block if full
-        if(p->send_fragment_idx == fec_k)
+        if(p->fragment_to_send_idx == fec_k)
         {
             rx_ring_front = modN(rx_ring_front + 1, RX_RING_SIZE);
             rx_ring_alloc -= 1;
@@ -555,14 +555,14 @@ void Aggregator::process_packet(const uint8_t *buf, size_t size, uint8_t wlan_id
 
     // 1. This is not the oldest block but with sufficient number of fragments (K) to decode
     // 2. This is the oldest block but with gaps and total number of fragments is K
-    if(p->send_fragment_idx < fec_k && p->has_fragments == fec_k)
+    if(p->fragment_to_send_idx < fec_k && p->has_fragments == fec_k)
     {
         // send all queued packets in all unfinished blocks before and remove them
         int nrm = modN(ring_idx - rx_ring_front, RX_RING_SIZE);
 
         while(nrm > 0)
         {
-            for(int f_idx=rx_ring[rx_ring_front].send_fragment_idx; f_idx < fec_k; f_idx++)
+            for(int f_idx=rx_ring[rx_ring_front].fragment_to_send_idx; f_idx < fec_k; f_idx++)
             {
                 if(rx_ring[rx_ring_front].fragment_map[f_idx])
                 {
@@ -577,10 +577,10 @@ void Aggregator::process_packet(const uint8_t *buf, size_t size, uint8_t wlan_id
         assert(rx_ring_alloc > 0);
         assert(ring_idx == rx_ring_front);
 
-        // Search for missed data fragments
-        for(int f_idx=p->send_fragment_idx; f_idx < fec_k; f_idx++)
+        // Search for missed data fragments and apply FEC only if needed
+        for(int f_idx=p->fragment_to_send_idx; f_idx < fec_k; f_idx++)
         {
-            if(! p->fragment_map[p->send_fragment_idx])
+            if(! p->fragment_map[f_idx])
             {
                 //Recover missed fragments using FEC
                 apply_fec(ring_idx);
@@ -588,7 +588,7 @@ void Aggregator::process_packet(const uint8_t *buf, size_t size, uint8_t wlan_id
                 // Count total number of recovered fragments
                 for(; f_idx < fec_k; f_idx++)
                 {
-                    if(! p->fragment_map[p->send_fragment_idx])
+                    if(! p->fragment_map[f_idx])
                     {
                         count_p_fec_recovered += 1;
                     }
@@ -597,15 +597,16 @@ void Aggregator::process_packet(const uint8_t *buf, size_t size, uint8_t wlan_id
             }
         }
 
-        while(p->send_fragment_idx < fec_k)
+        while(p->fragment_to_send_idx < fec_k)
         {
-            send_packet(ring_idx, p->send_fragment_idx);
-            p->send_fragment_idx += 1;
+            send_packet(ring_idx, p->fragment_to_send_idx);
+            p->fragment_to_send_idx += 1;
         }
 
         // remove block
         rx_ring_front = modN(rx_ring_front + 1, RX_RING_SIZE);
         rx_ring_alloc -= 1;
+        assert(rx_ring_alloc >= 0);
     }
 }
 
@@ -613,6 +614,7 @@ void Aggregator::send_packet(int ring_idx, int fragment_idx)
 {
     wpacket_hdr_t* packet_hdr = (wpacket_hdr_t*)(rx_ring[ring_idx].fragments[fragment_idx]);
     uint8_t *payload = (rx_ring[ring_idx].fragments[fragment_idx]) + sizeof(wpacket_hdr_t);
+    uint8_t flags = packet_hdr->flags;
     uint16_t packet_size = be16toh(packet_hdr->packet_size);
     uint32_t packet_seq = rx_ring[ring_idx].block_idx * fec_k + fragment_idx;
 
@@ -628,7 +630,8 @@ void Aggregator::send_packet(int ring_idx, int fragment_idx)
     {
         fprintf(stderr, "corrupted packet %u\n", seq);
         count_p_bad += 1;
-    }else{
+    }else if(!(flags & WFB_PACKET_FEC_ONLY))
+    {
         send(sockfd, payload, packet_size, MSG_DONTWAIT);
     }
 }

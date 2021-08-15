@@ -102,9 +102,9 @@ static uint8_t ieee80211_header[] __attribute__((unused)) = {
  radiotap_header
    ieee_80211_header
      wblock_hdr_t   { packet_type, nonce = (block_idx << 8 + fragment_idx) }
-       wpacket_hdr_t  { packet_size }  #
-         data                          #
-                                       +-- encrypted
+       wpacket_hdr_t  { flags, packet_size }  #
+         data                                 #
+                                              +-- encrypted
 
  */
 
@@ -113,9 +113,12 @@ static uint8_t ieee80211_header[] __attribute__((unused)) = {
 #define BLOCK_IDX_MASK ((1LLU << 56) - 1)
 #define MAX_BLOCK_IDX ((1LLU << 55) - 1)
 
-
+// packet types
 #define WFB_PACKET_DATA 0x1
 #define WFB_PACKET_KEY 0x2
+
+// packet flags
+#define WFB_PACKET_FEC_ONLY 0x1
 
 #define SESSION_KEY_ANNOUNCE_MSEC 1000
 #define RX_ANT_MAX  4
@@ -148,6 +151,7 @@ typedef struct {
 // Plain data packet after FEC decode
 
 typedef struct {
+    uint8_t flags;
     uint16_t packet_size; // big endian
 }  __attribute__ ((packed)) wpacket_hdr_t;
 

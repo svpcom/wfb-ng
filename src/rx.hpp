@@ -78,7 +78,7 @@ typedef struct {
     uint64_t block_idx;
     uint8_t** fragments;
     uint8_t *fragment_map;
-    uint8_t send_fragment_idx;
+    uint8_t fragment_to_send_idx;
     uint8_t has_fragments;
 } rx_ring_item_t;
 
