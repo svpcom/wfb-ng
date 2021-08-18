@@ -18,4 +18,4 @@ def main(release):
                                ttuple.tm_hour * 3600 + ttuple.tm_min * 60 + ttuple.tm_sec))
 
 if __name__ == '__main__':
-    main(map(int, sys.argv[1].split('.')) if len(sys.argv) == 2 else None)
+    main([int(i) for i in sys.argv[1].split('.')] if len(sys.argv) == 2 else None)
