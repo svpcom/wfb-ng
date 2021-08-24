@@ -29,20 +29,54 @@ standard_library.install_aliases()
 from builtins import *
 
 import struct
-from . import mavlink
+import os
+
 from twisted.python import log
-from twisted.internet import reactor, defer
+from twisted.internet import reactor, defer, utils
 from twisted.internet.protocol import DatagramProtocol, Protocol
-from telemetry.conf import settings
+
+from . import mavlink
+from .conf import settings
+from .mavlink_protocol import MAVLinkProtocol
+
+
+class ExecError(Exception):
+    pass
+
+
+def call_and_check_rc(cmd, *args):
+    def _check_rc(_args):
+        (stdout, stderr, rc) = _args
+        if rc != 0:
+            err = ExecError('RC %d: %s %s' % (rc, cmd, ' '.join(args)))
+            err.stdout = stdout.strip()
+            err.stderr = stderr.strip()
+            raise err
+
+        log.msg('# %s' % (' '.join((cmd,) + args),))
+        if stdout:
+            log.msg(stdout)
+
+    def _got_signal(f):
+        f.trap(tuple)
+        stdout, stderr, signum = f.value
+        err = ExecError('Got signal %d: %s %s' % (signum, cmd, ' '.join(args)))
+        err.stdout = stdout.strip()
+        err.stderr = stderr.strip()
+        raise err
+
+    return utils.getProcessOutputAndValue(cmd, args, env=os.environ).addCallbacks(_check_rc, _got_signal)
 
 
 class ProxyProtocol:
-    def __init__(self, agg_max_size=None, agg_timeout=None, inject_rssi=False):
+    def __init__(self, agg_max_size=None, agg_timeout=None, inject_rssi=False, arm_proto=None):
         # use self.write to send mavlink message
         if inject_rssi:
             self.radio_mav = mavlink.MAVLink(self, srcSystem=3, srcComponent=242) # WFB
         else:
             self.radio_mav = None
+
+        self.arm_proto = arm_proto
         self.peer = None
         self.agg_max_size = agg_max_size
         self.agg_timeout = agg_timeout
@@ -73,6 +107,9 @@ class ProxyProtocol:
             self.peer.write(data)
 
     def messageReceived(self, data):
+        if self.arm_proto:
+            self.arm_proto.dataReceived(data)
+
         # send message to local transport
         if self.agg_max_size is None or self.agg_timeout is None:
             return self._send_to_peer(data)
@@ -108,8 +145,8 @@ class ProxyProtocol:
 class UDPProxyProtocol(DatagramProtocol, ProxyProtocol):
     noisy = False
 
-    def __init__(self, addr=None, agg_max_size=None, agg_timeout=None, inject_rssi=False, mirror=None):
-        ProxyProtocol.__init__(self, agg_max_size, agg_timeout, inject_rssi)
+    def __init__(self, addr=None, agg_max_size=None, agg_timeout=None, inject_rssi=False, mirror=None, arm_proto=None):
+        ProxyProtocol.__init__(self, agg_max_size, agg_timeout, inject_rssi, arm_proto=arm_proto)
         self.reply_addr = addr
         self.fixed_addr = bool(addr)
         self.mirror = mirror
@@ -175,8 +212,8 @@ class UDPProxyProtocol(DatagramProtocol, ProxyProtocol):
 class SerialProxyProtocol(Protocol, ProxyProtocol):
     noisy = False
 
-    def __init__(self, agg_max_size=None, agg_timeout=None, inject_rssi=False):
-        ProxyProtocol.__init__(self, agg_max_size, agg_timeout, inject_rssi)
+    def __init__(self, agg_max_size=None, agg_timeout=None, inject_rssi=False, arm_proto=None):
+        ProxyProtocol.__init__(self, agg_max_size, agg_timeout, inject_rssi, arm_proto=arm_proto)
         self.mavlink_fsm = self.mavlink_parser()
         self.mavlink_fsm.send(None)
 
@@ -239,4 +276,54 @@ class SerialProxyProtocol(Protocol, ProxyProtocol):
 
         for m in m_list:
             self.messageReceived(m)
+
+
+class ARMProtocol(MAVLinkProtocol):
+    def __init__(self, call_on_arm, call_on_disarm):
+        MAVLinkProtocol.__init__(self, None, None)
+        self.call_on_arm = call_on_arm
+        self.call_on_disarm = call_on_disarm
+        self.armed = None
+        self.locked = False
+
+    def messageReceived(self, message):
+        if (message._header.msgId, message._header.srcSystem, message._header.srcComponent) != (mavlink.MAVLINK_MSG_ID_HEARTBEAT, 1, 1):
+            return
+
+        armed = bool(message.base_mode & mavlink.MAV_MODE_FLAG_SAFETY_ARMED)
+
+        if not self.locked:
+            self.locked = True
+
+            def _unlock(x):
+                self.locked = False
+                return x
+
+            return defer.maybeDeferred(self.change_state, armed).addBoth(_unlock)
+
+    def change_state(self, armed):
+        if armed == self.armed:
+            return
+
+        self.armed = armed
+        cmd = None
+
+        if armed:
+            print('State change: ARMED')
+            cmd = self.call_on_arm
+        else:
+            print('State change: DISARMED')
+            cmd = self.call_on_disarm
+
+        def on_err(f):
+            log.msg('Command exec failed: %s' % (f.value,), isError=1)
+
+            if f.value.stdout:
+                log.msg(f.value.stdout, isError=1)
+
+            if f.value.stderr:
+                log.msg(f.value.stderr, isError=1)
+
+        if cmd is not None:
+            return call_and_check_rc(cmd).addErrback(on_err)
 

@@ -36,47 +36,20 @@ import re
 
 from itertools import groupby
 from twisted.python import log, failure
-from twisted.internet import reactor, defer, utils, main as ti_main
+from twisted.internet import reactor, defer, main as ti_main
 from twisted.internet.protocol import ProcessProtocol, DatagramProtocol, Protocol, Factory
 from twisted.protocols.basic import LineReceiver
 from twisted.internet.error import ReactorNotRunning
 from twisted.internet.serialport import SerialPort
 
-from telemetry.common import abort_on_crash, exit_status
-from telemetry.proxy import UDPProxyProtocol, SerialProxyProtocol
-from telemetry.tuntap import TUNTAPProtocol, TUNTAPTransport
-from telemetry.conf import settings
+from .common import abort_on_crash, exit_status
+from .proxy import UDPProxyProtocol, SerialProxyProtocol, ARMProtocol, call_and_check_rc, ExecError
+from .tuntap import TUNTAPProtocol, TUNTAPTransport
+from .conf import settings
 
 connect_re = re.compile(r'^connect://(?P<addr>[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+):(?P<port>[0-9]+)$', re.IGNORECASE)
 listen_re = re.compile(r'^listen://(?P<addr>[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+):(?P<port>[0-9]+)$', re.IGNORECASE)
 serial_re = re.compile(r'^serial:(?P<dev>[a-z0-9\-\_/]+):(?P<baud>[0-9]+)$', re.IGNORECASE)
-
-class ExecError(Exception):
-    pass
-
-
-def call_and_check_rc(cmd, *args):
-    def _check_rc(_args):
-        (stdout, stderr, rc) = _args
-        if rc != 0:
-            err = ExecError('RC %d: %s %s' % (rc, cmd, ' '.join(args)))
-            err.stdout = stdout.strip()
-            err.stderr = stderr.strip()
-            raise err
-
-        log.msg('# %s' % (' '.join((cmd,) + args),))
-        if stdout:
-            log.msg(stdout)
-
-    def _got_signal(f):
-        f.trap(tuple)
-        stdout, stderr, signum = f.value
-        err = ExecError('Got signal %d: %s %s' % (signum, cmd, ' '.join(args)))
-        err.stdout = stdout.strip()
-        err.stderr = stderr.strip()
-        raise err
-
-    return utils.getProcessOutputAndValue(cmd, args, env=os.environ).addCallbacks(_check_rc, _got_signal)
 
 
 class BadTelemetry(Exception):
@@ -365,19 +338,26 @@ def init_mavlink(profile, wlans):
         mirror = m.group('addr'), int(m.group('port'))
         log.msg('Mirror telem stream to %s:%d' % (mirror[0], mirror[1]))
 
+    if cfg.call_on_arm or cfg.call_on_disarm:
+        arm_proto = ARMProtocol(cfg.call_on_arm, cfg.call_on_disarm)
+    else:
+        arm_proto = None
+
     if serial:
         p_in = SerialProxyProtocol(agg_max_size=settings.common.radio_mtu,
                                    agg_timeout=settings.common.mavlink_agg_timeout,
-                                   inject_rssi=cfg.inject_rssi)
+                                   inject_rssi=cfg.inject_rssi,
+                                   arm_proto=arm_proto)
     else:
         # The first argument is not None only if we initiate mavlink connection
         p_in = UDPProxyProtocol(connect, agg_max_size=settings.common.radio_mtu,
                                 agg_timeout=settings.common.mavlink_agg_timeout,
                                 inject_rssi=cfg.inject_rssi,
-                                mirror=mirror)
+                                mirror=mirror,
+                                arm_proto=arm_proto)
 
     p_tx_l = [UDPProxyProtocol(('127.0.0.1', cfg.port_tx + i)) for i, _ in enumerate(wlans)]
-    p_rx = UDPProxyProtocol()
+    p_rx = UDPProxyProtocol(arm_proto=arm_proto)
     p_rx.peer = p_in
 
     if serial:
