@@ -15,7 +15,7 @@ def main():
 
     if branch.startswith('release-'):
         release = [int(i) for i in branch.split('-')[1].split('.')]
-        delta = datetime.datetime.utcnow() - datetime.datetime(2000 + release[0], release[1], 1)
+        delta = datetime.datetime(*ttuple[:6]) - datetime.datetime(2000 + release[0], release[1], 1)
 
         print('%d.%d.%s.%d' % (release[0], release[1], '0.%d' % (999 + delta.days,) if delta.days < 0 else (delta.days + 1),
                                ttuple.tm_hour * 3600 + ttuple.tm_min * 60 + ttuple.tm_sec))
