@@ -130,8 +130,8 @@ class AntennaFactory(Factory):
         if self.p_in:
             if ant_rssi: self.select_tx_antenna(ant_rssi)
             # Send mavlink packet with radio rssi
-            rx_errors = min(packet_stats['dec_err'][0] + packet_stats['bad'][0] + packet_stats['lost'][0], 65535)
-            rx_fec = min(packet_stats['fec_rec'][0], 65535)
+            rx_errors = min(packet_stats['dec_err'][1] + packet_stats['bad'][1] + packet_stats['lost'][1], 65535)
+            rx_fec = min(packet_stats['fec_rec'][1], 65535)
             self.p_in.send_rssi(rssi, rx_errors, rx_fec, flags)
 
         if settings.common.debug:
