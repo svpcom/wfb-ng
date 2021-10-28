@@ -34,12 +34,6 @@ wfb_tx: src/tx.o src/fec.o src/wifibroadcast.o
 wfb_keygen: src/keygen.o
 	$(CC) -o $@ $^ $(_LDFLAGS)
 
-build_rpi: clean
-	docker build rpi_docker -t wifibroadcast:rpi_raspbian
-	docker run -i -t --rm -v $(PWD):/build -v $(PWD):/rpxc/sysroot/build wifibroadcast:rpi_raspbian make all_bin CFLAGS=--sysroot=/rpxc/sysroot LDFLAGS="--sysroot=/rpxc/sysroot" CXX=arm-linux-gnueabihf-g++ CC=arm-linux-gnueabihf-gcc VERSION=$(VERSION) COMMIT=$(COMMIT) ARCH=arm
-	make deb ARCH=arm
-	rm -f wfb_rx wfb_tx wfb_keygen src/*.o
-
 test:
 	PYTHONPATH=`pwd` trial telemetry.tests
 
