@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
 
-# Copyright (C) 2018, 2019 Vasily Evseenko <svpcom@p2ptech.org>
+# Copyright (C) 2018-2022 Vasily Evseenko <svpcom@p2ptech.org>
 
 #
 #   This program is free software; you can redistribute it and/or modify
@@ -18,15 +18,6 @@
 #   51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
 #
 
-from __future__ import division
-from __future__ import print_function
-from __future__ import unicode_literals
-from __future__ import absolute_import
-
-from future import standard_library
-standard_library.install_aliases()
-
-from builtins import *
 import sys
 import curses
 import curses.textpad
@@ -172,19 +163,21 @@ def main():
         print("Usage: %s <profile>" % (sys.argv[0],), file=stderr)
         sys.exit(1)
 
-    fd = tempfile.TemporaryFile()
+    fd = tempfile.TemporaryFile(mode='w+', encoding='utf-8')
     log.startLogging(fd)
 
     stdscr = curses.initscr()
-    curses.noecho()
-    curses.cbreak()
-    curses.curs_set(0)
-    stdscr.keypad(1)
-
-    reactor.callWhenRunning(lambda: defer.maybeDeferred(init, stdscr, sys.argv[1])\
+    try:
+        curses.noecho()
+        curses.cbreak()
+        curses.curs_set(0)
+        stdscr.keypad(True)
+        reactor.callWhenRunning(lambda: defer.maybeDeferred(init, stdscr, sys.argv[1])\
                             .addErrback(abort_on_crash))
-    reactor.run()
-    curses.endwin()
+        reactor.run()
+    finally:
+        curses.endwin()
+
     rc = exit_status()
 
     if rc:

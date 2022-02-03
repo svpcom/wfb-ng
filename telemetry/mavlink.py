@@ -5,9 +5,7 @@ Generated from: all.xml,ardupilotmega.xml,common.xml,development.xml,icarous.xml
 
 Note: this file has been auto-generated. DO NOT EDIT
 '''
-from __future__ import print_function
-from builtins import range
-from builtins import object
+
 import struct, array, time, json, os, sys, platform
 
 import hashlib

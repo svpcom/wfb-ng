@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
 
-# Copyright (C) 2018, 2019 Vasily Evseenko <svpcom@p2ptech.org>
+# Copyright (C) 2018-2022 Vasily Evseenko <svpcom@p2ptech.org>
 
 #
 #   This program is free software; you can redistribute it and/or modify
@@ -17,16 +17,6 @@
 #   with this program; if not, write to the Free Software Foundation, Inc.,
 #   51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
 #
-
-from __future__ import absolute_import
-from __future__ import unicode_literals
-from __future__ import print_function
-from __future__ import division
-
-from future import standard_library
-standard_library.install_aliases()
-
-from builtins import *
 
 import os
 from . import mavlink
@@ -57,7 +47,7 @@ class TUNTAPTransport(abstract.FileDescriptor):
         try:
             # We don't need packet info
             mode |= self.IFF_NO_PI
-            fcntl.ioctl(self.fd, self.TUNSETIFF, struct.pack('16sH', bytes(name, 'ascii'), mode))
+            fcntl.ioctl(self.fd, self.TUNSETIFF, struct.pack('16sH', name.encode('ascii'), mode))
             with closing(IPRoute()) as ip:
                 ifidx = ip.link_lookup(ifname=name)[0]
                 _addr, _mask = addr.split('/')
