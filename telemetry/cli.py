@@ -48,34 +48,31 @@ class AntennaStat(LineReceiver):
         attrs = json.loads(line)
         p = attrs['packets']
         rssi_d = attrs['rssi']
+        tx_ant = attrs['tx_ant'] if self.factory.has_tx else None
 
-        self.factory.window.clear()
-        self.factory.window.addstr(0, 0, 'TX ANT %02x**' % (attrs['tx_ant'],) if self.factory.has_tx else 'NO TX')
-        self.factory.window.addstr(1, 0, 'RX PKT:   recv %d d_ok %d fec_r %d lost %d d_err %d bad %d\n' % \
-                           (p['all'][1], p['dec_ok'][1], p['fec_rec'][1], p['lost'][1], p['dec_err'][1], p['bad'][1]))
+        self.factory.window.erase()
+        self.factory.window.addstr(0, 0, '[RX] pkt/s pkt')
 
-        msg_l = (('RX PKT/s: recv %d d_ok %d ' % (p['all'][0], p['dec_ok'][0]), 0),
-                 ('fec_r %d' % p['fec_rec'][0], curses.A_REVERSE if p['fec_rec'][0] else 0),
-                 (' ', 0),
-                 ('lost %d' % p['lost'][0], curses.A_REVERSE if p['lost'][0] else 0),
-                 (' ', 0),
-                 ('d_err %d' % p['dec_err'][0], curses.A_REVERSE if p['dec_err'][0] else 0),
-                 (' ', 0),
-                 ('bad %d\n' % p['bad'][0], curses.A_REVERSE if p['bad'][0] else 0))
+        msg_l = (('recv  %4d %d' % tuple(p['all']),     0),
+                 ('fec_r %4d %d' % tuple(p['fec_rec']), curses.A_REVERSE if p['fec_rec'][0] else 0),
+                 ('lost  %4d %d' % tuple(p['lost']),    curses.A_REVERSE if p['lost'][0] else 0),
+                 ('d_err %4d %d' % tuple(p['dec_err']), curses.A_REVERSE if p['dec_err'][0] else 0),
+                 ('bad   %4d %d' % tuple(p['bad']),     curses.A_REVERSE if p['bad'][0] else 0))
 
-        x = 0
-        xmax = self.factory.window.getmaxyx()[1]
-        for msg, attr in msg_l:
-            if x < xmax:
-                self.factory.window.addstr(2, x, msg, attr)
-                x += len(msg)
+        ymax = self.factory.window.getmaxyx()[0]
+        for y, (msg, attr) in enumerate(msg_l, 1):
+            if y < ymax:
+                self.factory.window.addstr(y, 0, msg, attr)
 
         if rssi_d:
-            for i, (k, v) in enumerate(sorted(rssi_d.items())):
+            self.factory.window.addstr(0, 25, '[ANT] pkt/s        RSSI')
+            for y, (k, v) in enumerate(sorted(rssi_d.items()), 1):
                 pkt_s, rssi_min, rssi_avg, rssi_max = v
-                self.factory.window.addstr(i + 4, 0, '%04x: %d pkt/s, rssi %d < %d < %d\n' % (int(k, 16), pkt_s, rssi_min, rssi_avg, rssi_max))
+                if y < ymax:
+                    active_tx = '*' if (int(k, 16) >> 8) == tx_ant else ' '
+                    self.factory.window.addstr(y, 24, '%s%04x:  %4d  %3d < %3d < %3d' % (active_tx, int(k, 16), pkt_s, rssi_min, rssi_avg, rssi_max))
         else:
-            self.factory.window.addstr(4, 0, 'Link lost!', curses.A_REVERSE)
+            self.factory.window.addstr(0, 25, '[Link lost]', curses.A_REVERSE)
 
         self.factory.window.refresh()
 
@@ -91,13 +88,13 @@ class AntennaStatClientFactory(ReconnectingClientFactory):
 
     def startedConnecting(self, connector):
         log.msg('Connecting to %s:%d ...' % (connector.host, connector.port))
-        self.window.clear()
+        self.window.erase()
         self.window.addstr(0, 0, 'Connecting...')
         self.window.refresh()
 
     def buildProtocol(self, addr):
         log.msg('Connected to %s' % (addr,))
-        self.window.clear()
+        self.window.erase()
         self.window.addstr(0, 0, 'Waiting for data...')
         self.window.refresh()
         self.resetDelay()
@@ -107,14 +104,14 @@ class AntennaStatClientFactory(ReconnectingClientFactory):
 
     def clientConnectionLost(self, connector, reason):
         log.msg('Connection lost: %s' % (reason.value,))
-        self.window.clear()
+        self.window.erase()
         self.window.addstr(0, 0, 'Connection lost: %s' % (reason.value,))
         self.window.refresh()
         ReconnectingClientFactory.clientConnectionLost(self, connector, reason)
 
     def clientConnectionFailed(self, connector, reason):
         log.msg('Connection failed: %s' % (reason.value,))
-        self.window.clear()
+        self.window.erase()
         self.window.addstr(0, 0, 'Connection failed: %s' % (reason.value,))
         self.window.refresh()
         ReconnectingClientFactory.clientConnectionFailed(self, connector, reason)
