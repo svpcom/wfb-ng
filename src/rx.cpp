@@ -210,7 +210,7 @@ void Receiver::loop_iter(void)
 
 Aggregator::Aggregator(const string &client_addr, int client_port, int k, int n, const string &keypair) : fec_k(k), fec_n(n), seq(0), rx_ring_front(0), rx_ring_alloc(0), last_known_block((uint64_t)-1),
                                                                                                           count_p_all(0), count_p_dec_err(0), count_p_dec_ok(0), count_p_fec_recovered(0),
-                                                                                                          count_p_lost(0), count_p_bad(0)
+                                                                                                          count_p_lost(0), count_p_bad(0), count_p_override(0)
 {
     sockfd = open_udp_socket_for_tx(client_addr, client_port);
     fec_p = fec_new(fec_k, fec_n);
@@ -317,7 +317,11 @@ int Aggregator::rx_ring_push(void)
       2. Reduce packet injection speed or try to unify RX hardware.
     */
 
+#if 0
     fprintf(stderr, "override block 0x%" PRIx64 " flush %d fragments\n", rx_ring[rx_ring_front].block_idx, rx_ring[rx_ring_front].has_fragments);
+#endif
+
+    count_p_override += 1;
 
     for(int f_idx=rx_ring[rx_ring_front].fragment_to_send_idx; f_idx < fec_k; f_idx++)
     {
@@ -379,12 +383,23 @@ void Aggregator::dump_stats(FILE *fp)
     fprintf(fp, "%" PRIu64 "\tPKT\t%u:%u:%u:%u:%u:%u\n", ts, count_p_all, count_p_dec_err, count_p_dec_ok, count_p_fec_recovered, count_p_lost, count_p_bad);
     fflush(fp);
 
+    if(count_p_override)
+    {
+        fprintf(stderr, "%u block overrides\n", count_p_override);
+    }
+
+    if(count_p_lost)
+    {
+        fprintf(stderr, "%u packets lost\n", count_p_lost);
+    }
+
     count_p_all = 0;
     count_p_dec_err = 0;
     count_p_dec_ok = 0;
     count_p_fec_recovered = 0;
     count_p_lost = 0;
     count_p_bad = 0;
+    count_p_override = 0;
 }
 
 
@@ -620,7 +635,6 @@ void Aggregator::send_packet(int ring_idx, int fragment_idx)
 
     if (packet_seq > seq + 1)
     {
-        fprintf(stderr, "%u packets lost\n", packet_seq - seq - 1);
         count_p_lost += (packet_seq - seq - 1);
     }
 

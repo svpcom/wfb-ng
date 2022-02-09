@@ -150,6 +150,7 @@ private:
     uint32_t count_p_fec_recovered;
     uint32_t count_p_lost;
     uint32_t count_p_bad;
+    uint32_t count_p_override;
 };
 
 class Receiver
