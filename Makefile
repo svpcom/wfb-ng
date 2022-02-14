@@ -35,7 +35,7 @@ wfb_keygen: src/keygen.o
 	$(CC) -o $@ $^ $(_LDFLAGS)
 
 test:
-	PYTHONPATH=`pwd` trial telemetry.tests
+	PYTHONPATH=`pwd` trial3 telemetry.tests
 
 rpm:  all_bin env
 	rm -rf dist
