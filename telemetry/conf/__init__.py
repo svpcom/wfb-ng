@@ -5,7 +5,9 @@ import os
 import sys
 from telemetry import config_parser
 
-_cfg_files = [ 'master.cfg', 'site.cfg', '/etc/wifibroadcast.cfg', 'local.cfg' ]   # local.cfg is for debug only
+wifibroadcast_cfg = os.getenv('WIFIBROADCAST_CFG', '/etc/wifibroadcast.cfg')
+
+_cfg_files = [ 'master.cfg', 'site.cfg', wifibroadcast_cfg, 'local.cfg' ]   # local.cfg is for debug only
 
 
 def _parse_config(telemetry_cfg=None):
