@@ -48,7 +48,7 @@ jobs:
         # queries: ./path/to/local/query, your-org/your-repo/queries@main
 
     - run: |
-       sudo apt-get -y install python-twisted libpcap-dev libsodium-dev python-pyroute2 python-future python-configparser
+       sudo apt-get -y install python3-twisted libpcap-dev libsodium-dev python3-pyroute2 python3-future
        make all_bin
 
     - name: Perform CodeQL Analysis
