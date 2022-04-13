@@ -14,8 +14,9 @@ Main features:
  - Stream encryption and authentication ([libsodium](https://download.libsodium.org/doc/))
  - Distributed operation. It can gather data from cards on different hosts. So you don't limited to bandwidth of single USB bus.
  - Aggreagation of mavlink packets. Doesn't send wifi packet for every mavlink packet.
- - Enhanced [OSD](https://github.com/svpcom/wifibroadcast_osd) for Raspberry PI (consume 10% CPU on PI Zero) or Generic X11 (play video stream with OSD on any linux-based PC)
-   Compatible with any screen resolution. Supports aspect correction for PAL to HD scaling.
+ - Enhanced [OSD](https://github.com/svpcom/wifibroadcast_osd) for Raspberry PI (consume 10% CPU on PI Zero) or any other system which
+   supports gstreamer (Linux X11, etc). Compatible with any screen resolution. Supports aspect correction for PAL to HD scaling.
+ - Provides IPv4 tunnel for generic usage
    
 ## FAQ
 Q: What is a difference from original wifibroadcast?
