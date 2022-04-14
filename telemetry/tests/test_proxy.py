@@ -34,7 +34,7 @@ class SendPacket(DatagramProtocol):
 
 class UDPProxyTestCase(unittest.TestCase):
     def setUp(self):
-        self.p1 = UDPProxyProtocol(agg_max_size=1445, agg_timeout=1, inject_rssi=True)
+        self.p1 = UDPProxyProtocol(agg_max_size=1445, agg_timeout=1, inject_rssi=True, mavlink_sys_id=3, mavlink_comp_id=242)
         self.p2 = UDPProxyProtocol(('127.0.0.1', 14553))
         self.p1.peer = self.p2
         self.p2.peer = self.p1

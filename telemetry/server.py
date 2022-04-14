@@ -337,14 +337,18 @@ def init_mavlink(profile, wlans):
         p_in = SerialProxyProtocol(agg_max_size=settings.common.radio_mtu,
                                    agg_timeout=settings.common.mavlink_agg_timeout,
                                    inject_rssi=cfg.inject_rssi,
-                                   arm_proto=arm_proto)
+                                   arm_proto=arm_proto,
+                                   mavlink_sys_id=cfg.mavlink_sys_id,
+                                   mavlink_comp_id=cfg.mavlink_comp_id)
     else:
         # The first argument is not None only if we initiate mavlink connection
         p_in = UDPProxyProtocol(connect, agg_max_size=settings.common.radio_mtu,
                                 agg_timeout=settings.common.mavlink_agg_timeout,
                                 inject_rssi=cfg.inject_rssi,
                                 mirror=mirror,
-                                arm_proto=arm_proto)
+                                arm_proto=arm_proto,
+                                mavlink_sys_id=cfg.mavlink_sys_id,
+                                mavlink_comp_id=cfg.mavlink_comp_id)
 
     p_tx_l = [UDPProxyProtocol(('127.0.0.1', cfg.port_tx + i)) for i, _ in enumerate(wlans)]
     p_rx = UDPProxyProtocol(arm_proto=arm_proto)

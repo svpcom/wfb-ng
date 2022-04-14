@@ -59,10 +59,12 @@ def call_and_check_rc(cmd, *args):
 
 
 class ProxyProtocol:
-    def __init__(self, agg_max_size=None, agg_timeout=None, inject_rssi=False, arm_proto=None):
+    def __init__(self, agg_max_size=None, agg_timeout=None, inject_rssi=False, arm_proto=None,
+                 mavlink_sys_id=None, mavlink_comp_id=None):
+
         # use self.write to send mavlink message
         if inject_rssi:
-            self.radio_mav = mavlink.MAVLink(self, srcSystem=3, srcComponent=242) # WFB
+            self.radio_mav = mavlink.MAVLink(self, srcSystem=mavlink_sys_id, srcComponent=mavlink_comp_id) # WFB
         else:
             self.radio_mav = None
 
@@ -135,8 +137,10 @@ class ProxyProtocol:
 class UDPProxyProtocol(DatagramProtocol, ProxyProtocol):
     noisy = False
 
-    def __init__(self, addr=None, agg_max_size=None, agg_timeout=None, inject_rssi=False, mirror=None, arm_proto=None):
-        ProxyProtocol.__init__(self, agg_max_size, agg_timeout, inject_rssi, arm_proto=arm_proto)
+    def __init__(self, addr=None, agg_max_size=None, agg_timeout=None, inject_rssi=False, mirror=None,
+                 arm_proto=None, mavlink_sys_id=None, mavlink_comp_id=None):
+        ProxyProtocol.__init__(self, agg_max_size, agg_timeout, inject_rssi, arm_proto=arm_proto,
+                               mavlink_sys_id=mavlink_sys_id, mavlink_comp_id=mavlink_comp_id)
         self.reply_addr = addr
         self.fixed_addr = bool(addr)
         self.mirror = mirror
@@ -202,8 +206,10 @@ class UDPProxyProtocol(DatagramProtocol, ProxyProtocol):
 class SerialProxyProtocol(Protocol, ProxyProtocol):
     noisy = False
 
-    def __init__(self, agg_max_size=None, agg_timeout=None, inject_rssi=False, arm_proto=None):
-        ProxyProtocol.__init__(self, agg_max_size, agg_timeout, inject_rssi, arm_proto=arm_proto)
+    def __init__(self, agg_max_size=None, agg_timeout=None, inject_rssi=False, arm_proto=None,
+                 mavlink_sys_id=None, mavlink_comp_id=None):
+        ProxyProtocol.__init__(self, agg_max_size, agg_timeout, inject_rssi, arm_proto=arm_proto,
+                               mavlink_sys_id=mavlink_sys_id, mavlink_comp_id=mavlink_comp_id)
         self.mavlink_fsm = self.mavlink_parser()
         self.mavlink_fsm.send(None)
 
