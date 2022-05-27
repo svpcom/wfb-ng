@@ -60,7 +60,7 @@ if version and commit:
         fd.write("# Don't make any changes here, use local.cfg instead!\n\n[common]\nversion = %r\ncommit = %r\n" % (version, commit))
 
 setup(
-    url="http://github.com/svpcom/wifibroadcast",
+    url="http://wifibroadcast.org",
     name="wifibroadcast",
     version=version,
     packages=find_packages(exclude=["*.tests", "*.tests.*", "tests.*", "tests"]),

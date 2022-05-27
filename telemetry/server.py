@@ -471,7 +471,12 @@ def init_tunnel(profile, wlans):
 
 def main():
     log.startLogging(sys.stdout)
+
+    log.msg('WFB version %s-%s' % (settings.common.version, settings.common.commit[:8]))
     profile, wlans = sys.argv[1], list(wlan for arg in sys.argv[2:] for wlan in arg.split())
+    uname = os.uname()
+    log.msg('Run on %s/%s @%s, profile %s using %s' % (uname[4], uname[2], uname[1], profile, ', '.join(wlans)))
+
     reactor.callWhenRunning(lambda: defer.maybeDeferred(init, profile, wlans)\
                             .addErrback(abort_on_crash))
     reactor.run()

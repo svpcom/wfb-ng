@@ -112,3 +112,7 @@ https://dev.px4.io/en/qgc/video_streaming_wifi_broadcast.html
 Wiki:
 -----
 See https://github.com/svpcom/wifibroadcast/wiki for additional info
+
+Community chat:
+---------------
+Telegram: https://t.me/EZWBC

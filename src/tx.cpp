@@ -362,6 +362,7 @@ int main(int argc, char * const *argv)
                     keypair.c_str(), k, n, udp_port, radio_port, bandwidth, short_gi ? "short" : "long", stbc, ldpc, mcs_index, poll_timeout);
             fprintf(stderr, "Radio MTU: %lu\n", (unsigned long)MAX_PAYLOAD_SIZE);
             fprintf(stderr, "WFB version " WFB_VERSION "\n");
+            fprintf(stderr, "WFB home page: <http://wifibroadcast.org>\n");
             exit(1);
         }
     }
