@@ -34,7 +34,7 @@ class ExecError(Exception):
     pass
 
 
-def call_and_check_rc(cmd, *args):
+def call_and_check_rc(cmd, *args, **kwargs):
     def _check_rc(_args):
         (stdout, stderr, rc) = _args
         if rc != 0:
@@ -44,8 +44,11 @@ def call_and_check_rc(cmd, *args):
             raise err
 
         log.msg('# %s' % (' '.join((cmd,) + args),))
-        if stdout:
+
+        if stdout and kwargs.get('log_stdout', True):
             log.msg(stdout)
+
+        return stdout
 
     def _got_signal(f):
         f.trap(tuple)

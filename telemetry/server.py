@@ -32,7 +32,7 @@ from twisted.protocols.basic import LineReceiver
 from twisted.internet.error import ReactorNotRunning
 from twisted.internet.serialport import SerialPort
 
-from .common import abort_on_crash, exit_status
+from .common import abort_on_crash, exit_status, df_sleep
 from .proxy import UDPProxyProtocol, SerialProxyProtocol, ARMProtocol, call_and_check_rc, ExecError
 from .tuntap import TUNTAPProtocol, TUNTAPTransport
 from .conf import settings
@@ -264,9 +264,15 @@ def init_wlans(profile, wlans):
     try:
         yield call_and_check_rc('iw', 'reg', 'set', settings.common.wifi_region)
         for wlan in wlans:
-            yield call_and_check_rc('ifconfig', wlan, 'down')
+            if settings.common.set_nm_unmanaged:
+                device_status = yield call_and_check_rc('nmcli', 'device', 'show', wlan, log_stdout=False)
+                if not '(unmanaged)' in device_status:
+                    yield call_and_check_rc('nmcli', 'device', 'set', wlan, 'managed', 'no')
+                    yield df_sleep(1)
+
+            yield call_and_check_rc('ip', 'link', 'set', wlan, 'down')
             yield call_and_check_rc('iw', 'dev', wlan, 'set', 'monitor', 'otherbss')
-            yield call_and_check_rc('ifconfig', wlan, 'up')
+            yield call_and_check_rc('ip', 'link', 'set', wlan, 'up')
             yield call_and_check_rc('iw', 'dev', wlan, 'set', 'channel', str(settings.common.wifi_channel), ht_mode)
             if settings.common.wifi_txpower:
                 yield call_and_check_rc('iw', 'dev', wlan, 'set', 'txpower', 'fixed', str(settings.common.wifi_txpower))
