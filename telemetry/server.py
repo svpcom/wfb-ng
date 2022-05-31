@@ -266,7 +266,8 @@ def init_wlans(profile, wlans):
         for wlan in wlans:
             if settings.common.set_nm_unmanaged:
                 device_status = yield call_and_check_rc('nmcli', 'device', 'show', wlan, log_stdout=False)
-                if not '(unmanaged)' in device_status:
+                if not b'(unmanaged)' in device_status:
+                    log.msg('Switch %s to unmanaged state' % (wlan,))
                     yield call_and_check_rc('nmcli', 'device', 'set', wlan, 'managed', 'no')
                     yield df_sleep(1)
 
