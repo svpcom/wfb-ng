@@ -265,7 +265,7 @@ def init_wlans(profile, wlans):
     try:
         yield call_and_check_rc('iw', 'reg', 'set', settings.common.wifi_region)
         for wlan in wlans:
-            if settings.common.set_nm_unmanaged:
+            if settings.common.set_nm_unmanaged and os.path.exists('/usr/bin/nmcli'):
                 device_status = yield call_and_check_rc('nmcli', 'device', 'show', wlan, log_stdout=False)
                 if not b'(unmanaged)' in device_status:
                     log.msg('Switch %s to unmanaged state' % (wlan,))
