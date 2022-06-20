@@ -71,7 +71,7 @@ def parse_config(basedir, cfg_patterns, interpolate=True):
 
             try:
                 fd.seek(0) # handle case when source config is fd
-                config = configparser.RawConfigParser()
+                config = configparser.RawConfigParser(strict=False)
 
                 try:
                     config.readfp(fd, filename=filename)
