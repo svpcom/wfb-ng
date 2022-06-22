@@ -10,6 +10,8 @@ ExecStart=/usr/bin/wfb-server %i ${WFB_NICS}
 TimeoutStopSec=5s
 Restart=on-failure
 RestartSec=5s
+StandardOutput=file:/var/log/wifibroadcast.log
+StandardError=inherit
 
 [Install]
 WantedBy=wifibroadcast.service

@@ -74,7 +74,8 @@ setup(
                                            'scripts/wifibroadcast.service',
                                            'scripts/wifibroadcast@.service']),
                   ('/etc/default', ['scripts/default/wifibroadcast']),
-                  ('/etc/sysctl.d', ['scripts/98-wifibroadcast.conf'])],
+                  ('/etc/sysctl.d', ['scripts/98-wifibroadcast.conf']),
+                  ('/etc/logrotate.d', ['scripts/wifibroadcast'])],
 
     keywords="wifibroadcast",
     author="Vasily Evseenko",
