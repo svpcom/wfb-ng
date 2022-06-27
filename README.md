@@ -82,7 +82,7 @@ make rpm
 
 For binary distribution Debian or Ubuntu
 ```
-make deb
+sudo make deb
 ```
 
 For binary distribution (tar.gz)
