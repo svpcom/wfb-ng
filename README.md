@@ -82,6 +82,8 @@ make rpm
 
 For binary distribution Debian or Ubuntu
 ```
+sudo apt install python3-all
+sudo apt install virtualenv
 sudo make deb
 ```
 
