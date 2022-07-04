@@ -1,12 +1,11 @@
-Wifibroadcast
+WFB-NG
 =============
-
-This is a transmitter and receiver of **UDP packets** using **raw WiFi radio**
+This is the next generation of long-range **packet** radio link based on **raw WiFi radio**
 
 
 Main features:
 --------------
- - 1:1 map RTP to IEEE80211 packets for minimum latency (doesn't serialize to byte steam)
+ - 1:1 map of RTP to IEEE80211 packets for minimum latency (doesn't serialize to byte steam)
  - Smart FEC support (immediately yeild packet to video decoder if FEC pipeline without gaps)
  - [Bidirectional mavlink telemetry](https://github.com/svpcom/wifibroadcast/wiki/Setup-HOWTO). You can use it for mavlink up/down and video down link.
  - IP-over-WFB tunnel support. You can transmit ordinary ip packets over WFB link. Note, don't use ip tunnel for high-bandwidth transfers like video or mavlink. It use less efficient FEC coding and doesn't aggregate small packets.
@@ -17,13 +16,9 @@ Main features:
  - Enhanced [OSD](https://github.com/svpcom/wifibroadcast_osd) for Raspberry PI (consume 10% CPU on PI Zero) or any other system which
    supports gstreamer (Linux X11, etc). Compatible with any screen resolution. Supports aspect correction for PAL to HD scaling.
  - Provides IPv4 tunnel for generic usage
-   
+
 ## FAQ
-Q: What is a difference from original wifibroadcast?
-
-A: Original version of wifibroadcast use a byte-stream as input and splits it to packets of fixed size (1024 by default). If radio packet was lost and this is not corrected by FEC you'll got a hole at random (unexpected) place of stream. This is especially bad if data protocol is not resistent to (was not desired for) such random erasures. So i've rewrite it to use UDP as data source and pack one source UDP packet into one radio packet. Radio packets now have variable size depends on payload size. This is reduces a video latency a lot.
-
-Q: What type of data can be transmitted using wifibroadcast?
+Q: What type of data can be transmitted using WFB-NG?
 
 A: Any UDP with packet size <= 1466. For example x264 inside RTP or Mavlink.
 
@@ -33,14 +28,18 @@ A: Wifibrodcast use FEC (forward error correction) which can recover 4 lost pack
 
 Q: Is only Raspberry PI supported?
 
-A: Wifibroadcast is not tied to any GPU - it operates with UDP packets. But to get RTP stream you need a video encoder (with encode raw data from camera to x264 stream). In my case RPI is only used for video encoding (becase RPI Zero is too slow to do anything else) and all other tasks (including wifibroadcast) are done by other board (NanoPI NEO2).
+A: WFB-NG is not tied to any GPU - it operates with UDP packets. But to get RTP stream you need a video encoder (with encode raw data from camera to x264 stream). In my case RPI is only used for video encoding (becase RPI Zero is too slow to do anything else) and all other tasks (including WFB-NG) are done by other board (NanoPI NEO2).
+
+Q: What is a difference from original wifibroadcast?
+
+A: Original version of wifibroadcast use a byte-stream as input and splits it to packets of fixed size (1024 by default). If radio packet was lost and this is not corrected by FEC you'll got a hole at random (unexpected) place of stream. This is especially bad if data protocol is not resistent to (was not desired for) such random erasures. So i've rewrite it to use UDP as data source and pack one source UDP packet into one radio packet. Radio packets now have variable size depends on payload size. This is reduces a video latency a lot.
 
 Q: I'm unable to setup WFB and want immediate help!
 
 A: See [License and Support](https://github.com/svpcom/wifibroadcast/wiki/License-and-Support)
 
 ## Theory
-Wifibroadcast puts the wifi cards into monitor mode. This mode allows to send and receive arbitrary packets without association and waiting for ACK packets.
+WFB-NG puts the wifi cards into monitor mode. This mode allows to send and receive arbitrary packets without association and waiting for ACK packets.
 [Analysis of Injection Capabilities and Media Access of IEEE 802.11 Hardware in Monitor Mode](https://github.com/svpcom/wifibroadcast/blob/master/patches/Analysis%20of%20Injection%20Capabilities%20and%20Media%20Access%20of%20IEEE%20802.11%20Hardware%20in%20Monitor%20Mode.pdf)
 [802.11 timings](https://github.com/ewa/802.11-data)
 
@@ -107,7 +106,7 @@ My primary hardware targets are:
 
 To maximize output power and/or increase bandwidth (in case of one-way transmitting) you need to apply kernel patches from ``patches`` directory. See https://github.com/svpcom/wifibroadcast/wiki/Kernel-patches for details.
 
-Wifibroadcast + PX4 HOWTO:
+WFB-NG + PX4 HOWTO:
 --------------------------
 https://dev.px4.io/en/qgc/video_streaming_wifi_broadcast.html
 
