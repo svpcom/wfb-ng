@@ -6,8 +6,8 @@ import time
 from twisted.python import log
 from twisted.trial import unittest
 from twisted.internet import reactor, defer
-from telemetry.tuntap import TUNTAPTransport, TUNTAPProtocol
-from telemetry.common import df_sleep
+from ..tuntap import TUNTAPTransport, TUNTAPProtocol
+from ..common import df_sleep
 
 
 class TUNTAPTestCase(unittest.TestCase):

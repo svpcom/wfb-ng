@@ -27,9 +27,9 @@ from collections import deque
 from twisted.python import log, failure
 from twisted.internet import reactor, defer, abstract, main, task
 from twisted.internet.protocol import Protocol, connectionDone
-from telemetry.conf import settings
 from pyroute2 import IPRoute
 from contextlib import closing
+from .conf import settings
 
 class TUNTAPTransport(abstract.FileDescriptor):
     TUN = 0x0001

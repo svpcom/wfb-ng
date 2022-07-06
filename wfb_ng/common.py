@@ -20,8 +20,8 @@
 
 from twisted.python import log
 from twisted.internet import reactor, defer, task
-from telemetry.conf import settings
 from twisted.internet.error import ReactorNotRunning
+from .conf import settings
 
 __system_failed = False
 

@@ -28,8 +28,8 @@ from twisted.python import log
 from twisted.internet import reactor, defer
 from twisted.internet.protocol import ReconnectingClientFactory
 from twisted.protocols.basic import LineReceiver
-from telemetry.common import abort_on_crash, exit_status
-from telemetry.conf import settings
+from .common import abort_on_crash, exit_status
+from .conf import settings
 
 
 class AntennaStat(LineReceiver):

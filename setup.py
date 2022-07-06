@@ -56,7 +56,7 @@ version = os.environ.get('VERSION') or 'trunk'
 commit = os.environ.get('COMMIT')
 
 if version and commit:
-    with open('telemetry/conf/site.cfg', 'w') as fd:
+    with open('wfb_ng/conf/site.cfg', 'w') as fd:
         fd.write("# Don't make any changes here, use local.cfg instead!\n\n[common]\nversion = %r\ncommit = %r\n" % (version, commit))
 
 setup(
@@ -65,13 +65,12 @@ setup(
     version=version,
     packages=find_packages(exclude=["*.tests", "*.tests.*", "tests.*", "tests"]),
     zip_safe=False,
-    entry_points={'console_scripts': ['wfb-cli=telemetry.cli:main',
-                                      'wfb-test-latency=telemetry.latency_test:main',
-                                      'wfb-server=telemetry.server:main']},
-    package_data={'telemetry.conf': ['master.cfg', 'site.cfg']},
+    entry_points={'console_scripts': ['wfb-cli=wfb_ng.cli:main',
+                                      'wfb-test-latency=wfb_ng.latency_test:main',
+                                      'wfb-server=wfb_ng.server:main']},
+    package_data={'wfb_ng.conf': ['master.cfg', 'site.cfg']},
     data_files = [('/usr/bin', ['wfb_tx', 'wfb_rx', 'wfb_keygen']),
-                  ('/lib/systemd/system', ['scripts/storm32.service',
-                                           'scripts/wifibroadcast.service',
+                  ('/lib/systemd/system', ['scripts/wifibroadcast.service',
                                            'scripts/wifibroadcast@.service']),
                   ('/etc/default', ['scripts/default/wifibroadcast']),
                   ('/etc/sysctl.d', ['scripts/98-wifibroadcast.conf']),

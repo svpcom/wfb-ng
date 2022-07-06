@@ -5,9 +5,9 @@ import time
 from twisted.python import log
 from twisted.trial import unittest
 from twisted.internet import reactor, defer
-from telemetry.proxy import UDPProxyProtocol
 from twisted.internet.protocol import DatagramProtocol
-from telemetry.common import df_sleep
+from ..proxy import UDPProxyProtocol
+from ..common import df_sleep
 
 class Echo(DatagramProtocol):
     def datagramReceived(self, data, addr):

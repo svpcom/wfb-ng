@@ -36,23 +36,23 @@ wfb_keygen: src/keygen.o
 	$(CC) -o $@ $^ $(_LDFLAGS)
 
 test:
-	PYTHONPATH=`pwd` trial3 telemetry.tests
+	PYTHONPATH=`pwd` trial3 wfb_ng.tests
 
 rpm:  all_bin env
 	rm -rf dist
 	./env/bin/python ./setup.py bdist_rpm --force-arch $(ARCH)
-	rm -rf wifibroadcast.egg-info/
+	rm -rf wfb_ng.egg-info/
 
 deb:  all_bin env
 	rm -rf deb_dist
 	./env/bin/python ./setup.py --command-packages=stdeb.command bdist_deb
-	rm -rf wifibroadcast.egg-info/ wifibroadcast-$(VERSION).tar.gz
+	rm -rf wfb_ng.egg-info/ wfb-ng-$(VERSION).tar.gz
 
 bdist: all_bin
 	rm -rf dist
 	$(PYTHON) ./setup.py bdist --plat-name linux-$(ARCH)
-	rm -rf wifibroadcast.egg-info/
+	rm -rf wfb_ng.egg-info/
 
 clean:
-	rm -rf env wfb_rx wfb_tx wfb_keygen dist deb_dist build wifibroadcast.egg-info _trial_temp *~ src/*.o
+	rm -rf env wfb_rx wfb_tx wfb_keygen dist deb_dist build wfb_ng.egg-info wfb-ng-*.tar.gz _trial_temp *~ src/*.o
 

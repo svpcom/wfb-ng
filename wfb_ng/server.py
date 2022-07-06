@@ -35,7 +35,7 @@ from twisted.internet.serialport import SerialPort
 from .common import abort_on_crash, exit_status, df_sleep
 from .proxy import UDPProxyProtocol, SerialProxyProtocol, ARMProtocol, call_and_check_rc, ExecError
 from .tuntap import TUNTAPProtocol, TUNTAPTransport
-from .conf import settings
+from .conf import settings, cfg_files
 
 connect_re = re.compile(r'^connect://(?P<addr>[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+):(?P<port>[0-9]+)$', re.IGNORECASE)
 listen_re = re.compile(r'^listen://(?P<addr>[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+):(?P<port>[0-9]+)$', re.IGNORECASE)
@@ -484,6 +484,7 @@ def main():
     profile, wlans = sys.argv[1], list(wlan for arg in sys.argv[2:] for wlan in arg.split())
     uname = os.uname()
     log.msg('Run on %s/%s @%s, profile %s using %s' % (uname[4], uname[2], uname[1], profile, ', '.join(wlans)))
+    log.msg('Using cfg files:\n%s' % ('\n'.join(cfg_files),))
 
     reactor.callWhenRunning(lambda: defer.maybeDeferred(init, profile, wlans)\
                             .addErrback(abort_on_crash))
