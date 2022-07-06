@@ -60,8 +60,8 @@ if version and commit:
         fd.write("# Don't make any changes here, use local.cfg instead!\n\n[common]\nversion = %r\ncommit = %r\n" % (version, commit))
 
 setup(
-    url="http://wifibroadcast.org",
-    name="wifibroadcast",
+    url="http://wfb-ng.org",
+    name="wfb-ng",
     version=version,
     packages=find_packages(exclude=["*.tests", "*.tests.*", "tests.*", "tests"]),
     zip_safe=False,
@@ -77,9 +77,9 @@ setup(
                   ('/etc/sysctl.d', ['scripts/98-wifibroadcast.conf']),
                   ('/etc/logrotate.d', ['scripts/wifibroadcast'])],
 
-    keywords="wifibroadcast",
+    keywords="wfb-ng, wifibroadcast",
     author="Vasily Evseenko",
     author_email="svpcom@p2ptech.org",
-    description="Wifibroadcast server",
+    description="The next generation of long-range packet radio link based on raw WiFi radio",
     license="GPLv3",
 )
