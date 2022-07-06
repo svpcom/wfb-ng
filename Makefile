@@ -2,8 +2,9 @@ ARCH ?= $(shell uname -i)
 PYTHON ?= /usr/bin/python3
 COMMIT ?= $(shell git rev-parse HEAD)
 VERSION ?= $(shell $(PYTHON) ./version.py $(shell git show -s --format="%ct" $(shell git rev-parse HEAD)) $(shell git rev-parse --abbrev-ref HEAD))
+SOURCE_DATE_EPOCH ?= $(shell git show -s --format="%ct" $(shell git rev-parse HEAD))
 
-export VERSION COMMIT
+export VERSION COMMIT SOURCE_DATE_EPOCH
 
 _LDFLAGS := $(LDFLAGS) -lrt -lpcap -lsodium
 _CFLAGS := $(CFLAGS) -Wall -O2 -DWFB_VERSION='"$(VERSION)-$(shell /bin/bash -c '_tmp=$(COMMIT); echo $${_tmp::8}')"'
