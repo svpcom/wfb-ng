@@ -34,9 +34,12 @@ Q: What is a difference from original wifibroadcast?
 
 A: Original version of wifibroadcast use a byte-stream as input and splits it to packets of fixed size (1024 by default). If radio packet was lost and this is not corrected by FEC you'll got a hole at random (unexpected) place of stream. This is especially bad if data protocol is not resistent to (was not desired for) such random erasures. So i've rewrite it to use UDP as data source and pack one source UDP packet into one radio packet. Radio packets now have variable size depends on payload size. This is reduces a video latency a lot.
 
-Q: I'm unable to setup WFB and want immediate help!
+## Warranty/Disclaimer
+This is free software and comes with no warranty, as stated in parts 15 and 16 of the GPLv3 license. The creators and contributors of the software are not responsible for how it is used.
+See [License and Support](https://github.com/svpcom/wifibroadcast/wiki/License-and-Support) for details.
 
-A: See [License and Support](https://github.com/svpcom/wifibroadcast/wiki/License-and-Support)
+## Support project
+If you like WFB-ng you can make a donation to `bitcoin:bc1qfvlsvr0ea7tzzydngq5cflf4yypemlacgt6t05`
 
 ## Theory
 WFB-NG puts the wifi cards into monitor mode. This mode allows to send and receive arbitrary packets without association and waiting for ACK packets.
