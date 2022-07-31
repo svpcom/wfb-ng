@@ -13,3 +13,4 @@ drone.key
 wfb_keygen
 wfb_ng/conf/site.cfg
 wfb_ng/conf/local.cfg
+.vscode/
