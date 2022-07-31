@@ -18,7 +18,7 @@ Main features:
  - Provides IPv4 tunnel for generic usage
 
 > :warning: **Warranty/Disclaimer** <br />
-> This is free software and comes with no warranty, as > stated in parts 15 and 16 of the GPLv3 license. The > creators and contributors of the software are not  > responsible for how it is used.
+> This is free software and comes with no warranty, as stated in parts 15 and 16 of the GPLv3 license. The creators and contributors of the software are not responsible for how it is used.
 > See [License and Support](https://github.com/svpcom/wifibroadcast/wiki/License-and-Support) for details.
 
 ## Getting Started
