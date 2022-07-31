@@ -27,7 +27,7 @@ For detailed instructions on how to get started read through
 [PX4-Guide](https://docs.px4.io/main/en/tutorials/video_streaming_wifi_broadcast.html)
 and follow the [Setup HowTo](https://github.com/svpcom/wifibroadcast/wiki/Setup-HOWTO)
 
-### Quick start using 2 Raspberry Pis
+### Quick start using Raspberry Pi
 
 - Under [Releases](https://github.com/svpcom/wifibroadcast/releases) download the latest image file (`*.img.gz`). 
 - Unpack the `*.img` file and flash it to 2-SD Cards.
@@ -55,6 +55,60 @@ sudo reboot
 wfb-cli gs
 ```
 
+### Quick start using Ubuntu Ground Station
+
+- Install patched `RTL8812AU`driver:
+```
+sudo apt-get install dkms
+git clone https://github.com/svpcom/rtl8812au.git
+cd rtl8812au/
+sudo ./dkms-install.sh
+```
+- Make sure the driver is correctly installed by running the following command. You should see the WiFi card in an `unmanaged` state. 
+```
+nmcli
+```
+- Get the name of the WiFi card by running:
+```
+ifconfig
+```
+- You should see output similar to: 
+```
+wlan0: flags=4163<UP,BROADCAST,RUNNING,MULTICAST>  mtu 2312
+        ether 0c:91:60:0a:5a:8b  txqueuelen 1000  (Ethernet)
+        RX packets 0  bytes 0 (0.0 B)
+        RX errors 0  dropped 0  overruns 0  frame 0
+        TX packets 0  bytes 0 (0.0 B)
+        TX errors 0  dropped 0 overruns 0  carrier 0  collisions 0
+```
+- Copy the name of the RTL8812AU WiFi card. 
+- Install wfb-ng. Replace `wifi0`with the previously copied name of the WiFi card.
+```
+git clone https://github.com/svpcom/wifibroadcast.git
+cd wifibroadcast
+sudo sh install_gs.sh wifi0
+```
+- Done! To monitor the link use the following command on the ground station:
+```
+wfb-cli gs
+```
+
+
+**Failing to get connection?**
+
+Make sure the WiFi channel on the ground and on the drone are the same. To check, use:
+```
+head /etc/wifibroadcast.cfg
+```
+
+You should see output similar to:
+```
+[common]
+wifi_channel = 161     # 161 -- radio channel @5825 MHz, range: 5815–5835 MHz, width 20MHz
+                       # 1 -- radio channel @2412 Mhz, 
+                       # see https://en.wikipedia.org/wiki/List_of_WLAN_channels for reference
+```
+Ensure the WiFi channel selected is the same on the ground and on the drone.
 
 ## Support project
 If you like WFB-ng you can make a donation to `bitcoin:bc1qfvlsvr0ea7tzzydngq5cflf4yypemlacgt6t05`
