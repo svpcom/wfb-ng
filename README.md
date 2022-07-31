@@ -17,29 +17,67 @@ Main features:
    supports gstreamer (Linux X11, etc). Compatible with any screen resolution. Supports aspect correction for PAL to HD scaling.
  - Provides IPv4 tunnel for generic usage
 
-## FAQ
-Q: What type of data can be transmitted using WFB-NG?
+> :warning: **Warranty/Disclaimer** <br />
+> This is free software and comes with no warranty, as > stated in parts 15 and 16 of the GPLv3 license. The > creators and contributors of the software are not  > responsible for how it is used.
+> See [License and Support](https://github.com/svpcom/wifibroadcast/wiki/License-and-Support) for details.
 
-A: Any UDP with packet size <= 1466. For example x264 inside RTP or Mavlink.
+## Getting Started
 
-Q: What are transmission guarancies?
+For detailed instructions on how to get started read through 
+[PX4-Guide](https://docs.px4.io/main/en/tutorials/video_streaming_wifi_broadcast.html)
+and follow the [Setup HowTo](https://github.com/svpcom/wifibroadcast/wiki/Setup-HOWTO)
 
-A: Wifibrodcast use FEC (forward error correction) which can recover 4 lost packets from 12 packets block with default settings. You can tune it (both TX and RX simultaniuosly!) to fit your needs.
+### Quick start using 2 Raspberry Pis
 
-Q: Is only Raspberry PI supported?
+- Under [Releases](https://github.com/svpcom/wifibroadcast/releases) download the latest image file (`*.img.gz`). 
+- Unpack the `*.img` file and flash it to 2-SD Cards.
+- Plug the WiFi Adapters into the Raspberry Pis
+- Boot the Pis and ssh into them using the following command (replace `192.168.0.111` with their IP-Address). Password: `raspberry`
+```
+ssh pi@192.168.0.111
+```
+- On the Pi used as ground station:
+```
+sudo systemctl enable wifibroadcast@gs
+sudo systemctl enable fpv-video
+sudo systemctl enable osd
+sudo reboot
+```
 
-A: WFB-NG is not tied to any GPU - it operates with UDP packets. But to get RTP stream you need a video encoder (with encode raw data from camera to x264 stream). In my case RPI is only used for video encoding (becase RPI Zero is too slow to do anything else) and all other tasks (including WFB-NG) are done by other board (NanoPI NEO2).
+- On the Pi used on the drone:
+```
+sudo systemctl enable wifibroadcast@drone
+sudo systemctl enable fpv-camera
+sudo reboot
+```
+- Done! You should be able to see the video from the FPV camera. To monitor the link use the followwing command on the ground station:
+```
+wfb-cli gs
+```
 
-Q: What is a difference from original wifibroadcast?
-
-A: Original version of wifibroadcast use a byte-stream as input and splits it to packets of fixed size (1024 by default). If radio packet was lost and this is not corrected by FEC you'll got a hole at random (unexpected) place of stream. This is especially bad if data protocol is not resistent to (was not desired for) such random erasures. So i've rewrite it to use UDP as data source and pack one source UDP packet into one radio packet. Radio packets now have variable size depends on payload size. This is reduces a video latency a lot.
-
-## Warranty/Disclaimer
-This is free software and comes with no warranty, as stated in parts 15 and 16 of the GPLv3 license. The creators and contributors of the software are not responsible for how it is used.
-See [License and Support](https://github.com/svpcom/wifibroadcast/wiki/License-and-Support) for details.
 
 ## Support project
 If you like WFB-ng you can make a donation to `bitcoin:bc1qfvlsvr0ea7tzzydngq5cflf4yypemlacgt6t05`
+
+---
+
+
+## FAQ
+**Q: What type of data can be transmitted using WFB-NG?**
+
+**A:** Any UDP with packet size <= 1466. For example x264 inside RTP or Mavlink.
+
+**Q: What are transmission guarancies?**
+
+**A:** Wifibrodcast use FEC (forward error correction) which can recover 4 lost packets from 12 packets block with default settings. You can tune it (both TX and RX simultaniuosly!) to fit your needs.
+
+**Q: Is only Raspberry PI supported?**
+
+**A:** WFB-NG is not tied to any GPU - it operates with UDP packets. But to get RTP stream you need a video encoder (with encode raw data from camera to x264 stream). In my case RPI is only used for video encoding (becase RPI Zero is too slow to do anything else) and all other tasks (including WFB-NG) are done by other board (NanoPI NEO2).
+
+**Q: What is a difference from original wifibroadcast?**
+
+**A:** Original version of wifibroadcast use a byte-stream as input and splits it to packets of fixed size (1024 by default). If radio packet was lost and this is not corrected by FEC you'll got a hole at random (unexpected) place of stream. This is especially bad if data protocol is not resistent to (was not desired for) such random erasures. So i've rewrite it to use UDP as data source and pack one source UDP packet into one radio packet. Radio packets now have variable size depends on payload size. This is reduces a video latency a lot.
 
 ## Theory
 WFB-NG puts the wifi cards into monitor mode. This mode allows to send and receive arbitrary packets without association and waiting for ACK packets.
@@ -109,9 +147,6 @@ My primary hardware targets are:
 
 To maximize output power and/or increase bandwidth (in case of one-way transmitting) you need to apply kernel patches from ``patches`` directory. See https://github.com/svpcom/wifibroadcast/wiki/Kernel-patches for details.
 
-WFB-NG + PX4 HOWTO:
---------------------------
-https://docs.px4.io/main/en/tutorials/video_streaming_wifi_broadcast.html
 
 Wiki:
 -----
