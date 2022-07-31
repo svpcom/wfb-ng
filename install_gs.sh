@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/bin/sh
 
 # Install required packages
 apt update
@@ -8,6 +8,9 @@ apt install python3-all libpcap-dev libsodium-dev python3-pip python3-pyroute2 p
 apt install virtualenv
 apt install debhelper
 apt install dh-python build-essential
+
+# Build
+make deb
 
 # Create key and copy to right location
 ./wfb_keygen
@@ -42,16 +45,18 @@ EOT
 
 cat <<EOT >> /etc/NetworkManager/NetworkManager.conf
 [keyfile]
-unmanaged-devices=interface-name:$0
+unmanaged-devices=interface-name:$1
 EOT
 
 FILE=/etc/dhcpcd.conf
 if [ -f "$FILE" ]; then
 cat <<EOT >> /etc/dhcpcd.conf
-denyinterfaces $0
+denyinterfaces $1
 EOT
 fi
 
 # Start gs service
 systemctl daemon-reload
 systemctl start wifibroadcast@gs
+
+echo "Started wfg-ng@gs"
