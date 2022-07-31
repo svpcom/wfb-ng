@@ -111,7 +111,7 @@ To maximize output power and/or increase bandwidth (in case of one-way transmitt
 
 WFB-NG + PX4 HOWTO:
 --------------------------
-https://dev.px4.io/en/qgc/video_streaming_wifi_broadcast.html
+https://docs.px4.io/main/en/tutorials/video_streaming_wifi_broadcast.html
 
 Wiki:
 -----
