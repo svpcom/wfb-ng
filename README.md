@@ -50,7 +50,7 @@ sudo systemctl enable wifibroadcast@drone
 sudo systemctl enable fpv-camera
 sudo reboot
 ```
-- Done! You should be able to see the video from the FPV camera. To monitor the link use the followwing command on the ground station:
+- Done! You should be able to see the video from the FPV camera. To monitor the link use the following command on the ground station:
 ```
 wfb-cli gs
 ```
