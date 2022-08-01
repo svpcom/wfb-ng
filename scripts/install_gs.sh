@@ -1,4 +1,5 @@
 #!/bin/sh
+set -e
 
 # Install required packages
 apt update
@@ -18,9 +19,6 @@ mv gs.key /etc/gs.key
 
 # Install
 dpkg -i deb_dist/*.deb 
-
-# Setup system
-echo net.core.bpf_jit_enable = 1 >> /etc/sysctl.conf
 
 # Setup config
 cat <<EOT >> /etc/wifibroadcast.cfg

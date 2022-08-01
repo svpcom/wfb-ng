@@ -86,7 +86,7 @@ wlan0: flags=4163<UP,BROADCAST,RUNNING,MULTICAST>  mtu 2312
 ```
 git clone https://github.com/svpcom/wifibroadcast.git
 cd wifibroadcast
-sudo sh install_gs.sh wifi0
+sudo ./scripts/install_gs.sh wifi0
 ```
 - Done! To monitor the link use the following command on the ground station:
 ```
