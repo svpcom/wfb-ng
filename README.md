@@ -60,7 +60,7 @@ wfb-cli gs
 - Install patched `RTL8812AU`driver:
 ```
 sudo apt-get install dkms
-git clone https://github.com/svpcom/rtl8812au.git
+git clone -b v5.2.20 https://github.com/svpcom/rtl8812au.git
 cd rtl8812au/
 sudo ./dkms-install.sh
 ```
