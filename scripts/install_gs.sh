@@ -1,5 +1,12 @@
-#!/bin/sh
+#!/bin/bash
 set -e
+
+if [[ $# -eq 0 ]] ; then
+    echo 'Please specify the name of the WiFi adapter'
+    echo 'Find the name using command: ifconfig'
+    echo 'Aborting ...'
+    exit 0
+fi
 
 # Install required packages
 apt update
