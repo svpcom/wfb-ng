@@ -1,11 +1,18 @@
-#!/bin/sh
+#!/bin/bash
 set -e
+
+if [[ $# -eq 0 ]] ; then
+    echo 'Please specify the name of the WiFi adapter'
+    echo 'Find the name using command: ifconfig'
+    echo 'Aborting ...'
+    exit 0
+fi
 
 # Install required packages
 apt update
 apt upgrade
 
-apt install python3-all libpcap-dev libsodium-dev python3-pip python3-pyroute2 python3-future python3-twisted
+apt install python3-all libpcap-dev libsodium-dev python3-pip python3-pyroute2 python3-future python3-twisted python3-serial iw
 apt install virtualenv
 apt install debhelper
 apt install dh-python build-essential
@@ -37,8 +44,9 @@ peer = 'connect://127.0.0.1:5600'  # outgoing connection for
                                    # video sink (QGroundControl on GS)
 EOT
 
+rm /etc/default/wifibroadcast
 cat <<EOT >> /etc/default/wifibroadcast
-WFB_NICS="$0"
+WFB_NICS="$1"
 EOT
 
 cat <<EOT >> /etc/NetworkManager/NetworkManager.conf
