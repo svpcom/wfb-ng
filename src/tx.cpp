@@ -29,6 +29,7 @@
 #include <assert.h>
 #include <sys/ioctl.h>
 #include <linux/random.h>
+#include <inttypes.h>
 
 #include <string>
 #include <memory>
@@ -393,7 +394,7 @@ int main(int argc, char * const *argv)
         show_usage:
             fprintf(stderr, "Usage: %s [-K tx_key] [-k RS_K] [-n RS_N] [-u udp_port] [-p radio_port] [-B bandwidth] [-G guard_interval] [-S stbc] [-L ldpc] [-M mcs_index] [-T poll_timeout] [-e epoch] [-i link_id] interface1 [interface2] ...\n",
                     argv[0]);
-            fprintf(stderr, "Default: K='%s', k=%d, n=%d, udp_port=%d, link_id=0x%06x, radio_port=%u, epoch=%lu, bandwidth=%d guard_interval=%s stbc=%d ldpc=%d mcs_index=%d, poll_timeout=%d\n",
+            fprintf(stderr, "Default: K='%s', k=%d, n=%d, udp_port=%d, link_id=0x%06x, radio_port=%u, epoch=%" PRIu64 ", bandwidth=%d guard_interval=%s stbc=%d ldpc=%d mcs_index=%d, poll_timeout=%d\n",
                     keypair.c_str(), k, n, udp_port, link_id, radio_port, epoch, bandwidth, short_gi ? "short" : "long", stbc, ldpc, mcs_index, poll_timeout);
             fprintf(stderr, "Radio MTU: %lu\n", (unsigned long)MAX_PAYLOAD_SIZE);
             fprintf(stderr, "WFB-ng version " WFB_VERSION "\n");
@@ -491,7 +492,7 @@ int main(int argc, char * const *argv)
 
         if(debug_port)
         {
-            fprintf(stderr, "Using %lu ports from %d for wlan emulation\n", wlans.size(), debug_port);
+            fprintf(stderr, "Using %zu ports from %d for wlan emulation\n", wlans.size(), debug_port);
             t = shared_ptr<UdpTransmitter>(new UdpTransmitter(k, n, keypair, "127.0.0.1", debug_port, epoch, channel_id));
         } else {
             t = shared_ptr<PcapTransmitter>(new PcapTransmitter(k, n, keypair, epoch, channel_id, wlans));

@@ -869,7 +869,7 @@ int main(int argc, char* const *argv)
             fprintf(stderr, "Local receiver: %s [-K rx_key] [-k RS_K] [-n RS_N] [-c client_addr] [-u client_port] [-p radio_port] [-l log_interval] [-e epoch] [-i link_id] interface1 [interface2] ...\n", argv[0]);
             fprintf(stderr, "Remote (forwarder): %s -f [-c client_addr] [-u client_port] [-p radio_port] [-i link_id] interface1 [interface2] ...\n", argv[0]);
             fprintf(stderr, "Remote (aggregator): %s -a server_port [-K rx_key] [-k RS_K] [-n RS_N] [-c client_addr] [-u client_port] [-l log_interval] [-p radio_port] [-e epoch] [-i link_id]\n", argv[0]);
-            fprintf(stderr, "Default: K='%s', k=%d, n=%d, connect=%s:%d, link_id=0x%06x, radio_port=%u, epoch=%lu, log_interval=%d\n", keypair.c_str(), k, n, client_addr.c_str(), client_port, link_id, radio_port, epoch, log_interval);
+            fprintf(stderr, "Default: K='%s', k=%d, n=%d, connect=%s:%d, link_id=0x%06x, radio_port=%u, epoch=%" PRIu64 ", log_interval=%d\n", keypair.c_str(), k, n, client_addr.c_str(), client_port, link_id, radio_port, epoch, log_interval);
             fprintf(stderr, "WFB-ng version " WFB_VERSION "\n");
             fprintf(stderr, "WFB-ng home page: <http://wfb-ng.org>\n");
             exit(1);
