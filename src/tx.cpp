@@ -1,6 +1,6 @@
 // -*- C++ -*-
 //
-// Copyright (C) 2017 - 2020 Vasily Evseenko <svpcom@p2ptech.org>
+// Copyright (C) 2017 - 2022 Vasily Evseenko <svpcom@p2ptech.org>
 
 /*
  *   This program is free software; you can redistribute it and/or modify
@@ -27,6 +27,8 @@
 #include <sys/resource.h>
 #include <pcap/pcap.h>
 #include <assert.h>
+#include <sys/ioctl.h>
+#include <linux/random.h>
 
 #include <string>
 #include <memory>
@@ -42,9 +44,12 @@ extern "C"
 
 using namespace std;
 
-Transmitter::Transmitter(int k, int n, const string &keypair):  fec_k(k), fec_n(n), block_idx(0),
-                                                                fragment_idx(0),
-                                                                max_packet_size(0)
+Transmitter::Transmitter(int k, int n, const string &keypair, uint64_t epoch, uint32_t channel_id) : \
+    fec_k(k), fec_n(n), block_idx(0),
+    fragment_idx(0),
+    max_packet_size(0),
+    epoch(epoch),
+    channel_id(channel_id)
 {
     fec_p = fec_new(fec_k, fec_n);
 
@@ -88,21 +93,35 @@ Transmitter::~Transmitter()
 
 void Transmitter::make_session_key(void)
 {
+    // init session key
     randombytes_buf(session_key, sizeof(session_key));
-    session_key_packet.packet_type = WFB_PACKET_KEY;
-    randombytes_buf(session_key_packet.session_key_nonce, sizeof(session_key_packet.session_key_nonce));
-    if (crypto_box_easy(session_key_packet.session_key_data, session_key, sizeof(session_key),
-                        session_key_packet.session_key_nonce, rx_publickey, tx_secretkey) != 0)
+
+    // fill packet header
+    wsession_hdr_t *session_hdr = (wsession_hdr_t *)session_key_packet;
+    session_hdr->packet_type = WFB_PACKET_KEY;
+
+    randombytes_buf(session_hdr->session_nonce, sizeof(session_hdr->session_nonce));
+
+    // fill packet contents
+    wsession_data_t session_data = { .epoch = htobe64(epoch),
+                                     .channel_id = htobe32(channel_id) };
+
+    memcpy(session_data.session_key, session_key, sizeof(session_key));
+
+    if (crypto_box_easy(session_key_packet + sizeof(wsession_hdr_t),
+                        (uint8_t*)&session_data, sizeof(session_data),
+                        session_hdr->session_nonce, rx_publickey, tx_secretkey) != 0)
     {
         throw runtime_error("Unable to make session key!");
     }
 }
 
 
-PcapTransmitter::PcapTransmitter(int k, int n, const string &keypair, uint8_t radio_port, const vector<string> &wlans) : Transmitter(k, n, keypair),
-                                                                                                                        radio_port(radio_port),
-                                                                                                                        current_output(0),
-                                                                                                                        ieee80211_seq(0)
+PcapTransmitter::PcapTransmitter(int k, int n, const string &keypair, uint64_t epoch, uint32_t channel_id, const vector<string> &wlans) : \
+    Transmitter(k, n, keypair, epoch, channel_id),
+    channel_id(channel_id),
+    current_output(0),
+    ieee80211_seq(0)
 {
     char errbuf[PCAP_ERRBUF_SIZE];
     for(auto it=wlans.begin(); it!=wlans.end(); it++)
@@ -138,8 +157,13 @@ void PcapTransmitter::inject_packet(const uint8_t *buf, size_t size)
 
     // ieee80211 header
     memcpy(p, ieee80211_header, sizeof(ieee80211_header));
-    p[SRC_MAC_LASTBYTE] = radio_port;
-    p[DST_MAC_LASTBYTE] = radio_port;
+
+    // channel_id
+    uint32_t channel_id_be = htobe32(channel_id);
+    memcpy(p + SRC_MAC_THIRD_BYTE, &channel_id_be, sizeof(uint32_t));
+    memcpy(p + DST_MAC_THIRD_BYTE, &channel_id_be, sizeof(uint32_t));
+
+    // sequence number
     p[FRAME_SEQ_LB] = ieee80211_seq & 0xff;
     p[FRAME_SEQ_HB] = (ieee80211_seq >> 8) & 0xff;
     ieee80211_seq += 16;
@@ -172,13 +196,16 @@ void Transmitter::send_block_fragment(size_t packet_size)
     assert(packet_size <= MAX_FEC_PAYLOAD);
 
     block_hdr->packet_type = WFB_PACKET_DATA;
-    block_hdr->nonce = htobe64(((block_idx & BLOCK_IDX_MASK) << 8) + fragment_idx);
+    block_hdr->data_nonce = htobe64(((block_idx & BLOCK_IDX_MASK) << 8) + fragment_idx);
 
     // encrypted payload
-    crypto_aead_chacha20poly1305_encrypt(ciphertext + sizeof(wblock_hdr_t), &ciphertext_len,
-                                         block[fragment_idx], packet_size,
-                                         (uint8_t*)block_hdr, sizeof(wblock_hdr_t),
-                                         NULL, (uint8_t*)(&(block_hdr->nonce)), session_key);
+    if (crypto_aead_chacha20poly1305_encrypt(ciphertext + sizeof(wblock_hdr_t), &ciphertext_len,
+                                             block[fragment_idx], packet_size,
+                                             (uint8_t*)block_hdr, sizeof(wblock_hdr_t),
+                                             NULL, (uint8_t*)(&(block_hdr->data_nonce)), session_key) < 0)
+    {
+        throw runtime_error("Unable to encrypt packet!");
+    }
 
     inject_packet(ciphertext, sizeof(wblock_hdr_t) + ciphertext_len);
 }
@@ -186,7 +213,7 @@ void Transmitter::send_block_fragment(size_t packet_size)
 void Transmitter::send_session_key(void)
 {
     //fprintf(stderr, "Announce session key\n");
-    inject_packet((uint8_t*)&session_key_packet, sizeof(session_key_packet));
+    inject_packet((uint8_t*)session_key_packet, sizeof(session_key_packet));
 }
 
 void Transmitter::send_packet(const uint8_t *buf, size_t size, uint8_t flags)
@@ -303,7 +330,9 @@ void data_source(shared_ptr<Transmitter> &t, vector<int> &rx_fd, int poll_timeou
 int main(int argc, char * const *argv)
 {
     int opt;
-    uint8_t k=8, n=12, radio_port=1;
+    uint8_t k=8, n=12, radio_port=0;
+    uint32_t link_id = 0x0;
+    uint64_t epoch = 0;
     int udp_port=5600;
 
     int bandwidth = 20;
@@ -316,7 +345,7 @@ int main(int argc, char * const *argv)
 
     string keypair = "tx.key";
 
-    while ((opt = getopt(argc, argv, "K:k:n:u:r:p:B:G:S:L:M:D:T:")) != -1) {
+    while ((opt = getopt(argc, argv, "K:k:n:u:r:p:B:G:S:L:M:D:T:i:e:")) != -1) {
         switch (opt) {
         case 'K':
             keypair = optarg;
@@ -354,12 +383,18 @@ int main(int argc, char * const *argv)
         case 'T':
             poll_timeout = atoi(optarg);
             break;
+        case 'i':
+            link_id = ((uint32_t)atoi(optarg)) & 0xffffff;
+            break;
+        case 'e':
+            epoch = atoll(optarg);
+            break;
         default: /* '?' */
         show_usage:
-            fprintf(stderr, "Usage: %s [-K tx_key] [-k RS_K] [-n RS_N] [-u udp_port] [-p radio_port] [-B bandwidth] [-G guard_interval] [-S stbc] [-L ldpc] [-M mcs_index] [ -T poll_timeout ] interface1 [interface2] ...\n",
+            fprintf(stderr, "Usage: %s [-K tx_key] [-k RS_K] [-n RS_N] [-u udp_port] [-p radio_port] [-B bandwidth] [-G guard_interval] [-S stbc] [-L ldpc] [-M mcs_index] [-T poll_timeout] [-e epoch] [-i link_id] interface1 [interface2] ...\n",
                     argv[0]);
-            fprintf(stderr, "Default: K='%s', k=%d, n=%d, udp_port=%d, radio_port=%d bandwidth=%d guard_interval=%s stbc=%d ldpc=%d mcs_index=%d, poll_timeout=%d\n",
-                    keypair.c_str(), k, n, udp_port, radio_port, bandwidth, short_gi ? "short" : "long", stbc, ldpc, mcs_index, poll_timeout);
+            fprintf(stderr, "Default: K='%s', k=%d, n=%d, udp_port=%d, link_id=0x%06x, radio_port=%u, epoch=%lu, bandwidth=%d guard_interval=%s stbc=%d ldpc=%d mcs_index=%d, poll_timeout=%d\n",
+                    keypair.c_str(), k, n, udp_port, link_id, radio_port, epoch, bandwidth, short_gi ? "short" : "long", stbc, ldpc, mcs_index, poll_timeout);
             fprintf(stderr, "Radio MTU: %lu\n", (unsigned long)MAX_PAYLOAD_SIZE);
             fprintf(stderr, "WFB-ng version " WFB_VERSION "\n");
             fprintf(stderr, "WFB-ng home page: <http://wfb-ng.org>\n");
@@ -416,6 +451,28 @@ int main(int argc, char * const *argv)
         radiotap_header[MCS_FLAGS_OFF] = flags;
         radiotap_header[MCS_IDX_OFF] = mcs_index;
     }
+
+    {
+        int fd;
+        int c;
+
+        if ((fd = open("/dev/random", O_RDONLY)) != -1) {
+            if (ioctl(fd, RNDGETENTCNT, &c) == 0 && c < 160) {
+                fprintf(stderr, "This system doesn't provide enough entropy to quickly generate high-quality random numbers.\n"
+                        "Installing the rng-utils/rng-tools, jitterentropy or haveged packages may help.\n"
+                        "On virtualized Linux environments, also consider using virtio-rng.\n"
+                        "The service will not start until enough entropy has been collected.\n");
+            }
+            (void) close(fd);
+        }
+    }
+
+    if (sodium_init() < 0)
+    {
+        fprintf(stderr, "libsodium init failed\n");
+        return 1;
+    }
+
     try
     {
         vector<int> rx_fd;
@@ -430,12 +487,14 @@ int main(int argc, char * const *argv)
 
         shared_ptr<Transmitter> t;
 
+        uint32_t channel_id = (link_id << 8) + radio_port;
+
         if(debug_port)
         {
             fprintf(stderr, "Using %lu ports from %d for wlan emulation\n", wlans.size(), debug_port);
-            t = shared_ptr<UdpTransmitter>(new UdpTransmitter(k, n, keypair, "127.0.0.1", debug_port));
+            t = shared_ptr<UdpTransmitter>(new UdpTransmitter(k, n, keypair, "127.0.0.1", debug_port, epoch, channel_id));
         } else {
-            t = shared_ptr<PcapTransmitter>(new PcapTransmitter(k, n, keypair, radio_port, wlans));
+            t = shared_ptr<PcapTransmitter>(new PcapTransmitter(k, n, keypair, epoch, channel_id, wlans));
         }
 
         data_source(t, rx_fd, poll_timeout);

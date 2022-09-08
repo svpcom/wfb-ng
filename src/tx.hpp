@@ -1,6 +1,6 @@
 // -*- C++ -*-
 //
-// Copyright (C) 2017, 2018 Vasily Evseenko <svpcom@p2ptech.org>
+// Copyright (C) 2017 - 2022 Vasily Evseenko <svpcom@p2ptech.org>
 
 /*
  *   This program is free software; you can redistribute it and/or modify
@@ -32,7 +32,7 @@
 class Transmitter
 {
 public:
-    Transmitter(int k, int m, const std::string &keypair);
+    Transmitter(int k, int m, const std::string &keypair, uint64_t epoch, uint32_t channel_id);
     virtual ~Transmitter();
     void send_packet(const uint8_t *buf, size_t size, uint8_t flags);
     void send_session_key(void);
@@ -47,28 +47,30 @@ private:
     fec_t* fec_p;
     int fec_k;  // RS number of primary fragments in block
     int fec_n;  // RS total number of fragments in block
-    uint64_t block_idx; //block_idx << 8 + fragment_idx = nonce (64bit)
+    uint64_t block_idx; // (block_idx << 8) + fragment_idx = nonce (64bit)
     uint8_t fragment_idx;
     uint8_t** block;
     size_t max_packet_size;
+    const uint64_t epoch; // Packets from old epoch will be discarded
+    const uint32_t channel_id; // (link_id << 8) + port_number
 
     // tx->rx keypair
     uint8_t tx_secretkey[crypto_box_SECRETKEYBYTES];
     uint8_t rx_publickey[crypto_box_PUBLICKEYBYTES];
     uint8_t session_key[crypto_aead_chacha20poly1305_KEYBYTES];
-    wsession_key_t session_key_packet;
+    uint8_t session_key_packet[sizeof(wsession_hdr_t) + sizeof(wsession_data_t) + crypto_box_MACBYTES];
 };
 
 
 class PcapTransmitter : public Transmitter
 {
 public:
-    PcapTransmitter(int k, int m, const std::string &keypair, uint8_t radio_port, const std::vector<std::string> &wlans);
+    PcapTransmitter(int k, int m, const std::string &keypair, uint64_t epoch, uint32_t channel_id, const std::vector<std::string> &wlans);
     virtual ~PcapTransmitter();
     virtual void select_output(int idx) { current_output = idx; }
 private:
     virtual void inject_packet(const uint8_t *buf, size_t size);
-    uint8_t radio_port;
+    const uint32_t channel_id;
     int current_output;
     uint16_t ieee80211_seq;
     std::vector<pcap_t*> ppcap;
@@ -78,8 +80,9 @@ private:
 class UdpTransmitter : public Transmitter
 {
 public:
-    UdpTransmitter(int k, int m, const std::string &keypair, const std::string &client_addr, int base_port) : Transmitter(k, m, keypair),\
-                                                                                                              base_port(base_port)
+    UdpTransmitter(int k, int m, const std::string &keypair, const std::string &client_addr, int base_port, uint64_t epoch, uint32_t channel_id): \
+        Transmitter(k, m, keypair, epoch, channel_id),                  \
+        base_port(base_port)
     {
         sockfd = socket(AF_INET, SOCK_DGRAM, 0);
         if (sockfd < 0) throw std::runtime_error(string_format("Error opening socket: %s", strerror(errno)));

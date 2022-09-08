@@ -1,4 +1,4 @@
-// Copyright (C) 2017, 2018, 2019 Vasily Evseenko <svpcom@p2ptech.org>
+// Copyright (C) 2017 - 2022 Vasily Evseenko <svpcom@p2ptech.org>
 
 /*
  *   This program is free software; you can redistribute it and/or modify
@@ -67,9 +67,6 @@ extern std::string string_format(const char *format, ...);
 
 #define MCS_KNOWN (IEEE80211_RADIOTAP_MCS_HAVE_MCS | IEEE80211_RADIOTAP_MCS_HAVE_BW | IEEE80211_RADIOTAP_MCS_HAVE_GI | IEEE80211_RADIOTAP_MCS_HAVE_STBC | IEEE80211_RADIOTAP_MCS_HAVE_FEC)
 
-// Default is MCS#1 -- QPSK 1/2 40MHz SGI -- 30 Mbit/s
-// MCS_FLAGS = (IEEE80211_RADIOTAP_MCS_BW_40 | IEEE80211_RADIOTAP_MCS_SGI | (IEEE80211_RADIOTAP_MCS_STBC_1 << IEEE80211_RADIOTAP_MCS_STBC_SHIFT))
-
 static uint8_t radiotap_header[]  __attribute__((unused)) = {
     0x00, 0x00, // <-- radiotap version
     0x0d, 0x00, // <- radiotap header length
@@ -82,33 +79,42 @@ static uint8_t radiotap_header[]  __attribute__((unused)) = {
 #define MCS_FLAGS_OFF 11
 #define MCS_IDX_OFF 12
 
-//the last byte of the mac address is recycled as a port number
-#define SRC_MAC_LASTBYTE 15
-#define DST_MAC_LASTBYTE 21
+//the last four bytes used for channel_id
+#define SRC_MAC_THIRD_BYTE 12
+#define DST_MAC_THIRD_BYTE 18
 #define FRAME_SEQ_LB 22
 #define FRAME_SEQ_HB 23
 
+// WFB-NG MAC address format: "W:B:X:X:X:X" where XXXX is channel_id
+// channel_id = (link_id << 8) + radio_port
+// First address byte 'W'(0x57) has two lower bits set that means that address is multicast and locally administred
+// See https://en.wikipedia.org/wiki/MAC_address for reference
+
 static uint8_t ieee80211_header[] __attribute__((unused)) = {
-    0x08, 0x01, 0x00, 0x00,
-    0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF,
-    0x13, 0x22, 0x33, 0x44, 0x55, 0x66,
-    0x13, 0x22, 0x33, 0x44, 0x55, 0x66,
-    0x00, 0x00,  // seq num << 4 + fragment num
+    0x08, 0x01, 0x00, 0x00,               // data frame, not protected, from STA to DS via an AP
+    0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF,   // receiver is broadcast
+    0x57, 0x42, 0xaa, 0xbb, 0xcc, 0xdd,   // last four bytes will be replaced by channel_id
+    0x57, 0x42, 0xaa, 0xbb, 0xcc, 0xdd,   // last four bytes will be replaced by channel_id
+    0x00, 0x00,                           // (seq_num << 4) + fragment_num
 };
 
 /*
- Wifibroadcast protocol:
+ WFB-NG protocol:
 
- radiotap_header
-   ieee_80211_header
-     wblock_hdr_t   { packet_type, nonce = (block_idx << 8 + fragment_idx) }
-       wpacket_hdr_t  { flags, packet_size }  #
-         data                                 #
-                                              +-- encrypted
-
+ radiotap_header:
+   ieee_80211_header:
+     1. Data packet:
+        wblock_hdr_t   { packet_type = 1, nonce = (block_idx << 8) + fragment_idx }
+          wpacket_hdr_t  { flags, packet_size }  #
+            data                                 #
+                                                 +-- encrypted and authenticated by session key
+     2. Session packet:
+        wsession_hdr_t { packet_type = 2, nonce = random() }
+          wsession_data_t { epoch, channel_id, session_key } # -- encrypted and signed using rx and tx keys
  */
 
-// nonce:  56bit block_idx + 8bit fragment_idx
+// data nonce:  56bit block_idx + 8bit fragment_idx
+// session nonce: crypto_box_NONCEBYTES of random bytes
 
 #define BLOCK_IDX_MASK ((1LLU << 56) - 1)
 #define MAX_BLOCK_IDX ((1LLU << 55) - 1)
@@ -137,15 +143,20 @@ typedef struct {
 
 typedef struct {
     uint8_t packet_type;
-    uint8_t session_key_nonce[crypto_box_NONCEBYTES];  // random data
-    uint8_t session_key_data[crypto_aead_chacha20poly1305_KEYBYTES + crypto_box_MACBYTES]; // encrypted session key
-} __attribute__ ((packed)) wsession_key_t;
+    uint8_t session_nonce[crypto_box_NONCEBYTES];  // random data
+}  __attribute__ ((packed)) wsession_hdr_t;
+
+typedef struct{
+    uint64_t epoch; // Drop session packets from old epoch
+    uint32_t channel_id; // (link_id << 8) + port_number
+    uint8_t session_key[crypto_aead_chacha20poly1305_KEYBYTES];
+} __attribute__ ((packed)) wsession_data_t;
 
 // Data packet. Embed FEC-encoded data
 
 typedef struct {
     uint8_t packet_type;
-    uint64_t nonce;  // big endian, nonce = block_idx << 8 + fragment_idx
+    uint64_t data_nonce;  // big endian, data_nonce = (block_idx << 8) + fragment_idx
 }  __attribute__ ((packed)) wblock_hdr_t;
 
 // Plain data packet after FEC decode

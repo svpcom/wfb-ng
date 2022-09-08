@@ -80,5 +80,7 @@ setup(
     author="Vasily Evseenko",
     author_email="svpcom@p2ptech.org",
     description="The next generation of long-range packet radio link based on raw WiFi radio",
+    long_description=open('README.md').read(),
+    long_description_content_type='text/markdown',
     license="GPLv3",
 )

@@ -1,6 +1,6 @@
 // -*- C++ -*-
 //
-// Copyright (C) 2017, 2018 Vasily Evseenko <svpcom@p2ptech.org>
+// Copyright (C) 2017 - 2022 Vasily Evseenko <svpcom@p2ptech.org>
 
 /*
  *   This program is free software; you can redistribute it and/or modify
@@ -118,7 +118,7 @@ typedef std::unordered_map<uint64_t, antennaItem> antenna_stat_t;
 class Aggregator : public BaseAggregator
 {
 public:
-    Aggregator(const std::string &client_addr, int client_port, int k, int n, const std::string &keypair);
+    Aggregator(const std::string &client_addr, int client_port, int k, int n, const std::string &keypair, uint64_t epoch, uint32_t channel_id);
     ~Aggregator();
     virtual void process_packet(const uint8_t *buf, size_t size, uint8_t wlan_idx, const uint8_t *antenna, const int8_t *rssi, sockaddr_in *sockaddr);
     virtual void dump_stats(FILE *fp);
@@ -137,6 +137,8 @@ private:
     int rx_ring_front; // current packet
     int rx_ring_alloc; // number of allocated entries
     uint64_t last_known_block;  //id of last known block
+    uint64_t epoch; // current epoch
+    const uint32_t channel_id; // (link_id << 8) + port_number
 
     // rx->tx keypair
     uint8_t rx_secretkey[crypto_box_SECRETKEYBYTES];
@@ -156,7 +158,7 @@ private:
 class Receiver
 {
 public:
-    Receiver(const char* wlan, int wlan_idx, int port, BaseAggregator* agg);
+    Receiver(const char* wlan, int wlan_idx, uint32_t channel_id, BaseAggregator* agg);
     ~Receiver();
     void loop_iter(void);
     int getfd(void){ return fd; }

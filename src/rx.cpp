@@ -1,6 +1,6 @@
 // -*- C++ -*-
 //
-// Copyright (C) 2017 - 2020 Vasily Evseenko <svpcom@p2ptech.org>
+// Copyright (C) 2017 - 2022 Vasily Evseenko <svpcom@p2ptech.org>
 
 /*
  *   This program is free software; you can redistribute it and/or modify
@@ -32,6 +32,8 @@
 #include <netinet/in.h>
 #include <arpa/inet.h>
 #include <limits.h>
+#include <sys/ioctl.h>
+#include <linux/random.h>
 
 extern "C"
 {
@@ -48,7 +50,7 @@ extern "C"
 using namespace std;
 
 
-Receiver::Receiver(const char *wlan, int wlan_idx, int radio_port, BaseAggregator *agg) : wlan_idx(wlan_idx), agg(agg)
+Receiver::Receiver(const char *wlan, int wlan_idx, uint32_t channel_id, BaseAggregator *agg) : wlan_idx(wlan_idx), agg(agg)
 {
     char errbuf[PCAP_ERRBUF_SIZE];
 
@@ -60,9 +62,7 @@ Receiver::Receiver(const char *wlan, int wlan_idx, int radio_port, BaseAggregato
 
     if (pcap_set_snaplen(ppcap, 4096) !=0) throw runtime_error("set_snaplen failed");
     if (pcap_set_promisc(ppcap, 1) != 0) throw runtime_error("set_promisc failed");
-    //if (pcap_set_rfmon(ppcap, 1) !=0) throw runtime_error("set_rfmon failed");
     if (pcap_set_timeout(ppcap, -1) !=0) throw runtime_error("set_timeout failed");
-    //if (pcap_set_buffer_size(ppcap, 2048) !=0) throw runtime_error("set_buffer_size failed");
     if (pcap_set_immediate_mode(ppcap, 1) != 0) throw runtime_error(string_format("pcap_set_immediate_mode failed: %s", pcap_geterr(ppcap)));
     if (pcap_activate(ppcap) !=0) throw runtime_error(string_format("pcap_activate failed: %s", pcap_geterr(ppcap)));
     if (pcap_setnonblock(ppcap, 1, errbuf) != 0) throw runtime_error(string_format("set_nonblock failed: %s", errbuf));
@@ -71,21 +71,11 @@ Receiver::Receiver(const char *wlan, int wlan_idx, int radio_port, BaseAggregato
     struct bpf_program bpfprogram;
     string program;
 
-    switch (link_encap)
-    {
-    case DLT_PRISM_HEADER:
-        fprintf(stderr, "%s has DLT_PRISM_HEADER Encap\n", wlan);
-        program = string_format("radio[0x4a:4]==0x13223344 && radio[0x4e:2] == 0x55%.2x", radio_port);
-        break;
-
-    case DLT_IEEE802_11_RADIO:
-        fprintf(stderr, "%s has DLT_IEEE802_11_RADIO Encap\n", wlan);
-        program = string_format("ether[0x0a:4]==0x13223344 && ether[0x0e:2] == 0x55%.2x", radio_port);
-        break;
-
-    default:
+    if (link_encap != DLT_IEEE802_11_RADIO) {
         throw runtime_error(string_format("unknown encapsulation on %s", wlan));
     }
+
+    program = string_format("ether[0x0a:2]==0x5742 && ether[0x0c:4] == 0x%08x", channel_id);
 
     if (pcap_compile(ppcap, &bpfprogram, program.c_str(), 1, 0) == -1) {
         throw runtime_error(string_format("Unable to compile %s: %s", program.c_str(), pcap_geterr(ppcap)));
@@ -208,9 +198,11 @@ void Receiver::loop_iter(void)
 }
 
 
-Aggregator::Aggregator(const string &client_addr, int client_port, int k, int n, const string &keypair) : fec_k(k), fec_n(n), seq(0), rx_ring_front(0), rx_ring_alloc(0), last_known_block((uint64_t)-1),
-                                                                                                          count_p_all(0), count_p_dec_err(0), count_p_dec_ok(0), count_p_fec_recovered(0),
-                                                                                                          count_p_lost(0), count_p_bad(0), count_p_override(0)
+Aggregator::Aggregator(const string &client_addr, int client_port, int k, int n, const string &keypair, uint64_t epoch, uint32_t channel_id) : \
+    fec_k(k), fec_n(n), seq(0), rx_ring_front(0), rx_ring_alloc(0),
+    last_known_block((uint64_t)-1), epoch(epoch), channel_id(channel_id),
+    count_p_all(0), count_p_dec_err(0), count_p_dec_ok(0), count_p_fec_recovered(0),
+    count_p_lost(0), count_p_bad(0), count_p_override(0)
 {
     sockfd = open_udp_socket_for_tx(client_addr, client_port);
     fec_p = fec_new(fec_k, fec_n);
@@ -423,7 +415,7 @@ void Aggregator::log_rssi(const sockaddr_in *sockaddr, uint8_t wlan_idx, const u
 
 void Aggregator::process_packet(const uint8_t *buf, size_t size, uint8_t wlan_idx, const uint8_t *antenna, const int8_t *rssi, sockaddr_in *sockaddr)
 {
-    uint8_t new_session_key[sizeof(session_key)];
+    wsession_data_t new_session_data;
     count_p_all += 1;
 
     if(size == 0) return;
@@ -447,16 +439,17 @@ void Aggregator::process_packet(const uint8_t *buf, size_t size, uint8_t wlan_id
         break;
 
     case WFB_PACKET_KEY:
-        if(size != sizeof(wsession_key_t))
+        if(size != sizeof(wsession_hdr_t) + sizeof(wsession_data_t) + crypto_box_MACBYTES)
         {
             fprintf(stderr, "invalid session key packet\n");
             count_p_bad += 1;
             return;
         }
 
-        if(crypto_box_open_easy(new_session_key,
-                                ((wsession_key_t*)buf)->session_key_data, sizeof(wsession_key_t::session_key_data),
-                                ((wsession_key_t*)buf)->session_key_nonce,
+        if(crypto_box_open_easy((uint8_t*)&new_session_data,
+                                buf + sizeof(wsession_hdr_t),
+                                sizeof(wsession_data_t) + crypto_box_MACBYTES,
+                                ((wsession_hdr_t*)buf)->session_nonce,
                                 tx_publickey, rx_secretkey) != 0)
         {
             fprintf(stderr, "unable to decrypt session key\n");
@@ -464,12 +457,20 @@ void Aggregator::process_packet(const uint8_t *buf, size_t size, uint8_t wlan_id
             return;
         }
 
-        count_p_dec_ok += 1;
+        if (be64toh(new_session_data.epoch) < epoch || be32toh(new_session_data.channel_id) != channel_id)
+        {
+            fprintf(stderr, "session channel_id or epoch doesn't match\n");
+            count_p_dec_err += 1;
+            return;
+        }
 
-        if (memcmp(session_key, new_session_key, sizeof(session_key)) != 0)
+        count_p_dec_ok += 1;
+        epoch = be64toh(new_session_data.epoch);
+
+        if (memcmp(session_key, new_session_data.session_key, sizeof(session_key)) != 0)
         {
             fprintf(stderr, "New session detected\n");
-            memcpy(session_key, new_session_key, sizeof(session_key));
+            memcpy(session_key, new_session_data.session_key, sizeof(session_key));
 
             rx_ring_front = 0;
             rx_ring_alloc = 0;
@@ -500,9 +501,9 @@ void Aggregator::process_packet(const uint8_t *buf, size_t size, uint8_t wlan_id
                                              buf + sizeof(wblock_hdr_t), size - sizeof(wblock_hdr_t),
                                              buf,
                                              sizeof(wblock_hdr_t),
-                                             (uint8_t*)(&(block_hdr->nonce)), session_key) != 0)
+                                             (uint8_t*)(&(block_hdr->data_nonce)), session_key) != 0)
     {
-        fprintf(stderr, "unable to decrypt packet #0x%" PRIx64 "\n", be64toh(block_hdr->nonce));
+        fprintf(stderr, "unable to decrypt packet #0x%" PRIx64 "\n", be64toh(block_hdr->data_nonce));
         count_p_dec_err += 1;
         return;
     }
@@ -512,8 +513,8 @@ void Aggregator::process_packet(const uint8_t *buf, size_t size, uint8_t wlan_id
 
     assert(decrypted_len <= MAX_FEC_PAYLOAD);
 
-    uint64_t block_idx = be64toh(block_hdr->nonce) >> 8;
-    uint8_t fragment_idx = (uint8_t)(be64toh(block_hdr->nonce) & 0xff);
+    uint64_t block_idx = be64toh(block_hdr->data_nonce) >> 8;
+    uint8_t fragment_idx = (uint8_t)(be64toh(block_hdr->data_nonce) & 0xff);
 
     // Should never happend due to generating new session key on tx side
     if (block_idx > MAX_BLOCK_IDX)
@@ -682,7 +683,7 @@ void Aggregator::apply_fec(int ring_idx)
     fec_decode(fec_p, (const uint8_t**)in_blocks, out_blocks, index, MAX_FEC_PAYLOAD);
 }
 
-void radio_loop(int argc, char* const *argv, int optind, int radio_port, shared_ptr<BaseAggregator> agg, int log_interval)
+void radio_loop(int argc, char* const *argv, int optind, uint32_t channel_id, shared_ptr<BaseAggregator> agg, int log_interval)
 {
     int nfds = min(argc - optind, MAX_RX_INTERFACES);
     uint64_t log_send_ts = 0;
@@ -693,7 +694,7 @@ void radio_loop(int argc, char* const *argv, int optind, int radio_port, shared_
 
     for(int i = 0; i < nfds; i++)
     {
-        rx[i] = new Receiver(argv[optind + i], i, radio_port, agg.get());
+        rx[i] = new Receiver(argv[optind + i], i, channel_id, agg.get());
         fds[i].fd = rx[i]->getfd();
         fds[i].events = POLLIN;
     }
@@ -817,7 +818,9 @@ void network_loop(int srv_port, Aggregator &agg, int log_interval)
 int main(int argc, char* const *argv)
 {
     int opt;
-    uint8_t k = 8, n = 12, radio_port = 1;
+    uint8_t k = 8, n = 12, radio_port = 0;
+    uint32_t link_id = 0;
+    uint64_t epoch = 0;
     int log_interval = 1000;
     int client_port = 5600;
     int srv_port = 0;
@@ -825,7 +828,7 @@ int main(int argc, char* const *argv)
     rx_mode_t rx_mode = LOCAL;
     string keypair = "rx.key";
 
-    while ((opt = getopt(argc, argv, "K:fa:k:n:c:u:p:l:")) != -1) {
+    while ((opt = getopt(argc, argv, "K:fa:k:n:c:u:p:l:i:e:")) != -1) {
         switch (opt) {
         case 'K':
             keypair = optarg;
@@ -855,36 +858,64 @@ int main(int argc, char* const *argv)
         case 'l':
             log_interval = atoi(optarg);
             break;
+        case 'i':
+            link_id = ((uint32_t)atoi(optarg)) & 0xffffff;
+            break;
+        case 'e':
+            epoch = atoll(optarg);
+            break;
         default: /* '?' */
         show_usage:
-            fprintf(stderr, "Local receiver: %s [-K rx_key] [-k RS_K] [-n RS_N] [-c client_addr] [-u client_port] [-p radio_port] [-l log_interval] interface1 [interface2] ...\n", argv[0]);
-            fprintf(stderr, "Remote (forwarder): %s -f [-c client_addr] [-u client_port] [-p radio_port] interface1 [interface2] ...\n", argv[0]);
-            fprintf(stderr, "Remote (aggregator): %s -a server_port [-K rx_key] [-k RS_K] [-n RS_N] [-c client_addr] [-u client_port] [-l log_interval]\n", argv[0]);
-            fprintf(stderr, "Default: K='%s', k=%d, n=%d, connect=%s:%d, radio_port=%d, log_interval=%d\n", keypair.c_str(), k, n, client_addr.c_str(), client_port, radio_port, log_interval);
+            fprintf(stderr, "Local receiver: %s [-K rx_key] [-k RS_K] [-n RS_N] [-c client_addr] [-u client_port] [-p radio_port] [-l log_interval] [-e epoch] [-i link_id] interface1 [interface2] ...\n", argv[0]);
+            fprintf(stderr, "Remote (forwarder): %s -f [-c client_addr] [-u client_port] [-p radio_port] [-i link_id] interface1 [interface2] ...\n", argv[0]);
+            fprintf(stderr, "Remote (aggregator): %s -a server_port [-K rx_key] [-k RS_K] [-n RS_N] [-c client_addr] [-u client_port] [-l log_interval] [-p radio_port] [-e epoch] [-i link_id]\n", argv[0]);
+            fprintf(stderr, "Default: K='%s', k=%d, n=%d, connect=%s:%d, link_id=0x%06x, radio_port=%u, epoch=%lu, log_interval=%d\n", keypair.c_str(), k, n, client_addr.c_str(), client_port, link_id, radio_port, epoch, log_interval);
             fprintf(stderr, "WFB-ng version " WFB_VERSION "\n");
             fprintf(stderr, "WFB-ng home page: <http://wfb-ng.org>\n");
             exit(1);
         }
     }
 
+    {
+        int fd;
+        int c;
+
+        if ((fd = open("/dev/random", O_RDONLY)) != -1) {
+            if (ioctl(fd, RNDGETENTCNT, &c) == 0 && c < 160) {
+                fprintf(stderr, "This system doesn't provide enough entropy to quickly generate high-quality random numbers.\n"
+                        "Installing the rng-utils/rng-tools, jitterentropy or haveged packages may help.\n"
+                        "On virtualized Linux environments, also consider using virtio-rng.\n"
+                        "The service will not start until enough entropy has been collected.\n");
+            }
+            (void) close(fd);
+        }
+    }
+
+    if (sodium_init() < 0)
+    {
+        fprintf(stderr, "libsodium init failed\n");
+        return 1;
+    }
+
     try
     {
+        uint32_t channel_id = (link_id << 8) + radio_port;
         if (rx_mode == LOCAL || rx_mode == FORWARDER)
         {
             if (optind >= argc) goto show_usage;
 
             shared_ptr<BaseAggregator> agg;
             if(rx_mode == LOCAL){
-                agg = shared_ptr<Aggregator>(new Aggregator(client_addr, client_port, k, n, keypair));
+                agg = shared_ptr<Aggregator>(new Aggregator(client_addr, client_port, k, n, keypair, epoch, channel_id));
             }else{
                 agg = shared_ptr<Forwarder>(new Forwarder(client_addr, client_port));
             }
 
-            radio_loop(argc, argv, optind, radio_port, agg, log_interval);
+            radio_loop(argc, argv, optind, channel_id, agg, log_interval);
         }else if(rx_mode == AGGREGATOR)
         {
             if (optind > argc) goto show_usage;
-            Aggregator agg(client_addr, client_port, k, n, keypair);
+            Aggregator agg(client_addr, client_port, k, n, keypair, epoch, channel_id);
 
             network_loop(srv_port, agg, log_interval);
         }else{

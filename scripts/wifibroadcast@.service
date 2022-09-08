@@ -6,11 +6,13 @@ ReloadPropagatedFrom=wifibroadcast.service
 [Service]
 Type=simple
 EnvironmentFile=/etc/default/wifibroadcast
+# Use for multi-link setup
+# Environment="WIFIBROADCAST_CFG=/etc/wifibroadcast_linkXXX.cfg"
 ExecStart=/usr/bin/wfb-server %i ${WFB_NICS}
 TimeoutStopSec=5s
 Restart=on-failure
 RestartSec=5s
-StandardOutput=file:/var/log/wifibroadcast.log
+# Set logging to file in wifibroadcast.cfg
 StandardError=inherit
 
 [Install]

@@ -37,8 +37,12 @@ class TXRXTestCase(unittest.TestCase):
         self.rx_ep = reactor.listenUDP(10002, self.rxp)
         self.tx_ep = reactor.listenUDP(10004, self.txp)
 
-        cmd_rx = [os.path.join(bindir, 'wfb_rx'), '-K', 'drone.key', '-a', '10001', '-u', '10002', 'wlan0']
-        cmd_tx = [os.path.join(bindir, 'wfb_tx'), '-K', 'gs.key', '-u', '10003', '-D', '10004', '-T', '30', 'wlan0']
+        link_id = int.from_bytes(os.urandom(3), 'big')
+        epoch = int(time.time())
+        cmd_rx = [os.path.join(bindir, 'wfb_rx'), '-K', 'drone.key', '-a', '10001', '-u', '10002',
+                  '-i', str(link_id), '-e', str(epoch), 'wlan0']
+        cmd_tx = [os.path.join(bindir, 'wfb_tx'), '-K', 'gs.key', '-u', '10003', '-D', '10004', '-T', '30',
+                  '-i', str(link_id), '-e', str(epoch), 'wlan0']
 
         self.rx_pp = RXProtocol(None, cmd_rx, 'debug rx')
         self.tx_pp = TXProtocol(cmd_tx, 'debug tx')
