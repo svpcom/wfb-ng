@@ -51,7 +51,7 @@ int main(void)
 
     if (sodium_init() < 0)
     {
-        fprintf(stderr, "libsodium init failed\n");
+        fprintf(stderr, "Libsodium init failed\n");
         return 1;
     }
 

@@ -105,7 +105,11 @@ void Transmitter::make_session_key(void)
 
     // fill packet contents
     wsession_data_t session_data = { .epoch = htobe64(epoch),
-                                     .channel_id = htobe32(channel_id) };
+                                     .channel_id = htobe32(channel_id),
+                                     .fec_type = WFB_FEC_VDM_RS,
+                                     .k = (uint8_t)fec_k,
+                                     .n = (uint8_t)fec_n,
+                                   };
 
     memcpy(session_data.session_key, session_key, sizeof(session_key));
 
@@ -470,7 +474,7 @@ int main(int argc, char * const *argv)
 
     if (sodium_init() < 0)
     {
-        fprintf(stderr, "libsodium init failed\n");
+        fprintf(stderr, "Libsodium init failed\n");
         return 1;
     }
 

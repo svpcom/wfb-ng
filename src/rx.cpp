@@ -191,7 +191,7 @@ void Receiver::loop_iter(void)
         {
             agg->process_packet(pkt + sizeof(ieee80211_header), pktlen - sizeof(ieee80211_header), wlan_idx, antenna, rssi, NULL);
         } else {
-            fprintf(stderr, "short packet (ieee header)\n");
+            fprintf(stderr, "Short packet (ieee header)\n");
             continue;
         }
     }
@@ -253,6 +253,8 @@ Aggregator::~Aggregator()
         }
         delete rx_ring[ring_idx].fragments;
     }
+
+    fec_free(fec_p);
     close(sockfd);
 }
 
@@ -310,7 +312,7 @@ int Aggregator::rx_ring_push(void)
     */
 
 #if 0
-    fprintf(stderr, "override block 0x%" PRIx64 " flush %d fragments\n", rx_ring[rx_ring_front].block_idx, rx_ring[rx_ring_front].has_fragments);
+    fprintf(stderr, "Override block 0x%" PRIx64 " flush %d fragments\n", rx_ring[rx_ring_front].block_idx, rx_ring[rx_ring_front].has_fragments);
 #endif
 
     count_p_override += 1;
@@ -422,7 +424,7 @@ void Aggregator::process_packet(const uint8_t *buf, size_t size, uint8_t wlan_id
 
     if (size > MAX_FORWARDER_PACKET_SIZE)
     {
-        fprintf(stderr, "long packet (fec payload)\n");
+        fprintf(stderr, "Long packet (fec payload)\n");
         count_p_bad += 1;
         return;
     }
@@ -432,7 +434,7 @@ void Aggregator::process_packet(const uint8_t *buf, size_t size, uint8_t wlan_id
     case WFB_PACKET_DATA:
         if(size < sizeof(wblock_hdr_t) + sizeof(wpacket_hdr_t))
         {
-            fprintf(stderr, "short packet (fec header)\n");
+            fprintf(stderr, "Short packet (fec header)\n");
             count_p_bad += 1;
             return;
         }
@@ -441,7 +443,7 @@ void Aggregator::process_packet(const uint8_t *buf, size_t size, uint8_t wlan_id
     case WFB_PACKET_KEY:
         if(size != sizeof(wsession_hdr_t) + sizeof(wsession_data_t) + crypto_box_MACBYTES)
         {
-            fprintf(stderr, "invalid session key packet\n");
+            fprintf(stderr, "Invalid session key packet\n");
             count_p_bad += 1;
             return;
         }
@@ -452,14 +454,30 @@ void Aggregator::process_packet(const uint8_t *buf, size_t size, uint8_t wlan_id
                                 ((wsession_hdr_t*)buf)->session_nonce,
                                 tx_publickey, rx_secretkey) != 0)
         {
-            fprintf(stderr, "unable to decrypt session key\n");
+            fprintf(stderr, "Unable to decrypt session key\n");
             count_p_dec_err += 1;
             return;
         }
 
-        if (be64toh(new_session_data.epoch) < epoch || be32toh(new_session_data.channel_id) != channel_id)
+        if (be64toh(new_session_data.epoch) < epoch)
         {
-            fprintf(stderr, "session channel_id or epoch doesn't match\n");
+            fprintf(stderr, "Session epoch doesn't match\n");
+            count_p_dec_err += 1;
+            return;
+        }
+
+        if (be32toh(new_session_data.channel_id) != channel_id)
+        {
+            fprintf(stderr, "Session channel_id doesn't match\n");
+            count_p_dec_err += 1;
+            return;
+        }
+
+        if (new_session_data.k != fec_k ||
+            new_session_data.n != fec_n ||
+            new_session_data.fec_type != WFB_FEC_VDM_RS)
+        {
+            fprintf(stderr, "Session FEC settings doesn't match\n");
             count_p_dec_err += 1;
             return;
         }
@@ -503,7 +521,7 @@ void Aggregator::process_packet(const uint8_t *buf, size_t size, uint8_t wlan_id
                                              sizeof(wblock_hdr_t),
                                              (uint8_t*)(&(block_hdr->data_nonce)), session_key) != 0)
     {
-        fprintf(stderr, "unable to decrypt packet #0x%" PRIx64 "\n", be64toh(block_hdr->data_nonce));
+        fprintf(stderr, "Unable to decrypt packet #0x%" PRIx64 "\n", be64toh(block_hdr->data_nonce));
         count_p_dec_err += 1;
         return;
     }
@@ -526,7 +544,7 @@ void Aggregator::process_packet(const uint8_t *buf, size_t size, uint8_t wlan_id
 
     if (fragment_idx >= fec_n)
     {
-        fprintf(stderr, "invalid fragment_idx: %d\n", fragment_idx);
+        fprintf(stderr, "Invalid fragment_idx: %d\n", fragment_idx);
         count_p_bad += 1;
         return;
     }
@@ -643,7 +661,7 @@ void Aggregator::send_packet(int ring_idx, int fragment_idx)
 
     if(packet_size > MAX_PAYLOAD_SIZE)
     {
-        fprintf(stderr, "corrupted packet %u\n", seq);
+        fprintf(stderr, "Corrupted packet %u\n", seq);
         count_p_bad += 1;
     }else if(!(flags & WFB_PACKET_FEC_ONLY))
     {
@@ -805,7 +823,7 @@ void network_loop(int srv_port, Aggregator &agg, int log_interval)
 
                 if (rsize < (ssize_t)sizeof(wrxfwd_t))
                 {
-                    fprintf(stderr, "short packet (rx fwd header)\n");
+                    fprintf(stderr, "Short packet (rx fwd header)\n");
                     continue;
                 }
                 agg.process_packet(buf, rsize - sizeof(wrxfwd_t), fwd_hdr.wlan_idx, fwd_hdr.antenna, fwd_hdr.rssi, &sockaddr);
@@ -893,7 +911,7 @@ int main(int argc, char* const *argv)
 
     if (sodium_init() < 0)
     {
-        fprintf(stderr, "libsodium init failed\n");
+        fprintf(stderr, "Libsodium init failed\n");
         return 1;
     }
 

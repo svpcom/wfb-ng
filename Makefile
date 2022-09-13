@@ -35,7 +35,7 @@ wfb_tx: src/tx.o src/fec.o src/wifibroadcast.o
 wfb_keygen: src/keygen.o
 	$(CC) -o $@ $^ $(_LDFLAGS)
 
-test:
+test: all_bin
 	PYTHONPATH=`pwd` trial3 wfb_ng.tests
 
 rpm:  all_bin env

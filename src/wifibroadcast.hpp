@@ -110,7 +110,7 @@ static uint8_t ieee80211_header[] __attribute__((unused)) = {
                                                  +-- encrypted and authenticated by session key
      2. Session packet:
         wsession_hdr_t { packet_type = 2, nonce = random() }
-          wsession_data_t { epoch, channel_id, session_key } # -- encrypted and signed using rx and tx keys
+          wsession_data_t { epoch, channel_id, fec_type, fec_k, fec_n, session_key } # -- encrypted and signed using rx and tx keys
  */
 
 // data nonce:  56bit block_idx + 8bit fragment_idx
@@ -122,6 +122,9 @@ static uint8_t ieee80211_header[] __attribute__((unused)) = {
 // packet types
 #define WFB_PACKET_DATA 0x1
 #define WFB_PACKET_KEY 0x2
+
+// FEC types
+#define WFB_FEC_VDM_RS  0x1  //Reed-Solomon on Vandermonde matrix
 
 // packet flags
 #define WFB_PACKET_FEC_ONLY 0x1
@@ -149,6 +152,9 @@ typedef struct {
 typedef struct{
     uint64_t epoch; // Drop session packets from old epoch
     uint32_t channel_id; // (link_id << 8) + port_number
+    uint8_t fec_type; // Now only supported type is WFB_FEC_VDM_RS
+    uint8_t k;   // FEC k
+    uint8_t n;   // FEC n
     uint8_t session_key[crypto_aead_chacha20poly1305_KEYBYTES];
 } __attribute__ ((packed)) wsession_data_t;
 

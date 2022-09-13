@@ -1,6 +1,6 @@
 % WFB-NG Data Transport Standard [Draft]
 % Vasily Evseenko <<svpcom@p2ptech.org>>
-% Aug 29, 2022
+% Sep 13, 2022
 
 ## Introduction
 
@@ -49,7 +49,7 @@ First address byte `'W'`(0x57) has two lower bits set which means that address i
   - ...
 
 2. Next, the packet stream is processed by the FEC codec (using [zfec](http://info.iet.unipi.it/~luigi/fec.html) -- Erasure codes based on Vandermonde matrices.)
-3. FEC packets are encrypted with the aead_chacha20poly1305 stream cipher using the libsodium library
+3. FEC packets are encrypted and authenticated with the aead_chacha20poly1305 stream cipher using the libsodium library
 4. The result is transmitted to the air in the form of one WiFi packet.
 
 
@@ -72,9 +72,18 @@ All other ranges reserved for future use
 
 There are two packet types
 
-1. Data packet (`packet_type = 1`, has encrypted and fec-encoded data)
-2. Session packet (`packet_type = 2`, has encrypted session key)
+1. Data packet (`packet_type = 1`, has encrypted and authenticated (using session key) FEC-encoded data)
+2. Session packet (`packet_type = 2`, has encrypted and signed (using RX public key and TX secret key) session parameters and session key)
 
+Currently only supported FEC type is Reed-Solomon on Vandermonde matrix, but new FEC algorithms can be added in future.
+
+  ``` .c
+  // FEC types
+  #define WFB_FEC_VDM_RS  0x1  // Reed-Solomon on Vandermonde matrix
+
+  // packet flags
+  #define WFB_PACKET_FEC_ONLY 0x1  // Empty packet to close FEC block
+  ```
 
   ``` .c
   static uint8_t ieee80211_header[] = {
@@ -96,7 +105,7 @@ There are two packet types
                                                      +-- encrypted and authenticated by session key
          2. Session packet:
             wsession_hdr_t { packet_type = 2, nonce = random() }
-              wsession_data_t { epoch, channel_id, session_key } # -- encrypted and signed using crypto_box_easy(rx_publickey, tx_secretkey)
+              wsession_data_t { epoch, channel_id, fec_type, fec_k, fec_n, session_key } # -- encrypted and signed using crypto_box_easy(rx_publickey, tx_secretkey)
 
     data nonce:  56bit block_idx + 8bit fragment_idx
     session nonce: crypto_box_NONCEBYTES of random bytes
@@ -116,6 +125,9 @@ There are two packet types
     typedef struct{
         uint64_t epoch;       // It allow to drop session packets from old epoch
         uint32_t channel_id;  // (link_id << 8) + port_number
+        uint8_t fec_type;     // FEC type (WFB_FEC_VDM_RS or other)
+        uint8_t k;            // FEC k
+        uint8_t n;            // FEC n
         uint8_t session_key[crypto_aead_chacha20poly1305_KEYBYTES];
     } __attribute__ ((packed)) wsession_data_t;
 
@@ -146,7 +158,7 @@ WFB-NG encrypts data stream using libsodium.
 
 When TX starts, it generates new session key, encrypts it using public key authenticated encryption (cryptobox) and announce it every SESSION_KEY_ANNOUNCE_MSEC (default 1s).
 Data packets encrypted by crypto_aead_chacha20poly1305_encrypt using session key and packet index as nonce.
-
+TX can change FEC settings online, but it must generate a new session key to avoid invalid data on the RX side.
 
 ### RX-Ring
 Due to multiple RX radios with own internal queues incoming packets can arrive out of order and you need a method to rearrange them.
@@ -156,8 +168,8 @@ new fragments to block(s) in the tail and fetch them from the head.
 
 When you receive a new packet it can belongs to:
 
-1. New fec block - you need to allocate it in RX ring (do nothing if block was already processed)
-2. Already existing fec block - you need to add it to them (do nothing if packet already processed)
+1. New FEC block - you need to allocate it in RX ring (do nothing if block was already processed)
+2. Already existing FEC block - you need to add it to them (do nothing if packet already processed)
 
 If you successfully decode all fragments from the block then you should yield and remove ALL unfinished blocks before it.
 
@@ -172,3 +184,9 @@ So you can support invariant that output UDP packets will be always ordered and 
 By default WFB-NG encapsulates one source UDP packet to one WiFi packet. But mavlink packets are very small (usually less than 100 bytes) and
 send them in separate packets produces too much overhead. You can add optimized mavlink mode.
 It will pack mavlink packets into one UDP packet while size < ``MAX_PAYLOAD_SIZE`` and  ``mavlink_agg_in_ms`` is not expired.
+
+### TX FEC timeout
+By default WFB-NG doesn't close TX FEC block if less than ``K`` packets was sent and no new packets available.
+This can be an issue for interactive protocols or for protocols with variable data stream speed such as mavlink or IP tunnel.
+In such cases TX can issue empty packets with ``WFB_PACKET_FEC_ONLY`` flag to close non-empty FEC blocks if no new packets are available in some timeout.
+As alternative you can use FEC with ``K=1`` for such streams.
