@@ -84,7 +84,7 @@ wlan0: flags=4163<UP,BROADCAST,RUNNING,MULTICAST>  mtu 2312
 - Copy the name of the RTL8812AU WiFi card. 
 - Install wfb-ng. Replace `wifi0`with the previously copied name of the WiFi card.
 ```
-git clone https://github.com/svpcom/wifibroadcast.git
+git clone -b stable https://github.com/svpcom/wifibroadcast.git
 cd wifibroadcast
 sudo ./scripts/install_gs.sh wifi0
 ```
