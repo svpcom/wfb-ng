@@ -3,19 +3,19 @@ set -e
 
 if [[ $# -eq 0 ]] ; then
     echo 'Please specify the name of the WiFi adapter'
-    echo 'Find the name using command: ifconfig'
+    echo 'Find the name using command: ip a'
     echo 'Aborting ...'
-    exit 0
+    exit 1
 fi
+
+IFNAME="${1}"
 
 # Install required packages
 apt update
 apt upgrade
 
-apt install python3-all libpcap-dev libsodium-dev python3-pip python3-pyroute2 python3-future python3-twisted python3-serial iw
-apt install virtualenv
-apt install debhelper
-apt install dh-python build-essential
+apt install python3-all libpcap-dev libsodium-dev python3-pip python3-pyroute2 \
+  python3-future python3-twisted python3-serial iw virtualenv debhelper dh-python build-essential -y
 
 # Build
 make deb
@@ -28,7 +28,7 @@ mv gs.key /etc/gs.key
 dpkg -i deb_dist/*.deb 
 
 # Setup config
-cat <<EOT >> /etc/wifibroadcast.cfg
+cat <<EOF >> /etc/wifibroadcast.cfg
 [common]
 wifi_channel = 161     # 161 -- radio channel @5825 MHz, range: 5815–5835 MHz, width 20MHz
                        # 1 -- radio channel @2412 Mhz, 
@@ -42,27 +42,22 @@ peer = 'connect://127.0.0.1:14550'  # outgoing connection
 [gs_video]
 peer = 'connect://127.0.0.1:5600'  # outgoing connection for
                                    # video sink (QGroundControl on GS)
-EOT
+EOF
 
-rm /etc/default/wifibroadcast
-cat <<EOT >> /etc/default/wifibroadcast
-WFB_NICS="$1"
-EOT
+echo "WFB_NICS=\"${IFNAME}\"" > /etc/default/wifibroadcast
 
-cat <<EOT >> /etc/NetworkManager/NetworkManager.conf
+cat <<EOF >> /etc/NetworkManager/NetworkManager.conf
 [keyfile]
-unmanaged-devices=interface-name:$1
-EOT
+unmanaged-devices=interface-name:${IFNAME}
+EOF
 
-FILE=/etc/dhcpcd.conf
-if [ -f "$FILE" ]; then
-cat <<EOT >> /etc/dhcpcd.conf
-denyinterfaces $1
-EOT
+if [ -f /etc/dhcpcd.conf ]; then
+    echo "denyinterfaces ${IFNAME}" >> /etc/dhcpcd.conf
 fi
 
 # Start gs service
 systemctl daemon-reload
 systemctl start wifibroadcast@gs
 
-echo "Started wfg-ng@gs"
+echo "Started wifibroadcast@gs"
+systemctl status wifibroadcast@gs
