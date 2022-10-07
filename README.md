@@ -206,6 +206,6 @@ Wiki:
 -----
 See https://github.com/svpcom/wifibroadcast/wiki for additional info
 
-Community chat:
+Community support:
 ---------------
-Telegram: https://t.me/EZWBC
+Telegram: https://t.me/+uT7ziDLV4I5kZmUy
