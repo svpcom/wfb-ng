@@ -1,0 +1,28 @@
+[Unit]
+Description=FPV camera
+After=network-online.target
+
+[Service]
+
+## Pipeline for PI camera
+ExecStartPre=/bin/sh -c "v4l2-ctl --set-fmt-video=width=1280,height=720,pixelformat=H264 --set-ctrl=video_bitrate=4000000 --set-ctrl=rotate=180 --set-ctrl=image_stabilization=1 --set-ctrl=h264_profile=4 --set-ctrl=h264_i_frame_period=60 --set-ctrl=h264_level=11 --set-ctrl=video_bitrate_mode=1 --set-ctrl=power_line_frequency=1 --set-ctrl=exposure_metering_mode=1 --set-ctrl=repeat_sequence_header=1 --set-ctrl=exposure_dynamic_framerate=0 --set-ctrl=scene_mode=0 -p 30"
+ExecStart=/bin/sh -c "gst-launch-1.0 v4l2src do-timestamp=true io-mode=mmap device=/dev/video0 ! video/x-h264,profile=high,width=1280,height=720,framerate=30/1,stream-format=byte-stream !  h264parse ! rtph264pay config-interval=1 pt=96 ! udpsink host=127.0.0.1 port=5602 sync=false"
+##
+
+## Pipeline for Logitec C920 camera
+# ExecStart=/bin/sh -c "gst-launch-1.0 uvch264src device=/dev/video0 initial-bitrate=4000000 average-bitrate=4000000 iframe-period=1000 name=src auto-start=true src.vidsrc ! queue ! video/x-h264,width=1920,height=1080,framerate=30/1 ! h264parse ! rtph264pay ! udpsink host=127.0.0.1 port=5602"
+##
+
+## Pipeline for IP Camera
+# ExecStart=/bin/sh -c "gst-launch-1.0 rtspsrc protocols=tcp location=rtsp://user:password@192.168.1.123:554/Streaming/Channels/101 ! udpsink host=127.0.0.1 port=5602 sync=false"
+##
+
+Type=simple
+Restart=always
+RestartSec=1s
+TimeoutStopSec=10s
+KillMode=control-group
+
+[Install]
+WantedBy=multi-user.target
+

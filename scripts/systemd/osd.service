@@ -1,0 +1,14 @@
+[Unit]
+Description=FPV OSD
+After=network-online.target
+
+[Service]
+ExecStart=/bin/openvt -s -e -- bash -c 'TERM=linux setterm --blank force --clear all --cursor off /dev/tty && exec /usr/bin/osd'
+Type=simple
+Restart=always
+RestartSec=1s
+TimeoutStopSec=10s
+KillMode=control-group
+
+[Install]
+WantedBy=multi-user.target
