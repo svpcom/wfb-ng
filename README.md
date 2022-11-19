@@ -208,4 +208,5 @@ See https://github.com/svpcom/wifibroadcast/wiki for additional info
 
 Community support:
 ---------------
-Telegram: https://t.me/+uT7ziDLV4I5kZmUy
+Telegram group: (**wfb-ng support**) https://t.me/+uT7ziDLV4I5kZmUy
+Please note, that it is only one official group.
