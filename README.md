@@ -7,29 +7,29 @@ Main features:
 --------------
  - 1:1 map of RTP to IEEE80211 packets for minimum latency (doesn't serialize to byte steam)
  - Smart FEC support (immediately yeild packet to video decoder if FEC pipeline without gaps)
- - [Bidirectional mavlink telemetry](https://github.com/svpcom/wifibroadcast/wiki/Setup-HOWTO). You can use it for mavlink up/down and video down link.
+ - [Bidirectional mavlink telemetry](https://github.com/svpcom/wfb-ng/wiki/Setup-HOWTO). You can use it for mavlink up/down and video down link.
  - IP-over-WFB tunnel support. You can transmit ordinary ip packets over WFB link. Note, don't use ip tunnel for high-bandwidth transfers like video or mavlink. It use less efficient FEC coding and doesn't aggregate small packets.
  - Automatic TX diversity (select TX card based on RX RSSI)
  - Stream encryption and authentication ([libsodium](https://download.libsodium.org/doc/))
  - Distributed operation. It can gather data from cards on different hosts. So you don't limited to bandwidth of single USB bus.
  - Aggreagation of mavlink packets. Doesn't send wifi packet for every mavlink packet.
- - Enhanced [OSD](https://github.com/svpcom/wifibroadcast_osd) for Raspberry PI (consume 10% CPU on PI Zero) or any other system which
+ - Enhanced [OSD](https://github.com/svpcom/wfb-ng-osd) for Raspberry PI (consume 10% CPU on PI Zero) or any other system which
    supports gstreamer (Linux X11, etc). Compatible with any screen resolution. Supports aspect correction for PAL to HD scaling.
  - Provides IPv4 tunnel for generic usage
 
 > :warning: **Warranty/Disclaimer** <br />
 > This is free software and comes with no warranty, as stated in parts 15 and 16 of the GPLv3 license. The creators and contributors of the software are not responsible for how it is used.
-> See [License and Support](https://github.com/svpcom/wifibroadcast/wiki/License-and-Support) for details.
+> See [License and Support](https://github.com/svpcom/wfb-ng/wiki/License-and-Support) for details.
 
 ## Getting Started
 
 For detailed instructions on how to get started read through 
 [PX4-Guide](https://docs.px4.io/main/en/tutorials/video_streaming_wifi_broadcast.html)
-and follow the [Setup HowTo](https://github.com/svpcom/wifibroadcast/wiki/Setup-HOWTO)
+and follow the [Setup HowTo](https://github.com/svpcom/wfb-ng/wiki/Setup-HOWTO)
 
 ### Quick start using Raspberry Pi
 
-- Under [Releases](https://github.com/svpcom/wifibroadcast/releases) download the latest image file (`*.img.gz`). 
+- Under [Releases](https://github.com/svpcom/wfb-ng/releases) download the latest image file (`*.img.gz`).
 - Unpack the `*.img` file and flash it to 2-SD Cards.
 - Plug the WiFi Adapters into the Raspberry Pis
 - Boot the Pis and ssh into them using the following command (replace `192.168.0.111` with their IP-Address). Password: `raspberry`
@@ -84,8 +84,8 @@ wlan0: flags=4163<UP,BROADCAST,RUNNING,MULTICAST>  mtu 2312
 - Copy the name of the RTL8812AU WiFi card. 
 - Install wfb-ng. Replace `wifi0`with the previously copied name of the WiFi card.
 ```
-git clone -b stable https://github.com/svpcom/wifibroadcast.git
-cd wifibroadcast
+git clone -b stable https://github.com/svpcom/wfb-ng.git
+cd wfb-ng
 sudo ./scripts/install_gs.sh wifi0
 ```
 - Done! To monitor the link use the following command on the ground station:
@@ -135,7 +135,7 @@ If you like WFB-ng you can make a donation to `bitcoin:bc1qfvlsvr0ea7tzzydngq5cf
 
 ## Theory
 WFB-NG puts the wifi cards into monitor mode. This mode allows to send and receive arbitrary packets without association and waiting for ACK packets.
-[Analysis of Injection Capabilities and Media Access of IEEE 802.11 Hardware in Monitor Mode](https://github.com/svpcom/wifibroadcast/blob/master/patches/Analysis%20of%20Injection%20Capabilities%20and%20Media%20Access%20of%20IEEE%20802.11%20Hardware%20in%20Monitor%20Mode.pdf)
+[Analysis of Injection Capabilities and Media Access of IEEE 802.11 Hardware in Monitor Mode](https://github.com/svpcom/wfb-ng/blob/master/doc/Analysis%20of%20Injection%20Capabilities%20and%20Media%20Access%20of%20IEEE%20802.11%20Hardware%20in%20Monitor%20Mode.pdf)
 [802.11 timings](https://github.com/ewa/802.11-data)
 
 Sample usage chain:
@@ -195,16 +195,12 @@ Put `drone.key` to drone and `gs.key` to gs.
 
 Supported WiFi hardware:
 ------------------------
-My primary hardware targets are:
-1. Realtek RTL8812au. 802.11ac capable. Easy to buy. [**Requires external patched driver!**](https://github.com/svpcom/rtl8812au)  System was tested with ALPHA AWUS036ACH on both sides in 5GHz mode.
-2. ~~Ralink RT28xx family. Cheap, but doesn't produced anymore. System was tested with ALPHA AWUS051NH v2 as TX and array of RT5572 OEM cards as RX in 5GHz mode.~~ Broken in latest 5.x kernels. Injection became slow and eats 100% CPU
-
-To maximize output power and/or increase bandwidth (in case of one-way transmitting) you need to apply kernel patches from ``patches`` directory. See https://github.com/svpcom/wifibroadcast/wiki/Kernel-patches for details.
+My primary hardware target is Realtek **RTL8812au**. 802.11ac capable. Easy to buy. [**Requires external patched driver!**](https://github.com/svpcom/rtl8812au)  System was tested with ALPHA AWUS036ACH on both sides in 5GHz mode.
 
 
 Wiki:
 -----
-See https://github.com/svpcom/wifibroadcast/wiki for additional info
+See https://github.com/svpcom/wfb-ng/wiki for additional info
 
 Community support:
 ---------------

@@ -29,5 +29,5 @@ If applicable, add screenshots to help explain your problem.
 Add any other context about the problem here.
 
 **Confirm you read**
-- [ ]  https://github.com/svpcom/wifibroadcast/blob/master/README.md
-- [ ]  https://github.com/svpcom/wifibroadcast/wiki/Setup-HOWTO
+- [ ]  https://github.com/svpcom/wfb-ng/blob/master/README.md
+- [ ]  https://github.com/svpcom/wfb-ng/wiki/Setup-HOWTO

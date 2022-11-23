@@ -1,4 +1,4 @@
-digraph wifibroadcast {
+digraph wfb_ng {
     size = "a4";
     compound=true;
     splines=ortho;
@@ -27,8 +27,8 @@ digraph wifibroadcast {
                     label = "NanoPI NEO2";
                     color = "green";
 
-                    wifibroadcast_tx_1[shape=box];
-                    wifibroadcast_tx_2[shape=box];
+                    wfb_tx_1[shape=box];
+                    wfb_tx_2[shape=box];
                     mavproxy1[label="mavlink router", shape=box];
             }
             wifi_tx;
@@ -36,14 +36,14 @@ digraph wifibroadcast {
 
             wifi_tx -> ant_tx;
 
-            gstreamer -> wifibroadcast_tx_1[label="USB", ltail=cluster_pizero, lhead=cluster_companion];
+            gstreamer -> wfb_tx_1[label="USB", ltail=cluster_pizero, lhead=cluster_companion];
             pixhawk -> mavproxy1[label="UART"];
-            gstreamer -> wifibroadcast_tx_1[label="UDP 5060", style=dotted];
-            mavproxy1 -> wifibroadcast_tx_2[label="UDP 14550", style=dotted];
+            gstreamer -> wfb_tx_1[label="UDP 5060", style=dotted];
+            mavproxy1 -> wfb_tx_2[label="UDP 14550", style=dotted];
             mavproxy1 -> sik_radio1[label="UART"];
-            wifibroadcast_tx_1 -> wifi_tx [label="radio_port 1", style=dotted];
-            wifibroadcast_tx_2 -> wifi_tx [label="radio_port 2", style=dotted];
-            wifibroadcast_tx_2 -> wifi_tx [label="USB", ltail=cluster_companion];
+            wfb_tx_1 -> wifi_tx [label="radio_port 1", style=dotted];
+            wfb_tx_2 -> wifi_tx [label="radio_port 2", style=dotted];
+            wfb_tx_2 -> wifi_tx [label="USB", ltail=cluster_companion];
     }
 
     subgraph cluster_GS {
@@ -73,22 +73,22 @@ digraph wifibroadcast {
                     label = "Host RX1";
                     color="red";                    
                     eth_rx1[label="eth0"];
-                    wifibroadcast_rx_1_1[shape=box];
-                    wifibroadcast_rx_1_2[shape=box];
+                    wfb_rx_1_1[shape=box];
+                    wfb_rx_1_2[shape=box];
             }
             subgraph cluster_rx2{
                     label = "Host RX2";
                     color="red";                    
                     eth_rx2[label="eth0"];
-                    wifibroadcast_rx_2_1[shape=box];
-                    wifibroadcast_rx_2_2[shape=box];
+                    wfb_rx_2_1[shape=box];
+                    wfb_rx_2_2[shape=box];
             }
             subgraph cluster_rx3{
                     label = "Host RX3";
                     color="red";                    
                     eth_rx3[label="eth0"];
-                    wifibroadcast_rx_3_1[shape=box];
-                    wifibroadcast_rx_3_2[shape=box];
+                    wfb_rx_3_1[shape=box];
+                    wfb_rx_3_2[shape=box];
             }
             sik_radio2[label="3DR radio"];
             subgraph cluster_rx4{
@@ -97,27 +97,27 @@ digraph wifibroadcast {
                     eth_rx4[label="eth0"];
                     mavproxy2[label="mavlink router", shape=box];
             }
-            wifi_rx1 -> wifibroadcast_rx_1_1[label="radio port 1",style=dotted];
-            wifi_rx1 -> wifibroadcast_rx_1_2[label="radio port 2",style=dotted];
-            wifi_rx2 -> wifibroadcast_rx_2_1[label="radio port 1",style=dotted];
-            wifi_rx2 -> wifibroadcast_rx_2_2[label="radio port 2",style=dotted];
-            wifi_rx3 -> wifibroadcast_rx_3_1[label="radio port 1",style=dotted];
-            wifi_rx3 -> wifibroadcast_rx_3_2[label="radio port 2",style=dotted];
+            wifi_rx1 -> wfb_rx_1_1[label="radio port 1",style=dotted];
+            wifi_rx1 -> wfb_rx_1_2[label="radio port 2",style=dotted];
+            wifi_rx2 -> wfb_rx_2_1[label="radio port 1",style=dotted];
+            wifi_rx2 -> wfb_rx_2_2[label="radio port 2",style=dotted];
+            wifi_rx3 -> wfb_rx_3_1[label="radio port 1",style=dotted];
+            wifi_rx3 -> wfb_rx_3_2[label="radio port 2",style=dotted];
             sik_radio2 -> mavproxy2;
             subgraph cluster_laptop {
                     label = "Linux laptop";
                     color="green";                    
                     eth_linux[label="eth0"];
-                    wifibroadcast_agg1[shape=box];
-                    wifibroadcast_agg2[shape=box];
+                    wfb_agg1[shape=box];
+                    wfb_agg2[shape=box];
                     qgroundcontrol[shape=box];
             }
-            wifibroadcast_rx_1_1 -> wifibroadcast_agg1[label="UDP 5601", style=dotted];
-            wifibroadcast_rx_1_2 -> wifibroadcast_agg2[label="UDP 14551", style=dotted];
-            wifibroadcast_rx_2_1 -> wifibroadcast_agg1[label="UDP 5601", style=dotted];
-            wifibroadcast_rx_2_2 -> wifibroadcast_agg2[label="UDP 14551",style=dotted];
-            wifibroadcast_rx_3_1 -> wifibroadcast_agg1[label="UDP 5601" style=dotted];
-            wifibroadcast_rx_3_2 -> wifibroadcast_agg2[label="UDP 14551",style=dotted];
+            wfb_rx_1_1 -> wfb_agg1[label="UDP 5601", style=dotted];
+            wfb_rx_1_2 -> wfb_agg2[label="UDP 14551", style=dotted];
+            wfb_rx_2_1 -> wfb_agg1[label="UDP 5601", style=dotted];
+            wfb_rx_2_2 -> wfb_agg2[label="UDP 14551",style=dotted];
+            wfb_rx_3_1 -> wfb_agg1[label="UDP 5601" style=dotted];
+            wfb_rx_3_2 -> wfb_agg2[label="UDP 14551",style=dotted];
 
             ethernet_switch[label="switch"];
             eth_rx1 -> ethernet_switch[dir=both];
@@ -133,17 +133,17 @@ digraph wifibroadcast {
                     label = "PI Zero";
                     color="blue";
                     style=solid;
-                    wifibroadcast_osd[shape=box];
+                    wfb_osd[shape=box];
                     gstreamer_fpv[shape=box];
                     
             }
             video_display[label="Display"];
             }
-            wifibroadcast_agg1 -> gstreamer_fpv[label="UDP 5600", style=dotted];
-            wifibroadcast_agg2 -> wifibroadcast_osd[label="UDP 14550", style=dotted];
-            wifibroadcast_agg2 -> wifibroadcast_osd[label="USB", ltail=cluster_laptop, lhead=cluster_fpv_pi_zero];
+            wfb_agg1 -> gstreamer_fpv[label="UDP 5600", style=dotted];
+            wfb_agg2 -> wfb_osd[label="UDP 14550", style=dotted];
+            wfb_agg2 -> wfb_osd[label="USB", ltail=cluster_laptop, lhead=cluster_fpv_pi_zero];
             mavproxy2 -> qgroundcontrol[style=dotted];
-            wifibroadcast_osd -> video_display[label="HDMI or AV",ltail=cluster_fpv_pi_zero];
+            wfb_osd -> video_display[label="HDMI or AV",ltail=cluster_fpv_pi_zero];
             
             
     }
