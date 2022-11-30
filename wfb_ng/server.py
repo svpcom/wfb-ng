@@ -264,6 +264,10 @@ def init_wlans(profile, wlans):
     else:
         raise Exception('Unsupported bandwith %d MHz' % (max_bw,))
 
+    if not settings.common.primary:
+        log.msg('Skip card init due to secondary role')
+        return
+
     try:
         yield call_and_check_rc('iw', 'reg', 'set', settings.common.wifi_region)
         for wlan in wlans:
