@@ -3,7 +3,18 @@ Description=FPV video
 After=network-online.target
 
 [Service]
-ExecStart=/usr/bin/fpv_video.sh
+# RTP legacy
+ExecStart=/bin/sh -c "gst-launch-1.0 udpsrc port=5600 caps='application/x-rtp, media=(string)video, clock-rate=(int)90000, encoding-name=(string)H264' ! rtph264depay ! 'video/x-h264,stream-format=byte-stream' ! fdsink | fpv_video"
+
+# RTSP legacy
+#ExecStart=/bin/sh -c "gst-launch-1.0 rtspsrc latency=0 location="rtsp://127.0.0.1:8554/wfb" ! rtph264depay ! 'video/x-h264,stream-format=byte-stream' ! fdsink | fpv_video"
+
+# RTP MMAL
+#ExecStart=/bin/sh -c "gst-launch-1.0 udpsrc port=5600 caps='application/x-rtp, media=(string)video, clock-rate=(int)90000, encoding-name=(string)H264' ! rtph264depay ! h264parse disable-passthrough=true config-interval=1 ! queue ! mmalh264dec ! mmalvideosink sync=false"
+
+# RTSP MMAL
+#ExecStart=/bin/sh -c "gst-launch-1.0 rtspsrc latency=0 location="rtsp://127.0.0.1:8554/wfb" ! rtph264depay ! h264parse disable-passthrough=true config-interval=1 ! queue ! mmalh264dec ! mmalvideosink sync=false"
+
 Type=simple
 Restart=always
 RestartSec=1s
