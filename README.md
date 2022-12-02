@@ -119,7 +119,7 @@ If you like WFB-ng you can make a donation to `bitcoin:bc1qfvlsvr0ea7tzzydngq5cf
 ## FAQ
 **Q: What type of data can be transmitted using WFB-NG?**
 
-**A:** Any UDP with packet size <= 1466. For example x264 inside RTP or Mavlink.
+**A:** Any UDP with packet size <= 1445. For example x264 inside RTP or Mavlink.
 
 **Q: What are transmission guarancies?**
 
