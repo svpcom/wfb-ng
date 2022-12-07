@@ -62,16 +62,7 @@ def call_and_check_rc(cmd, *args, **kwargs):
 
 
 class ProxyProtocol:
-    def __init__(self, agg_max_size=None, agg_timeout=None, inject_rssi=False, arm_proto=None,
-                 mavlink_sys_id=None, mavlink_comp_id=None):
-
-        # use self.write to send mavlink message
-        if inject_rssi:
-            self.radio_mav = mavlink.MAVLink(self, srcSystem=mavlink_sys_id, srcComponent=mavlink_comp_id) # WFB
-        else:
-            self.radio_mav = None
-
-        self.arm_proto = arm_proto
+    def __init__(self, agg_max_size, agg_timeout):
         self.peer = None
         self.agg_max_size = agg_max_size
         self.agg_timeout = agg_timeout
@@ -102,9 +93,6 @@ class ProxyProtocol:
             self.peer.write(data)
 
     def messageReceived(self, data):
-        if self.arm_proto:
-            self.arm_proto.dataReceived(data)
-
         # send message to local transport
         if self.agg_max_size is None or self.agg_timeout is None:
             return self._send_to_peer(data)
@@ -129,24 +117,37 @@ class ProxyProtocol:
         if self.agg_timeout and self.agg_queue_timer is None:
             self.agg_queue_timer = reactor.callLater(self.agg_timeout, self.flush_queue)
 
+    # inject radio rssi info
+    def send_rssi(self, rssi, rx_errors, rx_fec, flags):
+        pass
+
+
+class MavlinkProxyProtocol(ProxyProtocol):
+    def __init__(self, agg_max_size, agg_timeout,
+                 inject_rssi,
+                 mavlink_sys_id, mavlink_comp_id):
+
+        ProxyProtocol.__init__(self, agg_max_size, agg_timeout)
+
+        if inject_rssi:
+            self.radio_mav = mavlink.MAVLink(self, srcSystem=mavlink_sys_id, srcComponent=mavlink_comp_id) # WFB
+        else:
+            self.radio_mav = None
 
     def send_rssi(self, rssi, rx_errors, rx_fec, flags):
         # Send flags as remnoise, because txbuf value is used by PX4 to throttle bandwidth
+        # use self.write to send mavlink message
         if self.radio_mav is not None:
             self.radio_mav.radio_status_send(rssi, rssi, 100, 0, flags, rx_errors, rx_fec)
-
 
 
 class UDPProxyProtocol(DatagramProtocol, ProxyProtocol):
     noisy = False
 
-    def __init__(self, addr=None, agg_max_size=None, agg_timeout=None, inject_rssi=False, mirror=None,
-                 arm_proto=None, mavlink_sys_id=None, mavlink_comp_id=None):
-        ProxyProtocol.__init__(self, agg_max_size, agg_timeout, inject_rssi, arm_proto=arm_proto,
-                               mavlink_sys_id=mavlink_sys_id, mavlink_comp_id=mavlink_comp_id)
+    def __init__(self, addr=None):
+        ProxyProtocol.__init__(self, agg_max_size=None, agg_timeout=None)
         self.reply_addr = addr
         self.fixed_addr = bool(addr)
-        self.mirror = mirror
 
     def datagramReceived(self, data, addr):
         if settings.common.debug:
@@ -158,6 +159,45 @@ class UDPProxyProtocol(DatagramProtocol, ProxyProtocol):
         return self.messageReceived(data)
 
     def write(self, msg):
+        if self.transport is None or self.reply_addr is None:
+            return
+
+        self.transport.write(msg, self.reply_addr)
+        return
+
+
+class MavlinkUDPProxyProtocol(DatagramProtocol, MavlinkProxyProtocol):
+    noisy = False
+
+    def __init__(self, addr,
+                 agg_max_size, agg_timeout,
+                 inject_rssi, mirror, arm_proto,
+                 mavlink_sys_id, mavlink_comp_id):
+
+        MavlinkProxyProtocol.__init__(self, agg_max_size, agg_timeout,
+                                      inject_rssi=inject_rssi,
+                                      mavlink_sys_id=mavlink_sys_id, mavlink_comp_id=mavlink_comp_id)
+        self.reply_addr = addr
+        self.fixed_addr = bool(addr)
+        self.mirror = mirror
+        self.arm_proto = arm_proto
+
+    def datagramReceived(self, data, addr):
+        if settings.common.debug:
+            log.msg('Got a message from %s' % (addr,))
+
+        if not self.fixed_addr:
+            self.reply_addr = addr
+
+        if self.arm_proto:
+            self.arm_proto.dataReceived(data)
+
+        return self.messageReceived(data)
+
+    def write(self, msg):
+        if self.arm_proto:
+            self.arm_proto.dataReceived(msg)
+
         if self.transport is None or self.reply_addr is None:
             return
 
@@ -206,13 +246,18 @@ class UDPProxyProtocol(DatagramProtocol, ProxyProtocol):
 
 
 
-class SerialProxyProtocol(Protocol, ProxyProtocol):
+class MavlinkSerialProxyProtocol(Protocol, MavlinkProxyProtocol):
     noisy = False
 
-    def __init__(self, agg_max_size=None, agg_timeout=None, inject_rssi=False, arm_proto=None,
-                 mavlink_sys_id=None, mavlink_comp_id=None):
-        ProxyProtocol.__init__(self, agg_max_size, agg_timeout, inject_rssi, arm_proto=arm_proto,
-                               mavlink_sys_id=mavlink_sys_id, mavlink_comp_id=mavlink_comp_id)
+    def __init__(self, agg_max_size, agg_timeout,
+                 inject_rssi, arm_proto,
+                 mavlink_sys_id, mavlink_comp_id):
+
+        MavlinkProxyProtocol.__init__(self, agg_max_size, agg_timeout,
+                                      inject_rssi=inject_rssi,
+                                      mavlink_sys_id=mavlink_sys_id, mavlink_comp_id=mavlink_comp_id)
+
+        self.arm_proto = arm_proto
         self.mavlink_fsm = self.mavlink_parser()
         self.mavlink_fsm.send(None)
 
@@ -267,6 +312,9 @@ class SerialProxyProtocol(Protocol, ProxyProtocol):
                 skip += mlen
 
     def write(self, msg):
+        if self.arm_proto:
+            self.arm_proto.dataReceived(msg)
+
         if self.transport is not None:
             self.transport.write(msg)
 
@@ -274,10 +322,12 @@ class SerialProxyProtocol(Protocol, ProxyProtocol):
         m_list = self.mavlink_fsm.send(data)
 
         for m in m_list:
+            if self.arm_proto:
+                self.arm_proto.dataReceived(m)
             self.messageReceived(m)
 
 
-class ARMProtocol(MAVLinkProtocol):
+class MavlinkARMProtocol(MAVLinkProtocol):
     def __init__(self, call_on_arm, call_on_disarm):
         MAVLinkProtocol.__init__(self, None, None)
         self.call_on_arm = call_on_arm

@@ -6,7 +6,7 @@ from twisted.python import log
 from twisted.trial import unittest
 from twisted.internet import reactor, defer
 from twisted.internet.protocol import DatagramProtocol
-from ..proxy import UDPProxyProtocol
+from ..proxy import UDPProxyProtocol, MavlinkUDPProxyProtocol
 from ..common import df_sleep
 
 class Echo(DatagramProtocol):
@@ -34,7 +34,7 @@ class SendPacket(DatagramProtocol):
 
 class UDPProxyTestCase(unittest.TestCase):
     def setUp(self):
-        self.p1 = UDPProxyProtocol(agg_max_size=1445, agg_timeout=1, inject_rssi=True, mavlink_sys_id=3, mavlink_comp_id=242)
+        self.p1 = MavlinkUDPProxyProtocol(addr=None, mirror=None, arm_proto=None, agg_max_size=1445, agg_timeout=1, inject_rssi=True, mavlink_sys_id=3, mavlink_comp_id=242)
         self.p2 = UDPProxyProtocol(('127.0.0.1', 14553))
         self.p1.peer = self.p2
         self.p2.peer = self.p1

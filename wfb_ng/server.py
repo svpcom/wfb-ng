@@ -35,7 +35,7 @@ from twisted.internet.error import ReactorNotRunning
 from twisted.internet.serialport import SerialPort
 
 from .common import abort_on_crash, exit_status, df_sleep
-from .proxy import UDPProxyProtocol, SerialProxyProtocol, ARMProtocol, call_and_check_rc, ExecError
+from .proxy import UDPProxyProtocol, MavlinkSerialProxyProtocol, MavlinkUDPProxyProtocol, MavlinkARMProtocol, call_and_check_rc, ExecError
 from .tuntap import TUNTAPProtocol, TUNTAPTransport
 from .conf import settings, cfg_files
 
@@ -344,12 +344,12 @@ def init_mavlink(profile, wlans, link_id):
         log.msg('Mirror telem stream to %s:%d' % (mirror[0], mirror[1]))
 
     if cfg.call_on_arm or cfg.call_on_disarm:
-        arm_proto = ARMProtocol(cfg.call_on_arm, cfg.call_on_disarm)
+        arm_proto = MavlinkARMProtocol(cfg.call_on_arm, cfg.call_on_disarm)
     else:
         arm_proto = None
 
     if serial:
-        p_in = SerialProxyProtocol(agg_max_size=settings.common.radio_mtu,
+        p_in = MavlinkSerialProxyProtocol(agg_max_size=settings.common.radio_mtu,
                                    agg_timeout=settings.common.mavlink_agg_timeout,
                                    inject_rssi=cfg.inject_rssi,
                                    arm_proto=arm_proto,
@@ -357,16 +357,16 @@ def init_mavlink(profile, wlans, link_id):
                                    mavlink_comp_id=cfg.mavlink_comp_id)
     else:
         # The first argument is not None only if we initiate mavlink connection
-        p_in = UDPProxyProtocol(connect, agg_max_size=settings.common.radio_mtu,
-                                agg_timeout=settings.common.mavlink_agg_timeout,
-                                inject_rssi=cfg.inject_rssi,
-                                mirror=mirror,
-                                arm_proto=arm_proto,
-                                mavlink_sys_id=cfg.mavlink_sys_id,
-                                mavlink_comp_id=cfg.mavlink_comp_id)
+        p_in = MavlinkUDPProxyProtocol(connect, agg_max_size=settings.common.radio_mtu,
+                                       agg_timeout=settings.common.mavlink_agg_timeout,
+                                       inject_rssi=cfg.inject_rssi,
+                                       mirror=mirror,
+                                       arm_proto=arm_proto,
+                                       mavlink_sys_id=cfg.mavlink_sys_id,
+                                       mavlink_comp_id=cfg.mavlink_comp_id)
 
     p_tx_l = [UDPProxyProtocol(('127.0.0.1', cfg.port_tx + i)) for i, _ in enumerate(wlans)]
-    p_rx = UDPProxyProtocol(arm_proto=arm_proto)
+    p_rx = UDPProxyProtocol()
     p_rx.peer = p_in
 
     if serial:
@@ -455,7 +455,8 @@ def init_tunnel(profile, wlans, link_id):
                cfg.bandwidth, "short" if cfg.short_gi else "long", cfg.stbc, cfg.ldpc, cfg.mcs_index,
                cfg.fec_k, cfg.fec_n, cfg.fec_timeout, link_id)).split() + wlans
 
-    p_in = TUNTAPProtocol()
+    p_in = TUNTAPProtocol(mtu=settings.common.radio_mtu,
+                          agg_timeout=settings.common.tunnel_agg_timeout)
     p_tx_l = [UDPProxyProtocol(('127.0.0.1', cfg.port_tx + i)) for i, _ in enumerate(wlans)]
     p_rx = UDPProxyProtocol()
     p_rx.peer = p_in

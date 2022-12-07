@@ -14,12 +14,12 @@ class TUNTAPTestCase(unittest.TestCase):
     skip = ("Root permission is required to test tunnel" if os.geteuid() != 0 else False)
 
     def setUp(self):
-        self.p1 = TUNTAPProtocol()
-        self.p2 = TUNTAPProtocol()
+        self.p1 = TUNTAPProtocol(mtu=1400)
+        self.p2 = TUNTAPProtocol(mtu=1400)
         self.p1.peer = self.p2
         self.p2.peer = self.p1
-        self.ep1 = TUNTAPTransport(reactor, self.p1, 'tuntest1', '192.168.77.1/24')
-        self.ep2 = TUNTAPTransport(reactor, self.p2, 'tuntest2', '192.168.77.2/24')
+        self.ep1 = TUNTAPTransport(reactor, self.p1, 'tuntest1', '192.168.77.1/24', mtu=1400)
+        self.ep2 = TUNTAPTransport(reactor, self.p2, 'tuntest2', '192.168.77.2/24', mtu=1400)
 
     def tearDown(self):
         self.ep1.loseConnection()
@@ -29,5 +29,5 @@ class TUNTAPTestCase(unittest.TestCase):
 
     def test_tuntap(self):
         # Test manually via "ping -I tuntest1 192.168.77.2" and "tcpdump -i tuntest2 -nn -p icmp"
-        return df_sleep(1)
+        return df_sleep(100)
 

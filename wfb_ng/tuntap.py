@@ -30,6 +30,7 @@ from twisted.internet.protocol import Protocol, connectionDone
 from pyroute2 import IPRoute
 from contextlib import closing
 from .conf import settings
+from .proxy import ProxyProtocol
 
 class TUNTAPTransport(abstract.FileDescriptor):
     TUN = 0x0001
@@ -40,7 +41,7 @@ class TUNTAPTransport(abstract.FileDescriptor):
     def __init__(self, reactor, protocol, name, addr, dev=b'/dev/net/tun', mtu=1400, mode=TUN):
         abstract.FileDescriptor.__init__(self, reactor)
         self.queue = deque()
-        self.mtu = mtu
+        self.mtu = mtu - 2
         self.name = name
         self.fd = os.open(dev, os.O_RDWR | os.O_NONBLOCK)
 
@@ -106,8 +107,7 @@ class TUNTAPTransport(abstract.FileDescriptor):
             # handler calls loseConnection(), which will want to check for
             # this attribute.
             self._writeDisconnected = True
-            result = self._closeWriteConnection()
-            return result
+            return self._closeWriteConnection()
 
     def _isSendBufferFull(self):
         return len(self.queue) > 1000
@@ -125,34 +125,49 @@ class TUNTAPTransport(abstract.FileDescriptor):
             self.startWriting()
 
 
-class TUNTAPProtocol(Protocol):
+class TUNTAPProtocol(Protocol, ProxyProtocol):
     noisy = False
     keepalive_interval = 0.9
 
-    def __init__(self):
-        self.peer = None
+    def __init__(self, mtu, agg_timeout=None):
+        ProxyProtocol.__init__(self,
+                               agg_max_size=mtu,
+                               agg_timeout=agg_timeout)
+
         # Sent keepalive packets
         self.lc = task.LoopingCall(self.send_keepalive)
         self.lc.start(self.keepalive_interval, now=False)
 
     def _cleanup(self):
         self.lc.stop()
+        return ProxyProtocol._cleanup(self)
 
     # call from peer only!
     def write(self, msg):
         # Remove keepalive messages
-        if self.transport is not None and msg:
-            self.transport.write(msg)
+        if self.transport is None or not msg:
+            return
+
+        # Unpack packets from batch
+        i = 0
+        while i < len(msg):
+            if len(msg) - i < 2:
+                log.msg('Corrupted tunneled packet header: %r' % (msg[i:],))
+                break
+
+            pkt_size = struct.unpack('!H', msg[i : i + 2])[0]
+            i += 2
+
+            if len(msg) - i < pkt_size:
+                log.msg('Truncated tunneled packet body: %r' % (msg[i:],))
+                break
+
+            self.transport.write(msg[i : i + pkt_size])
+            i += pkt_size
 
     def send_keepalive(self):
-        if self.peer is not None:
-            self.peer.write(b'')
+        self._send_to_peer(b'')
 
     def dataReceived(self, data):
-        self.lc.reset()
-        if self.peer is not None:
-            self.peer.write(data)
-
-    def send_rssi(self, rssi, rx_errors, rx_fec, flags):
-        pass
-
+        self.lc.reset()  # reset keepalive timer
+        return self.messageReceived(struct.pack('!H', len(data)) + data)
