@@ -34,6 +34,7 @@ from twisted.protocols.basic import LineReceiver
 from twisted.internet.error import ReactorNotRunning
 from twisted.internet.serialport import SerialPort
 
+from . import _log_msg, ConsoleObserver
 from .common import abort_on_crash, exit_status, df_sleep
 from .proxy import UDPProxyProtocol, MavlinkSerialProxyProtocol, MavlinkUDPProxyProtocol, MavlinkARMProtocol, call_and_check_rc, ExecError
 from .tuntap import TUNTAPProtocol, TUNTAPTransport
@@ -486,13 +487,21 @@ def init_tunnel(profile, wlans, link_id):
                                                       .addErrback(lambda f: f.trap(defer.FirstError) and f.value.subFailure)
 
 def main():
+    log.msg = _log_msg
+
     if settings.common.log_file:
         log.startLogging(LogFile(settings.common.log_file,
                                  settings.path.log_dir,
                                  rotateLength=1024*1024,
                                  maxRotatedFiles=10))
-    else:
+
+    elif sys.stdout.isatty():
         log.startLogging(sys.stdout)
+
+    else:
+        obs = ConsoleObserver()
+        log.theLogPublisher._startLogging(obs.emit, False)
+
 
     log.msg('WFB version %s-%s' % (settings.common.version, settings.common.commit[:8]))
     profile, wlans = sys.argv[1], list(wlan for arg in sys.argv[2:] for wlan in arg.split())

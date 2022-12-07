@@ -358,10 +358,10 @@ class MavlinkARMProtocol(MAVLinkProtocol):
         cmd = None
 
         if armed:
-            print('State change: ARMED')
+            log.msg('State change: ARMED')
             cmd = self.call_on_arm
         else:
-            print('State change: DISARMED')
+            log.msg('State change: DISARMED')
             cmd = self.call_on_disarm
 
         def on_err(f):
