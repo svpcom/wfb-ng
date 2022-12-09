@@ -1,4 +1,4 @@
-![WFB-NG](doc/logo-big-1280x640.png)
+![WFB-NG](doc/logo-big.png)
 
 This is the next generation of long-range **packet** radio link based on **raw WiFi radio**
 
