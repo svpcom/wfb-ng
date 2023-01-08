@@ -38,23 +38,26 @@ class PacketSource(DatagramProtocol):
         self.count = count
         self.rate = rate
         self.key = key
+        self.tx_slowdown = 0.0
 
     def startProtocol(self):
         self.df.callback(None)
 
     def start(self):
         msg = bytearray(b'\0' * self.size)
-        i = [0]
+        i = [0, 0] # sent packets, tx cycles
+        ts = reactor.seconds()
 
         def _sendmsg(c):
-            if c > 1:
-                log.msg('Packet source freeze for %.2f ms at iter %d/%d' % (1000.0 * float(c) / self.rate, i[0], self.count))
-
             struct.pack_into('!HIdd', msg, 0, self.size, i[0], reactor.seconds(), self.key)
             self.transport.write(msg, self.addr)
             i[0] += 1
+            i[1] += c
 
             if i[0] >= self.count:
+                # Update real rate
+                self.rate = i[0] / (reactor.seconds() - ts)
+                self.tx_slowdown = (i[1] - i[0]) / i[1]
                 lc.stop()
 
         lc = task.LoopingCall.withCount(_sendmsg)
@@ -122,10 +125,10 @@ def run_test(port_in, port_out, size, count, rate):
     lost = count - p2.count
     dup = p2.count - len(p2.id_set)
 
-    bitrate = rate * size * 8 / 1e6
+    bitrate = p1.rate * size * 8 / 1e6
 
-    log.msg('Sent %d, Lost %d, Dup: %d, Packet rate: %d pkt/s, Bitrate: %.2f MBit/s, Lmin %.2f ms, Lmax %.2f ms, Lavg %.2f ms' % \
-            (sent, lost, dup, rate, bitrate, 1000.0 * p2.lmin, 1000.0 * p2.lmax, 1000.0 * p2.lavg / p2.count if p2.count else -1))
+    log.msg('Sent %d, Lost %d, Dup: %d, Packet rate: %d/%d pkt/s, Bitrate: %.2f MBit/s, TX slowdown: %.2f%% Lmin %.2f ms, Lmax %.2f ms, Lavg %.2f ms' % \
+            (sent, lost, dup, p1.rate, rate, bitrate, 100.0 * p1.tx_slowdown, 1000.0 * p2.lmin, 1000.0 * p2.lmax, 1000.0 * p2.lavg / p2.count if p2.count else -1))
 
     yield ep1.stopListening()
     yield ep2.stopListening()
