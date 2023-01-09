@@ -198,29 +198,14 @@ void Receiver::loop_iter(void)
 }
 
 
-Aggregator::Aggregator(const string &client_addr, int client_port, int k, int n, const string &keypair, uint64_t epoch, uint32_t channel_id) : \
-    fec_k(k), fec_n(n), seq(0), rx_ring_front(0), rx_ring_alloc(0),
+Aggregator::Aggregator(const string &client_addr, int client_port, const string &keypair, uint64_t epoch, uint32_t channel_id) : \
+    fec_p(NULL), fec_k(-1), fec_n(-1), seq(0), rx_ring_front(0), rx_ring_alloc(0),
     last_known_block((uint64_t)-1), epoch(epoch), channel_id(channel_id),
     count_p_all(0), count_p_dec_err(0), count_p_dec_ok(0), count_p_fec_recovered(0),
     count_p_lost(0), count_p_bad(0), count_p_override(0)
 {
     sockfd = open_udp_socket_for_tx(client_addr, client_port);
-    fec_p = fec_new(fec_k, fec_n);
     memset(session_key, '\0', sizeof(session_key));
-
-    for(int ring_idx = 0; ring_idx < RX_RING_SIZE; ring_idx++)
-    {
-        rx_ring[ring_idx].block_idx = 0;
-        rx_ring[ring_idx].fragment_to_send_idx = 0;
-        rx_ring[ring_idx].has_fragments = 0;
-        rx_ring[ring_idx].fragments = new uint8_t*[fec_n];
-        for(int i=0; i < fec_n; i++)
-        {
-            rx_ring[ring_idx].fragments[i] = new uint8_t[MAX_FEC_PAYLOAD];
-        }
-        rx_ring[ring_idx].fragment_map = new uint8_t[fec_n];
-        memset(rx_ring[ring_idx].fragment_map, '\0', fec_n * sizeof(uint8_t));
-    }
 
     FILE *fp;
     if((fp = fopen(keypair.c_str(), "r")) == NULL)
@@ -243,6 +228,47 @@ Aggregator::Aggregator(const string &client_addr, int client_port, int k, int n,
 
 Aggregator::~Aggregator()
 {
+    if (fec_p != NULL)
+    {
+        deinit_fec();
+    }
+    close(sockfd);
+}
+
+void Aggregator::init_fec(int k, int n)
+{
+    assert(fec_p == NULL);
+    assert(k >= 1);
+    assert(n >= 1);
+    assert(k <= n);
+
+    fec_k = k;
+    fec_n = n;
+    fec_p = fec_new(fec_k, fec_n);
+
+    rx_ring_front = 0;
+    rx_ring_alloc = 0;
+    last_known_block = (uint64_t)-1;
+    seq = 0;
+
+    for(int ring_idx = 0; ring_idx < RX_RING_SIZE; ring_idx++)
+    {
+        rx_ring[ring_idx].block_idx = 0;
+        rx_ring[ring_idx].fragment_to_send_idx = 0;
+        rx_ring[ring_idx].has_fragments = 0;
+        rx_ring[ring_idx].fragments = new uint8_t*[fec_n];
+        for(int i=0; i < fec_n; i++)
+        {
+            rx_ring[ring_idx].fragments[i] = new uint8_t[MAX_FEC_PAYLOAD];
+        }
+        rx_ring[ring_idx].fragment_map = new uint8_t[fec_n];
+        memset(rx_ring[ring_idx].fragment_map, '\0', fec_n * sizeof(uint8_t));
+    }
+}
+
+void Aggregator::deinit_fec(void)
+{
+    assert(fec_p != NULL);
 
     for(int ring_idx = 0; ring_idx < RX_RING_SIZE; ring_idx++)
     {
@@ -255,7 +281,9 @@ Aggregator::~Aggregator()
     }
 
     fec_free(fec_p);
-    close(sockfd);
+    fec_p = NULL;
+    fec_k = -1;
+    fec_n = -1;
 }
 
 
@@ -461,46 +489,56 @@ void Aggregator::process_packet(const uint8_t *buf, size_t size, uint8_t wlan_id
 
         if (be64toh(new_session_data.epoch) < epoch)
         {
-            fprintf(stderr, "Session epoch doesn't match\n");
+            fprintf(stderr, "Session epoch doesn't match: %" PRIu64 " < %" PRIu64 "\n", be64toh(new_session_data.epoch), epoch);
             count_p_dec_err += 1;
             return;
         }
 
         if (be32toh(new_session_data.channel_id) != channel_id)
         {
-            fprintf(stderr, "Session channel_id doesn't match\n");
+            fprintf(stderr, "Session channel_id doesn't match: %d != %d\n", be32toh(new_session_data.channel_id), channel_id);
             count_p_dec_err += 1;
             return;
         }
 
-        if (new_session_data.k != fec_k ||
-            new_session_data.n != fec_n ||
-            new_session_data.fec_type != WFB_FEC_VDM_RS)
+        if (new_session_data.fec_type != WFB_FEC_VDM_RS)
         {
-            fprintf(stderr, "Session FEC settings doesn't match\n");
+            fprintf(stderr, "Unsupported FEC codec type: %d\n", new_session_data.fec_type);
+            count_p_dec_err += 1;
+            return;
+        }
+
+        if (new_session_data.n < 1)
+        {
+            fprintf(stderr, "Invalid FEC N: %d\n", new_session_data.n);
+            count_p_dec_err += 1;
+            return;
+        }
+
+        if (new_session_data.k < 1 || new_session_data.k > new_session_data.n)
+        {
+            fprintf(stderr, "Invalid FEC K: %d\n", new_session_data.k);
             count_p_dec_err += 1;
             return;
         }
 
         count_p_dec_ok += 1;
-        epoch = be64toh(new_session_data.epoch);
 
         if (memcmp(session_key, new_session_data.session_key, sizeof(session_key)) != 0)
         {
-            fprintf(stderr, "New session detected\n");
+            epoch = be64toh(new_session_data.epoch);
             memcpy(session_key, new_session_data.session_key, sizeof(session_key));
 
-            rx_ring_front = 0;
-            rx_ring_alloc = 0;
-            last_known_block = (uint64_t)-1;
-            seq = 0;
-            for(int ring_idx = 0; ring_idx < RX_RING_SIZE; ring_idx++)
+            if (fec_p != NULL)
             {
-                rx_ring[ring_idx].block_idx = 0;
-                rx_ring[ring_idx].fragment_to_send_idx = 0;
-                rx_ring[ring_idx].has_fragments = 0;
-                memset(rx_ring[ring_idx].fragment_map, '\0', fec_n * sizeof(uint8_t));
+                deinit_fec();
             }
+
+            init_fec(new_session_data.k, new_session_data.n);
+
+            fprintf(stdout, "%" PRIu64 "\tSESSION\t%" PRIu64 ":%u:%u:%u\n", get_time_ms(), epoch, WFB_FEC_VDM_RS, fec_k, fec_n);
+            fflush(stdout);
+
         }
         return;
 
@@ -671,6 +709,11 @@ void Aggregator::send_packet(int ring_idx, int fragment_idx)
 
 void Aggregator::apply_fec(int ring_idx)
 {
+    assert(fec_k >= 1);
+    assert(fec_n >= 1);
+    assert(fec_k <= fec_n);
+    assert(fec_p != NULL);
+
     unsigned index[fec_k];
     uint8_t *in_blocks[fec_k];
     uint8_t *out_blocks[fec_n - fec_k];
@@ -836,7 +879,7 @@ void network_loop(int srv_port, Aggregator &agg, int log_interval)
 int main(int argc, char* const *argv)
 {
     int opt;
-    uint8_t k = 8, n = 12, radio_port = 0;
+    uint8_t radio_port = 0;
     uint32_t link_id = 0;
     uint64_t epoch = 0;
     int log_interval = 1000;
@@ -846,7 +889,7 @@ int main(int argc, char* const *argv)
     rx_mode_t rx_mode = LOCAL;
     string keypair = "rx.key";
 
-    while ((opt = getopt(argc, argv, "K:fa:k:n:c:u:p:l:i:e:")) != -1) {
+    while ((opt = getopt(argc, argv, "K:fa:c:u:p:l:i:e:")) != -1) {
         switch (opt) {
         case 'K':
             keypair = optarg;
@@ -857,12 +900,6 @@ int main(int argc, char* const *argv)
         case 'a':
             rx_mode = AGGREGATOR;
             srv_port = atoi(optarg);
-            break;
-        case 'k':
-            k = atoi(optarg);
-            break;
-        case 'n':
-            n = atoi(optarg);
             break;
         case 'c':
             client_addr = string(optarg);
@@ -884,10 +921,10 @@ int main(int argc, char* const *argv)
             break;
         default: /* '?' */
         show_usage:
-            fprintf(stderr, "Local receiver: %s [-K rx_key] [-k RS_K] [-n RS_N] [-c client_addr] [-u client_port] [-p radio_port] [-l log_interval] [-e epoch] [-i link_id] interface1 [interface2] ...\n", argv[0]);
+            fprintf(stderr, "Local receiver: %s [-K rx_key] [-c client_addr] [-u client_port] [-p radio_port] [-l log_interval] [-e epoch] [-i link_id] interface1 [interface2] ...\n", argv[0]);
             fprintf(stderr, "Remote (forwarder): %s -f [-c client_addr] [-u client_port] [-p radio_port] [-i link_id] interface1 [interface2] ...\n", argv[0]);
-            fprintf(stderr, "Remote (aggregator): %s -a server_port [-K rx_key] [-k RS_K] [-n RS_N] [-c client_addr] [-u client_port] [-l log_interval] [-p radio_port] [-e epoch] [-i link_id]\n", argv[0]);
-            fprintf(stderr, "Default: K='%s', k=%d, n=%d, connect=%s:%d, link_id=0x%06x, radio_port=%u, epoch=%" PRIu64 ", log_interval=%d\n", keypair.c_str(), k, n, client_addr.c_str(), client_port, link_id, radio_port, epoch, log_interval);
+            fprintf(stderr, "Remote (aggregator): %s -a server_port [-K rx_key] [-c client_addr] [-u client_port] [-l log_interval] [-p radio_port] [-e epoch] [-i link_id]\n", argv[0]);
+            fprintf(stderr, "Default: K='%s', connect=%s:%d, link_id=0x%06x, radio_port=%u, epoch=%" PRIu64 ", log_interval=%d\n", keypair.c_str(), client_addr.c_str(), client_port, link_id, radio_port, epoch, log_interval);
             fprintf(stderr, "WFB-ng version " WFB_VERSION "\n");
             fprintf(stderr, "WFB-ng home page: <http://wfb-ng.org>\n");
             exit(1);
@@ -924,7 +961,7 @@ int main(int argc, char* const *argv)
 
             shared_ptr<BaseAggregator> agg;
             if(rx_mode == LOCAL){
-                agg = shared_ptr<Aggregator>(new Aggregator(client_addr, client_port, k, n, keypair, epoch, channel_id));
+                agg = shared_ptr<Aggregator>(new Aggregator(client_addr, client_port, keypair, epoch, channel_id));
             }else{
                 agg = shared_ptr<Forwarder>(new Forwarder(client_addr, client_port));
             }
@@ -933,7 +970,7 @@ int main(int argc, char* const *argv)
         }else if(rx_mode == AGGREGATOR)
         {
             if (optind > argc) goto show_usage;
-            Aggregator agg(client_addr, client_port, k, n, keypair, epoch, channel_id);
+            Aggregator agg(client_addr, client_port, keypair, epoch, channel_id);
 
             network_loop(srv_port, agg, log_interval);
         }else{

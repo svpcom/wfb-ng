@@ -54,15 +54,18 @@ class WFBFlags(object):
     LINK_JAMMED = 2
 
 
+fec_types = {1: 'VDM_RS'}
+
+
 class StatisticsProtocol(Protocol):
     def connectionMade(self):
-        self.factory.sessions.append(self)
+        self.factory.ui_sessions.append(self)
 
     def dataReceived(self, data):
         pass
 
     def connectionLost(self, reason):
-        self.factory.sessions.remove(self)
+        self.factory.ui_sessions.remove(self)
 
     def send_stats(self, data):
         self.transport.write(json.dumps(data).encode('utf-8') + b'\n')
@@ -83,7 +86,7 @@ class AntennaFactory(Factory):
             p_in.peer = p_tx_l[0]
 
         # tcp sockets for UI
-        self.sessions = []
+        self.ui_sessions = []
 
     def select_tx_antenna(self, ant_rssi):
         wlan_rssi = {}
@@ -131,7 +134,7 @@ class AntennaFactory(Factory):
         if settings.common.debug:
             log.msg('%s rssi %s tx#%d %s %s' % (rx_id, max(mav_rssi) if mav_rssi else 'N/A', self.tx_sel, packet_stats, ant_rssi))
 
-        for s in self.sessions:
+        for s in self.ui_sessions:
             s.send_stats(dict(id=rx_id, tx_ant=self.tx_sel, packets=packet_stats, rssi=ant_rssi))
 
 
@@ -145,7 +148,9 @@ class AntennaProtocol(LineReceiver):
         self.count_all = None
 
     def lineReceived(self, line):
-        cols = line.decode('utf-8').strip().split('\t')
+        line = line.decode('utf-8').strip()
+        cols = line.split('\t')
+
         try:
             if len(cols) < 2:
                 raise BadTelemetry()
@@ -157,6 +162,7 @@ class AntennaProtocol(LineReceiver):
                 if len(cols) != 4:
                     raise BadTelemetry()
                 self.ant[cols[2]] = tuple(int(i) for i in cols[3].split(':'))
+
             elif cmd == 'PKT':
                 if len(cols) != 3:
                     raise BadTelemetry()
@@ -174,6 +180,14 @@ class AntennaProtocol(LineReceiver):
 
                 self.antenna_f.update_stats(self.rx_id, stats, dict(self.ant))
                 self.ant.clear()
+
+            elif cmd == 'SESSION':
+                if len(cols) != 3:
+                    raise BadTelemetry()
+
+                epoch, fec_type, fec_k, fec_n = list(int(i) for i in cols[2].split(':'))
+                log.msg('New session detected [%s]: FEC=%s K=%d, N=%d, epoch=%d' % (self.rx_id, fec_types.get(fec_type, 'Unknown'), fec_k, fec_n, epoch))
+
             else:
                 raise BadTelemetry()
         except BadTelemetry:
@@ -306,9 +320,9 @@ def init(profile, wlans):
 def init_mavlink(profile, wlans, link_id):
     cfg = getattr(settings, '%s_mavlink' % (profile,))
 
-    cmd_rx = ('%s -p %d -u %d -K %s -k %d -n %d -i %d' % \
+    cmd_rx = ('%s -p %d -u %d -K %s -i %d' % \
               (os.path.join(settings.path.bin_dir, 'wfb_rx'), cfg.stream_rx,
-               cfg.port_rx, os.path.join(settings.path.conf_dir, cfg.keypair), cfg.fec_k, cfg.fec_n, link_id)).split() + wlans
+               cfg.port_rx, os.path.join(settings.path.conf_dir, cfg.keypair), link_id)).split() + wlans
 
     cmd_tx = ('%s -p %d -u %d -K %s -B %d -G %s -S %d -L %d -M %d -k %d -n %d -T %d -i %d' % \
               (os.path.join(settings.path.bin_dir, 'wfb_tx'),
@@ -430,11 +444,11 @@ def init_video(profile, wlans, link_id):
         if cfg.stats_port:
             reactor.listenTCP(cfg.stats_port, ant_f)
 
-        cmd = ('%s -p %d -c %s -u %d -K %s -k %d -n %d -i %d' % \
+        cmd = ('%s -p %d -c %s -u %d -K %s -i %d' % \
                (os.path.join(settings.path.bin_dir, 'wfb_rx'),
                 cfg.stream, connect[0], connect[1],
                 os.path.join(settings.path.conf_dir, cfg.keypair),
-                cfg.fec_k, cfg.fec_n, link_id)).split() + wlans
+                link_id)).split() + wlans
 
         df = RXProtocol(ant_f, cmd, 'video rx').start()
     else:
@@ -446,9 +460,9 @@ def init_video(profile, wlans, link_id):
 def init_tunnel(profile, wlans, link_id):
     cfg = getattr(settings, '%s_tunnel' % (profile,))
 
-    cmd_rx = ('%s -p %d -u %d -K %s -k %d -n %d -i %d' % \
+    cmd_rx = ('%s -p %d -u %d -K %s -i %d' % \
               (os.path.join(settings.path.bin_dir, 'wfb_rx'), cfg.stream_rx,
-               cfg.port_rx, os.path.join(settings.path.conf_dir, cfg.keypair), cfg.fec_k, cfg.fec_n, link_id)).split() + wlans
+               cfg.port_rx, os.path.join(settings.path.conf_dir, cfg.keypair), link_id)).split() + wlans
 
     cmd_tx = ('%s -p %d -u %d -K %s -B %d -G %s -S %d -L %d -M %d -k %d -n %d -T %d -i %d' % \
               (os.path.join(settings.path.bin_dir, 'wfb_tx'),

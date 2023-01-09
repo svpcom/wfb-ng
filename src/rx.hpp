@@ -118,11 +118,13 @@ typedef std::unordered_map<uint64_t, antennaItem> antenna_stat_t;
 class Aggregator : public BaseAggregator
 {
 public:
-    Aggregator(const std::string &client_addr, int client_port, int k, int n, const std::string &keypair, uint64_t epoch, uint32_t channel_id);
+    Aggregator(const std::string &client_addr, int client_port, const std::string &keypair, uint64_t epoch, uint32_t channel_id);
     ~Aggregator();
     virtual void process_packet(const uint8_t *buf, size_t size, uint8_t wlan_idx, const uint8_t *antenna, const int8_t *rssi, sockaddr_in *sockaddr);
     virtual void dump_stats(FILE *fp);
 private:
+    void init_fec(int k, int n);
+    void deinit_fec(void);
     void send_packet(int ring_idx, int fragment_idx);
     void apply_fec(int ring_idx);
     void log_rssi(const sockaddr_in *sockaddr, uint8_t wlan_idx, const uint8_t *ant, const int8_t *rssi);
