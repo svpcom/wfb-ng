@@ -204,5 +204,5 @@ See https://github.com/svpcom/wfb-ng/wiki for additional info
 
 Community support:
 ---------------
-Telegram group: (**wfb-ng support**) https://t.me/+uT7ziDLV4I5kZmUy
+Telegram group: (**wfb-ng support**) https://t.me/wfb_ng
 Please note, that it is only one official group.
