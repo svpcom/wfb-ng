@@ -176,8 +176,9 @@ make rpm
 
 For binary distribution Debian or Ubuntu
 ```
-sudo apt install python3-all libpcap-dev libsodium-dev python3-pip python3-pyroute2 python3-future python3-twisted
-sudo apt install virtualenv
+sudo apt install python3-all libpcap-dev libsodium-dev python3-pip python3-pyroute2 \
+            python3-future python3-twisted python3-serial iw virtualenv \
+            debhelper dh-python build-essential -y
 sudo make deb
 ```
 
