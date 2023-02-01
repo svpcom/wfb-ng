@@ -6,7 +6,9 @@ from twisted.python import log
 from twisted.trial import unittest
 from twisted.internet import reactor, defer
 from twisted.internet.protocol import DatagramProtocol
+from ..mavlink import MAVLink_heartbeat_message, MAVLink
 from ..proxy import UDPProxyProtocol, MavlinkUDPProxyProtocol
+from ..mavlink_protocol import MavlinkARMProtocol
 from ..common import df_sleep
 
 class Echo(DatagramProtocol):
@@ -21,20 +23,27 @@ class SendPacket(DatagramProtocol):
         self.msg = msg
         self.addr = addr
         self.count = count
+        self.replies = []
 
     def startProtocol(self):
-        log.msg('send %d of %s to %s' % (self.count, self.msg, self.addr))
+        log.msg('send %d of %r to %s' % (self.count, self.msg, self.addr))
         for i in range(self.count):
             self.transport.write(self.msg, self.addr)
 
     def datagramReceived(self, data, addr):
         log.msg("received back %r from %s" % (data, addr))
-        self.df.callback((data, addr))
+        self.replies.append((data, addr))
+
+        if len(self.replies) == self.count:
+            self.df.callback(self.replies)
 
 
 class UDPProxyTestCase(unittest.TestCase):
     def setUp(self):
-        self.p1 = MavlinkUDPProxyProtocol(addr=None, mirror=None, arm_proto=None, agg_max_size=1445, agg_timeout=1, inject_rssi=True, mavlink_sys_id=3, mavlink_comp_id=242)
+        self.arm_proto = MavlinkARMProtocol(call_on_arm='/bin/true',
+                                            call_on_disarm='/bin/true')
+
+        self.p1 = MavlinkUDPProxyProtocol(addr=None, mirror=None, arm_proto=self.arm_proto, agg_max_size=1445, agg_timeout=1, inject_rssi=True, mavlink_sys_id=3, mavlink_comp_id=242)
         self.p2 = UDPProxyProtocol(('127.0.0.1', 14553))
         self.p1.peer = self.p2
         self.p2.peer = self.p1
@@ -50,15 +59,15 @@ class UDPProxyTestCase(unittest.TestCase):
     @defer.inlineCallbacks
     def test_proxy(self):
         addr = ('127.0.0.1', 14551)
-        p = SendPacket(b'test', addr, 10)
+        p = SendPacket(b'\xfd\t\x00\x00\x00\x03\xf2m\x00\x00\x02\x00\x03\x00\x01\x01d\x00\x04\xa8\xad', addr, 10)
         ep3 = reactor.listenUDP(9999, p)
         ep4 = reactor.listenUDP(14553, Echo())
         try:
             ts = time.time()
-            _data, _addr = yield p.df
+            _replies = yield p.df
+            _expected = [(b'\xfd\t\x00\x00\x00\x03\xf2m\x00\x00\x02\x00\x03\x00\x01\x01d\x00\x04\xa8\xad', addr)] * 10
             self.assertGreater(time.time() - ts, 1.0)
-            self.assertEqual(_addr, addr)
-            self.assertEqual(_data, b'test' * 10)
+            self.assertEqual(_replies, _expected)
         finally:
             ep4.stopListening()
             ep3.stopListening()
@@ -74,9 +83,34 @@ class UDPProxyTestCase(unittest.TestCase):
         try:
             self.p1.send_rssi(1, 2, 3, 4)
             ts = time.time()
-            _data, _addr = yield p.df
+            _replies = yield p.df
+            _expected = [(b'\xfd\t\x00\x00\x00\x03\xf2m\x00\x00\x02\x00\x03\x00\x01\x01d\x00\x04\xa8\xad', addr)]
             self.assertLess(time.time() - ts, 1.0)
-            self.assertEqual(_addr, addr)
-            self.assertEqual(_data, b'\xfd\t\x00\x00\x00\x03\xf2m\x00\x00\x02\x00\x03\x00\x01\x01d\x00\x04\xa8\xad')
+            self.assertEqual(_replies, _expected)
         finally:
             ep3.stopListening()
+
+    @defer.inlineCallbacks
+    def __test_arm_protocol(self, force_mavlink1):
+        addr = ('127.0.0.1', 14551)
+        mav = MAVLink(None, srcSystem=1, srcComponent=1)
+        msg = MAVLink_heartbeat_message(1, 8, 128, 0, 0, 1).pack(mav, force_mavlink1=force_mavlink1)
+
+        p = SendPacket(msg, addr)
+
+        ep3 = reactor.listenUDP(9999, p)
+        ep4 = reactor.listenUDP(14553, Echo())
+        try:
+            ts = time.time()
+            yield p.df
+            self.assertEqual(self.arm_proto.armed, True)
+        finally:
+            ep3.stopListening()
+            ep4.stopListening()
+
+
+    def test_arm_protocol_mav1(self):
+        return self.__test_arm_protocol(True)
+
+    def test_arm_protocol_mav2(self):
+        return self.__test_arm_protocol(False)

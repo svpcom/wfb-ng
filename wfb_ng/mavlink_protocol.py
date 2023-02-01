@@ -18,49 +18,135 @@
 #   51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
 #
 
-from . import mavlink
+import struct
+from . import call_and_check_rc, ExecError
+from .mavlink import MAV_MODE_FLAG_SAFETY_ARMED, MAVLINK_MSG_ID_HEARTBEAT
 from twisted.python import log
-from twisted.internet import reactor, defer
+from twisted.internet import reactor, defer, utils
 from twisted.internet.protocol import Protocol, DatagramProtocol
 
 
-class MAVLinkProtocol(Protocol):
-    def __init__(self, src_system, src_component):
-        self.mav = mavlink.MAVLink(self, srcSystem=src_system, srcComponent=src_component)
+def parse_mavlink_l2_v1(msg):
+    plen, seq, sys_id, comp_id, msg_id = struct.unpack('<BBBBB', msg[1:6])
+    return ((seq, sys_id, comp_id, msg_id), bytes(msg[6:6 + plen]))
 
-    def write(self, msg):
-        raise NotImplementedError
 
-    def messageReceived(self, message):
-        raise NotImplementedError
+def parse_mavlink_l2_v2(msg):
+    plen, iflags, cflags, seq, sys_id, comp_id, msg_id_low, msg_id_high = struct.unpack('<BBBBBBHB', msg[1:10])
+    return ((seq, sys_id, comp_id, msg_id_low + (msg_id_high << 16)), bytes(msg[10:10 + plen]))
+
+
+def mavlink_parser_gen(parse_l2=False):
+    buffer = bytearray()
+    mlist = []
+    skip = 0
+    bad = 0
+    parse_map = { 0xfe: parse_mavlink_l2_v1,
+                  0xfd: parse_mavlink_l2_v2 }
+
+    while True:
+        # GC
+        if skip > 4096:
+            buffer = buffer[skip:]
+            skip = 0
+
+        data = yield mlist
+        mlist = []
+
+        if not data:
+            continue
+
+        buffer.extend(data)
+
+        while len(buffer) - skip >= 8:
+            version = buffer[skip]
+
+            # mavlink 1
+            if version == 0xfe:
+                mlen = 8 + buffer[skip + 1]
+
+            # mavlink 2
+            elif version == 0xfd:
+                mlen, flags = struct.unpack('BB', buffer[skip + 1 : skip + 3])
+
+                if flags & ~0x01:
+                    log.msg('Unsupported mavlink flags: 0x%x' % (flags,))
+
+                mlen += (25 if flags & 0x01 else 12)
+            else:
+                skip += 1
+                bad += 1
+                continue
+
+            if bad:
+                log.msg('skip %d bad bytes before sync' % (bad,))
+                bad = 0
+
+            if len(buffer) - skip < mlen:
+                break
+
+            if parse_l2:
+                mlist.append(parse_map[version](buffer[skip: skip + mlen]))
+            else:
+                mlist.append(bytes(buffer[skip: skip + mlen]))
+
+            skip += mlen
+
+
+
+class MavlinkARMProtocol(object):
+    def __init__(self, call_on_arm, call_on_disarm):
+        self.call_on_arm = call_on_arm
+        self.call_on_disarm = call_on_disarm
+        self.armed = None
+        self.locked = False
+        self.mavlink_fsm = mavlink_parser_gen(parse_l2=True)
+        self.mavlink_fsm.send(None)
 
     def dataReceived(self, data):
-        try:
-            m_list = self.mav.parse_buffer(data)
-        except mavlink.MAVError as e:
-            log.msg('Mavlink error: %s' % (e,))
+        for l2_headers, m in self.mavlink_fsm.send(data):
+            self.messageReceived(l2_headers, m)
+
+    def messageReceived(self, l2_headers, message):
+        seq, sys_id, comp_id, msg_id = l2_headers
+
+        if (sys_id, comp_id, msg_id) != (1, 1, MAVLINK_MSG_ID_HEARTBEAT):
             return
 
-        if m_list is not None:
-            for m in m_list:
-                self.messageReceived(m)
+        armed = bool(message[6] & MAV_MODE_FLAG_SAFETY_ARMED)
 
+        if not self.locked:
+            self.locked = True
 
-class MAVLinkUDPProtocol(MAVLinkProtocol, DatagramProtocol):
-    def __init__(self, src_system, src_component, peer=None):
-        MAVLinkProtocol.__init__(self, src_system, src_component)
-        self.reply_addr = peer
+            def _unlock(x):
+                self.locked = False
+                return x
 
-    def write(self, msg):
-        if self.transport is not None and self.reply_addr is not None:
-            self.transport.write(msg, self.reply_addr)
+            return defer.maybeDeferred(self.change_state, armed).addBoth(_unlock)
 
-    def datagramReceived(self, data, addr):
-        self.reply_addr = addr
-        self.dataReceived(data)
+    def change_state(self, armed):
+        if armed == self.armed:
+            return
 
+        self.armed = armed
+        cmd = None
 
-class MAVLinkSerialProtocol(MAVLinkProtocol):
-    def write(self, msg):
-        if self.transport is not None:
-            self.transport.write(msg)
+        if armed:
+            log.msg('State change: ARMED')
+            cmd = self.call_on_arm
+        else:
+            log.msg('State change: DISARMED')
+            cmd = self.call_on_disarm
+
+        def on_err(f):
+            log.msg('Command exec failed: %s' % (f.value,), isError=1)
+
+            if f.value.stdout:
+                log.msg(f.value.stdout, isError=1)
+
+            if f.value.stderr:
+                log.msg(f.value.stderr, isError=1)
+
+        if cmd is not None:
+            return call_and_check_rc(cmd).addErrback(on_err)
+

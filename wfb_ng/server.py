@@ -34,9 +34,10 @@ from twisted.protocols.basic import LineReceiver
 from twisted.internet.error import ReactorNotRunning
 from twisted.internet.serialport import SerialPort
 
-from . import _log_msg, ConsoleObserver
+from . import _log_msg, ConsoleObserver, call_and_check_rc, ExecError
 from .common import abort_on_crash, exit_status, df_sleep
-from .proxy import UDPProxyProtocol, MavlinkSerialProxyProtocol, MavlinkUDPProxyProtocol, MavlinkARMProtocol, call_and_check_rc, ExecError
+from .proxy import UDPProxyProtocol, MavlinkSerialProxyProtocol, MavlinkUDPProxyProtocol
+from .mavlink_protocol import MavlinkARMProtocol
 from .tuntap import TUNTAPProtocol, TUNTAPTransport
 from .conf import settings, cfg_files
 

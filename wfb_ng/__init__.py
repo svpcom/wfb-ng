@@ -1,9 +1,10 @@
 import sys
 import os
+from twisted.internet import utils
 from logging import currentframe
-from twisted.python import log as twisted_log
+from twisted.python import log
 
-__orig_msg = twisted_log.msg
+__orig_msg = log.msg
 _srcfile = os.path.splitext(os.path.normcase(__file__))[0] + '.py'
 
 # Returns escape codes from format codes
@@ -132,3 +133,34 @@ def _log_msg(*args, **kwargs):
     kwargs['system'] = '%s #%s' % ('.'.join(tmp), log_level_map[level])
 
     return __orig_msg(*args, **kwargs)
+
+
+class ExecError(Exception):
+    pass
+
+
+def call_and_check_rc(cmd, *args, **kwargs):
+    def _check_rc(_args):
+        (stdout, stderr, rc) = _args
+        if rc != 0:
+            err = ExecError('RC %d: %s %s' % (rc, cmd, ' '.join(args)))
+            err.stdout = stdout.strip()
+            err.stderr = stderr.strip()
+            raise err
+
+        log.msg('# %s' % (' '.join((cmd,) + args),))
+
+        if stdout and kwargs.get('log_stdout', True):
+            log.msg(stdout)
+
+        return stdout
+
+    def _got_signal(f):
+        f.trap(tuple)
+        stdout, stderr, signum = f.value
+        err = ExecError('Got signal %d: %s %s' % (signum, cmd, ' '.join(args)))
+        err.stdout = stdout.strip()
+        err.stderr = stderr.strip()
+        raise err
+
+    return utils.getProcessOutputAndValue(cmd, args, env=os.environ).addCallbacks(_check_rc, _got_signal)
