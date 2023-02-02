@@ -91,25 +91,6 @@ class ProxyProtocol:
         pass
 
 
-class MavlinkProxyProtocol(ProxyProtocol):
-    def __init__(self, agg_max_size, agg_timeout,
-                 inject_rssi,
-                 mavlink_sys_id, mavlink_comp_id):
-
-        ProxyProtocol.__init__(self, agg_max_size, agg_timeout)
-
-        if inject_rssi:
-            self.radio_mav = mavlink.MAVLink(self, srcSystem=mavlink_sys_id, srcComponent=mavlink_comp_id) # WFB
-        else:
-            self.radio_mav = None
-
-    def send_rssi(self, rssi, rx_errors, rx_fec, flags):
-        # Send flags as remnoise, because txbuf value is used by PX4 to throttle bandwidth
-        # use self.write to send mavlink message
-        if self.radio_mav is not None:
-            self.radio_mav.radio_status_send(rssi, rssi, 100, 0, flags, rx_errors, rx_fec)
-
-
 class UDPProxyProtocol(DatagramProtocol, ProxyProtocol):
     noisy = False
 
@@ -135,13 +116,33 @@ class UDPProxyProtocol(DatagramProtocol, ProxyProtocol):
         return
 
 
+class MavlinkProxyProtocol(ProxyProtocol):
+    def __init__(self, agg_max_size, agg_timeout,
+                 inject_rssi,
+                 mavlink_sys_id, mavlink_comp_id):
+
+        ProxyProtocol.__init__(self, agg_max_size, agg_timeout)
+
+        if inject_rssi:
+            self.radio_mav = mavlink.MAVLink(self, srcSystem=mavlink_sys_id, srcComponent=mavlink_comp_id) # WFB
+        else:
+            self.radio_mav = None
+
+    def send_rssi(self, rssi, rx_errors, rx_fec, flags):
+        # Send flags as remnoise, because txbuf value is used by PX4 to throttle bandwidth
+        # use self.write to send mavlink message
+        if self.radio_mav is not None:
+            self.radio_mav.radio_status_send(rssi, rssi, 100, 0, flags, rx_errors, rx_fec)
+
+
 class MavlinkUDPProxyProtocol(DatagramProtocol, MavlinkProxyProtocol):
     noisy = False
 
     def __init__(self, addr,
                  agg_max_size, agg_timeout,
-                 inject_rssi, mirror, arm_proto,
-                 mavlink_sys_id, mavlink_comp_id):
+                 inject_rssi, mirror,
+                 mavlink_sys_id, mavlink_comp_id,
+                 rx_hooks=None, tx_hooks=None):
 
         MavlinkProxyProtocol.__init__(self, agg_max_size, agg_timeout,
                                       inject_rssi=inject_rssi,
@@ -149,7 +150,8 @@ class MavlinkUDPProxyProtocol(DatagramProtocol, MavlinkProxyProtocol):
         self.reply_addr = addr
         self.fixed_addr = bool(addr)
         self.mirror = mirror
-        self.arm_proto = arm_proto
+        self.rx_hooks = list(rx_hooks) if rx_hooks is not None else []
+        self.tx_hooks = list(tx_hooks) if tx_hooks is not None else []
 
     def datagramReceived(self, data, addr):
         if settings.common.debug:
@@ -158,14 +160,14 @@ class MavlinkUDPProxyProtocol(DatagramProtocol, MavlinkProxyProtocol):
         if not self.fixed_addr:
             self.reply_addr = addr
 
-        if self.arm_proto:
-            self.arm_proto.dataReceived(data)
+        for hook in self.rx_hooks:
+            hook(data)
 
         return self.messageReceived(data)
 
     def write(self, msg):
-        if self.arm_proto:
-            self.arm_proto.dataReceived(msg)
+        for hook in self.tx_hooks:
+            hook(msg)
 
         if self.transport is None or self.reply_addr is None:
             return
@@ -193,26 +195,29 @@ class MavlinkSerialProxyProtocol(Protocol, MavlinkProxyProtocol):
     noisy = False
 
     def __init__(self, agg_max_size, agg_timeout,
-                 inject_rssi, arm_proto,
-                 mavlink_sys_id, mavlink_comp_id):
+                 inject_rssi,
+                 mavlink_sys_id, mavlink_comp_id,
+                 rx_hooks = None, tx_hooks = None):
 
         MavlinkProxyProtocol.__init__(self, agg_max_size, agg_timeout,
                                       inject_rssi=inject_rssi,
                                       mavlink_sys_id=mavlink_sys_id, mavlink_comp_id=mavlink_comp_id)
 
-        self.arm_proto = arm_proto
         self.mavlink_fsm = mavlink_protocol.mavlink_parser_gen()
         self.mavlink_fsm.send(None)
+        self.rx_hooks = rx_hooks or []
+        self.tx_hooks = tx_hooks or []
 
     def write(self, msg):
-        if self.arm_proto:
-            self.arm_proto.dataReceived(msg)
+        for hook in self.tx_hooks:
+            hook(msg)
 
         if self.transport is not None:
             self.transport.write(msg)
 
     def dataReceived(self, data):
         for m in self.mavlink_fsm.send(data):
-            if self.arm_proto:
-                self.arm_proto.dataReceived(m)
+            for hook in self.rx_hooks:
+                hook(m)
+
             self.messageReceived(m)

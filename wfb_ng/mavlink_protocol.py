@@ -19,11 +19,14 @@
 #
 
 import struct
+
 from . import call_and_check_rc, ExecError
 from .mavlink import MAV_MODE_FLAG_SAFETY_ARMED, MAVLINK_MSG_ID_HEARTBEAT
+
+from zope.interface import implementer
 from twisted.python import log
-from twisted.internet import reactor, defer, utils
-from twisted.internet.protocol import Protocol, DatagramProtocol
+from twisted.internet import reactor, defer, utils, interfaces
+from twisted.internet.protocol import Protocol, DatagramProtocol, Factory
 
 
 def parse_mavlink_l2_v1(msg):
@@ -150,3 +153,60 @@ class MavlinkARMProtocol(object):
         if cmd is not None:
             return call_and_check_rc(cmd).addErrback(on_err)
 
+
+@implementer(interfaces.IPushProducer)
+class MavlinkTCPProtocol(Protocol):
+    def connectionMade(self):
+        log.msg('New connection from %s' % (self.transport.getPeer(),))
+        self.mavlink_fsm = mavlink_parser_gen()
+        self.mavlink_fsm.send(None)
+        self.factory.sessions.append(self)
+
+        # setup push producer
+        self.paused = False
+        self.transport.registerProducer(self, True)
+
+    def dataReceived(self, data):
+        for m in self.mavlink_fsm.send(data):
+            self.factory.messageReceived(m)
+
+    def connectionLost(self, reason):
+        log.msg('Connection closed %s' % (self.transport.getPeer(),))
+        self.transport.unregisterProducer()
+        self.factory.sessions.remove(self)
+        self.mavlink_fsm.close()
+        self.mavlink_fsm = None
+
+    def send(self, data):
+        if self.transport is not None and not self.paused:
+            self.transport.write(data)
+
+    def pauseProducing(self):
+        self.paused = True
+        log.msg('Pause mavlink stream to %s' % (self.transport.getPeer(),))
+
+    def resumeProducing(self):
+        self.paused = False
+        log.msg('Resume mavlink stream to %s' % (self.transport.getPeer(),))
+
+    def stopProducing(self):
+        self.paused = True
+
+
+class MavlinkTCPFactory(Factory):
+    noisy = False
+    protocol = MavlinkTCPProtocol
+
+    def __init__(self, peer):
+        self.sessions = []
+        self.peer = peer
+
+    def messageReceived(self, m):
+        self.peer.write(m)
+
+    def write(self, data):
+        for s in self.sessions:
+            try:
+                s.send(data)
+            except Exception as v:
+                log.err(v)

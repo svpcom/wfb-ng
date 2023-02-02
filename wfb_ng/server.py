@@ -37,7 +37,7 @@ from twisted.internet.serialport import SerialPort
 from . import _log_msg, ConsoleObserver, call_and_check_rc, ExecError
 from .common import abort_on_crash, exit_status, df_sleep
 from .proxy import UDPProxyProtocol, MavlinkSerialProxyProtocol, MavlinkUDPProxyProtocol
-from .mavlink_protocol import MavlinkARMProtocol
+from .mavlink_protocol import MavlinkARMProtocol, MavlinkTCPFactory
 from .tuntap import TUNTAPProtocol, TUNTAPTransport
 from .conf import settings, cfg_files
 
@@ -352,34 +352,43 @@ def init_mavlink(profile, wlans, link_id):
         log.msg('Open serial port %s on speed %d' % (serial[0], serial[1]))
 
     else:
-        raise Exception('Unsupport peer address: %s' % (cfg.peer,))
+        raise Exception('Unsupported peer address: %s' % (cfg.peer,))
 
     if cfg.mirror is not None and connect_re.match(cfg.mirror):
         m = connect_re.match(cfg.mirror)
         mirror = m.group('addr'), int(m.group('port'))
         log.msg('Mirror telem stream to %s:%d' % (mirror[0], mirror[1]))
 
+    rx_hooks = []
+    tx_hooks = []
+
     if cfg.call_on_arm or cfg.call_on_disarm:
         arm_proto = MavlinkARMProtocol(cfg.call_on_arm, cfg.call_on_disarm)
-    else:
-        arm_proto = None
+        rx_hooks.append(arm_proto.dataReceived)
+        tx_hooks.append(arm_proto.dataReceived)
 
     if serial:
         p_in = MavlinkSerialProxyProtocol(agg_max_size=settings.common.radio_mtu,
-                                   agg_timeout=settings.common.mavlink_agg_timeout,
-                                   inject_rssi=cfg.inject_rssi,
-                                   arm_proto=arm_proto,
-                                   mavlink_sys_id=cfg.mavlink_sys_id,
-                                   mavlink_comp_id=cfg.mavlink_comp_id)
+                                          agg_timeout=settings.common.mavlink_agg_timeout,
+                                          inject_rssi=cfg.inject_rssi,
+                                          mavlink_sys_id=cfg.mavlink_sys_id,
+                                          mavlink_comp_id=cfg.mavlink_comp_id,
+                                          rx_hooks=rx_hooks, tx_hooks=tx_hooks)
     else:
         # The first argument is not None only if we initiate mavlink connection
         p_in = MavlinkUDPProxyProtocol(connect, agg_max_size=settings.common.radio_mtu,
                                        agg_timeout=settings.common.mavlink_agg_timeout,
                                        inject_rssi=cfg.inject_rssi,
                                        mirror=mirror,
-                                       arm_proto=arm_proto,
                                        mavlink_sys_id=cfg.mavlink_sys_id,
-                                       mavlink_comp_id=cfg.mavlink_comp_id)
+                                       mavlink_comp_id=cfg.mavlink_comp_id,
+                                       rx_hooks=rx_hooks, tx_hooks=tx_hooks)
+
+    # Setup mavlink TCP proxy
+    if cfg.mavlink_tcp_port:
+        mav_tcp_f = MavlinkTCPFactory(p_in)
+        p_in.rx_hooks.append(mav_tcp_f.write)
+        reactor.listenTCP(cfg.mavlink_tcp_port, mav_tcp_f)
 
     p_tx_l = [UDPProxyProtocol(('127.0.0.1', cfg.port_tx + i)) for i, _ in enumerate(wlans)]
     p_rx = UDPProxyProtocol()
