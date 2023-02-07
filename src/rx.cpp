@@ -114,6 +114,7 @@ void Receiver::loop_iter(void)
         uint8_t antenna[RX_ANT_MAX];
         int8_t rssi[RX_ANT_MAX];
         uint8_t flags = 0;
+        bool self_injected = false;
         struct ieee80211_radiotap_iterator iterator;
         int ret = ieee80211_radiotap_iterator_init(&iterator, (ieee80211_radiotap_header*)pkt, pktlen, NULL);
 
@@ -139,16 +140,7 @@ void Receiver::loop_iter(void)
                  * iterator.this_arg for type "type" safely on all arches.
                  */
 
-                // case IEEE80211_RADIOTAP_RATE:
-                //     /* radiotap "rate" u8 is in
-                //      * 500kbps units, eg, 0x02=1Mbps
-                //      */
-                //     pkt_rate = (*(uint8_t*)(iterator.this_arg))/2;
-                //     break;
-
             case IEEE80211_RADIOTAP_ANTENNA:
-                // FIXME
-                // In case of multiple antenna stats in one packet this index will be irrelivant
                 antenna[ant_idx] = *(uint8_t*)(iterator.this_arg);
                 ant_idx += 1;
                 break;
@@ -162,6 +154,10 @@ void Receiver::loop_iter(void)
                 flags = *(uint8_t*)(iterator.this_arg);
                 break;
 
+            case IEEE80211_RADIOTAP_TX_FLAGS:
+                self_injected = true;
+                break;
+
             default:
                 break;
             }
@@ -169,6 +165,12 @@ void Receiver::loop_iter(void)
 
         if (ret != -ENOENT && ant_idx < RX_ANT_MAX){
             fprintf(stderr, "Error parsing radiotap header!\n");
+            continue;
+        }
+
+        if (self_injected)
+        {
+            //ignore self injected frames
             continue;
         }
 
@@ -690,7 +692,7 @@ void Aggregator::send_packet(int ring_idx, int fragment_idx)
     uint16_t packet_size = be16toh(packet_hdr->packet_size);
     uint32_t packet_seq = rx_ring[ring_idx].block_idx * fec_k + fragment_idx;
 
-    if (packet_seq > seq + 1)
+    if (packet_seq > seq + 1 && seq > 0)
     {
         count_p_lost += (packet_seq - seq - 1);
     }
