@@ -39,9 +39,9 @@ esac
 # Audio TX/RX
 ./wfb_tx -p 0 -k 1 -n 2 -u 5602 -K drone.key $WLAN &
 ./wfb_rx -p 0 -u 5600 -K gs.key $WLAN &
-gst-launch-1.0 autoaudiosrc is-live=true ! removesilence hysteresis=1000 remove=true ! audioconvert ! \
-               'audio/x-raw,rate=8000,format=U8,channels=1' ! rtpL8pay mtu=1400 min-ptime=100000000 ! \
+gst-launch-1.0 autoaudiosrc is-live=true ! 'audio/x-raw,rate=8000,channels=1' ! removesilence hysteresis=1000 remove=true ! \
+               audioconvert ! rtpL16pay mtu=1400 min-ptime=100000000 ! \
                udpsink  host=127.0.0.1 port=5602 sync=false &
-gst-launch-1.0 udpsrc port=5600 caps='application/x-rtp, media=(string)audio, clock-rate=(int)8000, encoding-name=(string)L8, encoding-params=(string)1, channels=(int)1, payload=(int)96' \
-               ! rtpL8depay  ! autoaudiosink &
+gst-launch-1.0 udpsrc port=5600 caps='application/x-rtp, media=(string)audio, clock-rate=(int)8000, encoding-name=(string)L16, encoding-params=(string)1, channels=(int)1, payload=(int)96' \
+               ! rtpL16depay  ! autoaudiosink &
 wait
