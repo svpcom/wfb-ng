@@ -16,19 +16,20 @@ BAND="5G"
 CHANNEL2G="6"
 CHANNEL5G="149"
 
-ifconfig $WLAN down
+nmcli device set $WLAN managed no
+ip link set $WLAN down
 iw dev $WLAN set monitor otherbss
 iw reg set BO
-ifconfig $WLAN up
+ip link set $WLAN up
 
 case $BAND in
   "5G")
       echo "Setting $WLAN to channel $CHANNEL5G"
-      iw dev $WLAN set channel $CHANNEL5G HT40+
+      iw dev $WLAN set channel $CHANNEL5G HT20
       ;;
   "2G")
       echo "Setting $WLAN to channel $CHANNEL2G"
-      iw dev $WLAN set channel $CHANNEL2G HT40+
+      iw dev $WLAN set channel $CHANNEL2G HT20
       ;;
    *)
       echo "Select 2G or 5G band"
@@ -37,4 +38,4 @@ case $BAND in
 esac
 
 # Video TX
-./wfb_tx -p 1 -u 5600 -K drone.key $WLAN
+./wfb_tx -p 0 -u 5602 -K drone.key $WLAN

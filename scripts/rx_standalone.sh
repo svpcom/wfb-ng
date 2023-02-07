@@ -16,10 +16,11 @@ CHANNEL5G="149"
 
 for WLAN in $WLANS
 do
-ifconfig $WLAN down
-iw dev $WLAN set monitor otherbss
-iw reg set BO
-ifconfig $WLAN up
+   nmcli device set $WLAN managed no
+   ip link set $WLAN down
+   iw dev $WLAN set monitor otherbss
+   iw reg set BO
+   ip link set $WLAN up
 
 case $BAND in
   "5G")
@@ -38,4 +39,4 @@ esac
 done
 
 # No UI, video only
-./wfb_rx -p 1 -u 5600 -K gs.key $WLANS
+./wfb_rx -p 0 -u 5600 -K gs.key $WLANS
