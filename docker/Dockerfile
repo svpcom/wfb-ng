@@ -7,7 +7,7 @@ RUN apt update && \
     virtualenv fakeroot debhelper \
     libpcap-dev libsodium-dev \
     python3-twisted python3-pyroute2 \
-    python3-future python3-all \
+    python3-future python3-all python3-all-dev \
     python3-serial dh-python
 
 RUN pip3 install --upgrade setuptools stdeb
