@@ -11,7 +11,7 @@ from ..common import df_sleep
 
 
 class TUNTAPTestCase(unittest.TestCase):
-    skip = ("Root permission is required to test tunnel" if os.geteuid() != 0 else False)
+    skip = ("Root permission is required to test tunnel" if os.geteuid() != 0 or not os.path.exists('/dev/net/tun') else False)
 
     def setUp(self):
         self.p1 = TUNTAPProtocol(mtu=1400)
