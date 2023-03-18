@@ -10,4 +10,4 @@ RUN apt update && \
     python3-future python3-all python3-all-dev \
     python3-serial dh-python
 
-RUN pip3 install --upgrade setuptools stdeb
+RUN pip3 install stdeb
