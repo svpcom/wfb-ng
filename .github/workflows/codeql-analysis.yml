@@ -13,22 +13,22 @@ name: "CodeQL"
 
 on:
   push:
-    branches: [ master ]
+    branches: [ master, stable ]
   pull_request:
     # The branches below must be a subset of the branches above
-    branches: [ master ]
+    branches: [ master, stable ]
   schedule:
     - cron: '41 12 * * 4'
 
 jobs:
   analyze:
     name: Analyze
-    runs-on: ubuntu-18.04
+    runs-on: ubuntu-22.04
 
     strategy:
       fail-fast: false
       matrix:
-        language: [ 'cpp', 'python' ]
+        language: [ 'c', 'cpp', 'python' ]
         # CodeQL supports [ 'cpp', 'csharp', 'go', 'java', 'javascript', 'python' ]
         # Learn more:
         # https://docs.github.com/en/free-pro-team@latest/github/finding-security-vulnerabilities-and-errors-in-your-code/configuring-code-scanning#changing-the-languages-that-are-analyzed
@@ -39,7 +39,7 @@ jobs:
 
     # Initializes the CodeQL tools for scanning.
     - name: Initialize CodeQL
-      uses: github/codeql-action/init@v1
+      uses: github/codeql-action/init@v2
       with:
         languages: ${{ matrix.language }}
         # If you wish to specify custom queries, you can do so here or in a config file.
@@ -52,4 +52,4 @@ jobs:
        make all_bin
 
     - name: Perform CodeQL Analysis
-      uses: github/codeql-action/analyze@v1
+      uses: github/codeql-action/analyze@v2
