@@ -176,7 +176,7 @@ typedef struct {
 #define MAX_FEC_PAYLOAD  (MAX_PACKET_SIZE - sizeof(radiotap_header) - sizeof(ieee80211_header) - sizeof(wblock_hdr_t) - crypto_aead_chacha20poly1305_ABYTES)
 #define MAX_FORWARDER_PACKET_SIZE (MAX_PACKET_SIZE - sizeof(radiotap_header) - sizeof(ieee80211_header))
 
-int open_udp_socket_for_rx(int port);
+int open_udp_socket_for_rx(int port, int rcv_buf_size);
 uint64_t get_time_ms(void);
 
 #endif

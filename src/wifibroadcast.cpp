@@ -49,14 +49,30 @@ uint64_t get_time_ms(void) // in milliseconds
     return ts.tv_sec * 1000LL + ts.tv_nsec / 1000000;
 }
 
-int open_udp_socket_for_rx(int port)
+int open_udp_socket_for_rx(int port, int rcv_buf_size)
 {
     struct sockaddr_in saddr;
     int fd = socket(AF_INET, SOCK_DGRAM, 0);
     if (fd < 0) throw runtime_error(string_format("Error opening socket: %s", strerror(errno)));
 
-    int optval = 1;
-    setsockopt(fd, SOL_SOCKET, SO_REUSEADDR, (const void *)&optval , sizeof(int));
+    const int optval = 1;
+    if(setsockopt(fd, SOL_SOCKET, SO_REUSEADDR, (const void *)&optval , sizeof(optval)) !=0)
+    {
+        throw runtime_error(string_format("Unable to set SO_REUSEADDR: %s", strerror(errno)));
+    }
+
+    if(setsockopt(fd, SOL_SOCKET, SO_RXQ_OVFL, (const void *)&optval , sizeof(optval)) != 0)
+    {
+        throw runtime_error(string_format("Unable to set SO_RXQ_OVFL: %s", strerror(errno)));
+    }
+
+    if (rcv_buf_size > 0)
+    {
+        if(setsockopt(fd, SOL_SOCKET, SO_RCVBUF, (const void *)&rcv_buf_size , sizeof(rcv_buf_size)) !=0)
+        {
+            throw runtime_error(string_format("Unable to set SO_RCVBUF: %s", strerror(errno)));
+        }
+    }
 
     bzero((char *) &saddr, sizeof(saddr));
     saddr.sin_family = AF_INET;

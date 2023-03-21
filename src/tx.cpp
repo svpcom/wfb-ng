@@ -28,6 +28,7 @@
 #include <pcap/pcap.h>
 #include <assert.h>
 #include <sys/ioctl.h>
+#include <sys/socket.h>
 #include <linux/random.h>
 #include <inttypes.h>
 
@@ -263,6 +264,21 @@ void Transmitter::send_packet(const uint8_t *buf, size_t size, uint8_t flags)
     }
 }
 
+// Extract SO_RXQ_OVFL counter
+uint32_t extract_rxq_overflow(struct msghdr *msg)
+{
+    struct cmsghdr *cmsg;
+    uint32_t rtn;
+
+    for (cmsg = CMSG_FIRSTHDR(msg); cmsg != NULL; cmsg = CMSG_NXTHDR(msg, cmsg)) {
+        if (cmsg->cmsg_level == SOL_SOCKET && cmsg->cmsg_type == SO_RXQ_OVFL) {
+            memcpy(&rtn, CMSG_DATA(cmsg), sizeof(rtn));
+            return rtn;
+        }
+    }
+    return 0;
+}
+
 void data_source(shared_ptr<Transmitter> &t, vector<int> &rx_fd, int poll_timeout)
 {
     int nfds = rx_fd.size();
@@ -283,6 +299,7 @@ void data_source(shared_ptr<Transmitter> &t, vector<int> &rx_fd, int poll_timeou
     }
 
     uint64_t session_key_announce_ts = 0;
+    uint32_t rxq_overflow = 0;
 
     for(;;)
     {
@@ -311,11 +328,39 @@ void data_source(shared_ptr<Transmitter> &t, vector<int> &rx_fd, int poll_timeou
             {
                 uint8_t buf[MAX_PAYLOAD_SIZE];
                 ssize_t rsize;
+                uint8_t cmsgbuf[CMSG_SPACE(sizeof(uint32_t))];
+
                 int fd = rx_fd[i];
 
                 t->select_output(i);
-                while((rsize = recv(fd, buf, sizeof(buf), 0)) >= 0)
+
+                for(;;)
                 {
+                    struct iovec iov = { .iov_base = (void*)buf,
+                                         .iov_len = sizeof(buf) };
+
+                    struct msghdr msghdr = { .msg_name = NULL,
+                                             .msg_namelen = 0,
+                                             .msg_iov = &iov,
+                                             .msg_iovlen = 1,
+                                             .msg_control = &cmsgbuf,
+                                             .msg_controllen = sizeof(cmsgbuf),
+                                             .msg_flags = 0 };
+
+                    memset(cmsgbuf, '\0', sizeof(cmsgbuf));
+
+                    if ((rsize = recvmsg(fd, &msghdr, 0)) < 0)
+                    {
+                        break;
+                    }
+
+                    uint32_t cur_rxq_overflow = extract_rxq_overflow(&msghdr);
+                    if (cur_rxq_overflow != rxq_overflow)
+                    {
+                        fprintf(stderr, "UDP rxq overflow: %u packets dropped\n", cur_rxq_overflow - rxq_overflow);
+                        rxq_overflow = cur_rxq_overflow;
+                    }
+
                     uint64_t cur_ts = get_time_ms();
                     if (cur_ts >= session_key_announce_ts)
                     {
@@ -347,10 +392,11 @@ int main(int argc, char * const *argv)
     int mcs_index = 1;
     int debug_port = 0;
     int poll_timeout = 0;
+    int rcv_buf = 0;
 
     string keypair = "tx.key";
 
-    while ((opt = getopt(argc, argv, "K:k:n:u:r:p:B:G:S:L:M:D:T:i:e:")) != -1) {
+    while ((opt = getopt(argc, argv, "K:k:n:u:p:B:G:S:L:M:D:T:i:e:R:")) != -1) {
         switch (opt) {
         case 'K':
             keypair = optarg;
@@ -366,6 +412,9 @@ int main(int argc, char * const *argv)
             break;
         case 'p':
             radio_port = atoi(optarg);
+            break;
+        case 'R':
+            rcv_buf = atoi(optarg);
             break;
         case 'B':
             bandwidth = atoi(optarg);
@@ -396,9 +445,9 @@ int main(int argc, char * const *argv)
             break;
         default: /* '?' */
         show_usage:
-            fprintf(stderr, "Usage: %s [-K tx_key] [-k RS_K] [-n RS_N] [-u udp_port] [-p radio_port] [-B bandwidth] [-G guard_interval] [-S stbc] [-L ldpc] [-M mcs_index] [-T poll_timeout] [-e epoch] [-i link_id] interface1 [interface2] ...\n",
+            fprintf(stderr, "Usage: %s [-K tx_key] [-k RS_K] [-n RS_N] [-u udp_port] [-R rcv_buf] [-p radio_port] [-B bandwidth] [-G guard_interval] [-S stbc] [-L ldpc] [-M mcs_index] [-T poll_timeout] [-e epoch] [-i link_id] interface1 [interface2] ...\n",
                     argv[0]);
-            fprintf(stderr, "Default: K='%s', k=%d, n=%d, udp_port=%d, link_id=0x%06x, radio_port=%u, epoch=%" PRIu64 ", bandwidth=%d guard_interval=%s stbc=%d ldpc=%d mcs_index=%d, poll_timeout=%d\n",
+            fprintf(stderr, "Default: K='%s', k=%d, n=%d, udp_port=%d, link_id=0x%06x, radio_port=%u, epoch=%" PRIu64 ", bandwidth=%d guard_interval=%s stbc=%d ldpc=%d mcs_index=%d, poll_timeout=%d, rcv_buf=system_default\n",
                     keypair.c_str(), k, n, udp_port, link_id, radio_port, epoch, bandwidth, short_gi ? "short" : "long", stbc, ldpc, mcs_index, poll_timeout);
             fprintf(stderr, "Radio MTU: %lu\n", (unsigned long)MAX_PAYLOAD_SIZE);
             fprintf(stderr, "WFB-ng version " WFB_VERSION "\n");
@@ -484,7 +533,7 @@ int main(int argc, char * const *argv)
         vector<string> wlans;
         for(int i = 0; optind + i < argc; i++)
         {
-            int fd = open_udp_socket_for_rx(udp_port + i);
+            int fd = open_udp_socket_for_rx(udp_port + i, rcv_buf);
             fprintf(stderr, "Listen on %d for %s\n", udp_port + i, argv[optind + i]);
             rx_fd.push_back(fd);
             wlans.push_back(string(argv[optind + i]));

@@ -325,11 +325,11 @@ def init_mavlink(profile, wlans, link_id):
               (os.path.join(settings.path.bin_dir, 'wfb_rx'), cfg.stream_rx,
                cfg.port_rx, os.path.join(settings.path.conf_dir, cfg.keypair), link_id)).split() + wlans
 
-    cmd_tx = ('%s -p %d -u %d -K %s -B %d -G %s -S %d -L %d -M %d -k %d -n %d -T %d -i %d' % \
+    cmd_tx = ('%s -p %d -u %d -K %s -B %d -G %s -S %d -L %d -M %d -k %d -n %d -T %d -i %d -R %d' % \
               (os.path.join(settings.path.bin_dir, 'wfb_tx'),
                cfg.stream_tx, cfg.port_tx, os.path.join(settings.path.conf_dir, cfg.keypair),
                cfg.bandwidth, "short" if cfg.short_gi else "long", cfg.stbc, cfg.ldpc, cfg.mcs_index,
-               cfg.fec_k, cfg.fec_n, cfg.fec_timeout, link_id)).split() + wlans
+               cfg.fec_k, cfg.fec_n, cfg.fec_timeout, link_id, settings.common.tx_rcv_buf_size)).split() + wlans
 
     listen = None
     connect = None
@@ -438,11 +438,11 @@ def init_video(profile, wlans, link_id):
         log.msg('Listen for video stream %d on %s:%d' % (cfg.stream, listen[0], listen[1]))
 
         # We don't use TX diversity for video streaming due to only one transmitter on the vehichle
-        cmd = ('%s -p %d -u %d -K %s -B %d -G %s -S %d -L %d -M %d -k %d -n %d -T %d -i %d %s' % \
+        cmd = ('%s -p %d -u %d -K %s -B %d -G %s -S %d -L %d -M %d -k %d -n %d -T %d -i %d -R %d %s' % \
                (os.path.join(settings.path.bin_dir, 'wfb_tx'), cfg.stream,
                 listen[1], os.path.join(settings.path.conf_dir, cfg.keypair),
                 cfg.bandwidth, "short" if cfg.short_gi else "long", cfg.stbc, cfg.ldpc, cfg.mcs_index,
-                cfg.fec_k, cfg.fec_n, cfg.fec_timeout, link_id, wlans[0])).split()
+                cfg.fec_k, cfg.fec_n, cfg.fec_timeout, link_id, settings.common.tx_rcv_buf_size, wlans[0])).split()
 
         df = TXProtocol(cmd, 'video tx').start()
     elif connect_re.match(cfg.peer):
@@ -474,11 +474,11 @@ def init_tunnel(profile, wlans, link_id):
               (os.path.join(settings.path.bin_dir, 'wfb_rx'), cfg.stream_rx,
                cfg.port_rx, os.path.join(settings.path.conf_dir, cfg.keypair), link_id)).split() + wlans
 
-    cmd_tx = ('%s -p %d -u %d -K %s -B %d -G %s -S %d -L %d -M %d -k %d -n %d -T %d -i %d' % \
+    cmd_tx = ('%s -p %d -u %d -K %s -B %d -G %s -S %d -L %d -M %d -k %d -n %d -T %d -i %d -R %d' % \
               (os.path.join(settings.path.bin_dir, 'wfb_tx'),
                cfg.stream_tx, cfg.port_tx, os.path.join(settings.path.conf_dir, cfg.keypair),
                cfg.bandwidth, "short" if cfg.short_gi else "long", cfg.stbc, cfg.ldpc, cfg.mcs_index,
-               cfg.fec_k, cfg.fec_n, cfg.fec_timeout, link_id)).split() + wlans
+               cfg.fec_k, cfg.fec_n, cfg.fec_timeout, link_id, settings.common.tx_rcv_buf_size)).split() + wlans
 
     p_in = TUNTAPProtocol(mtu=settings.common.radio_mtu,
                           agg_timeout=settings.common.tunnel_agg_timeout)

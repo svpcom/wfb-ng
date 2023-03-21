@@ -313,7 +313,7 @@ void Forwarder::process_packet(const uint8_t *buf, size_t size, uint8_t wlan_idx
                              .msg_iovlen = 2,
                              .msg_control = NULL,
                              .msg_controllen = 0,
-                             .msg_flags = 0};
+                             .msg_flags = 0 };
 
     sendmsg(sockfd, &msghdr, MSG_DONTWAIT);
 }
@@ -796,7 +796,7 @@ void radio_loop(int argc, char* const *argv, int optind, uint32_t channel_id, sh
     }
 }
 
-void network_loop(int srv_port, Aggregator &agg, int log_interval)
+void network_loop(int srv_port, Aggregator &agg, int log_interval, int rcv_buf_size)
 {
     wrxfwd_t fwd_hdr;
     struct sockaddr_in sockaddr;
@@ -804,7 +804,7 @@ void network_loop(int srv_port, Aggregator &agg, int log_interval)
 
     uint64_t log_send_ts = 0;
     struct pollfd fds[1];
-    int fd = open_udp_socket_for_rx(srv_port);
+    int fd = open_udp_socket_for_rx(srv_port, rcv_buf_size);
 
     if(fcntl(fd, F_SETFL, fcntl(fd, F_GETFL, 0) | O_NONBLOCK) < 0)
     {
@@ -889,9 +889,11 @@ int main(int argc, char* const *argv)
     int srv_port = 0;
     string client_addr = "127.0.0.1";
     rx_mode_t rx_mode = LOCAL;
+    int rcv_buf = 0;
+
     string keypair = "rx.key";
 
-    while ((opt = getopt(argc, argv, "K:fa:c:u:p:l:i:e:")) != -1) {
+    while ((opt = getopt(argc, argv, "K:fa:c:u:p:l:i:e:R:")) != -1) {
         switch (opt) {
         case 'K':
             keypair = optarg;
@@ -912,6 +914,9 @@ int main(int argc, char* const *argv)
         case 'p':
             radio_port = atoi(optarg);
             break;
+        case 'R':
+            rcv_buf = atoi(optarg);
+            break;
         case 'l':
             log_interval = atoi(optarg);
             break;
@@ -925,8 +930,8 @@ int main(int argc, char* const *argv)
         show_usage:
             fprintf(stderr, "Local receiver: %s [-K rx_key] [-c client_addr] [-u client_port] [-p radio_port] [-l log_interval] [-e epoch] [-i link_id] interface1 [interface2] ...\n", argv[0]);
             fprintf(stderr, "Remote (forwarder): %s -f [-c client_addr] [-u client_port] [-p radio_port] [-i link_id] interface1 [interface2] ...\n", argv[0]);
-            fprintf(stderr, "Remote (aggregator): %s -a server_port [-K rx_key] [-c client_addr] [-u client_port] [-l log_interval] [-p radio_port] [-e epoch] [-i link_id]\n", argv[0]);
-            fprintf(stderr, "Default: K='%s', connect=%s:%d, link_id=0x%06x, radio_port=%u, epoch=%" PRIu64 ", log_interval=%d\n", keypair.c_str(), client_addr.c_str(), client_port, link_id, radio_port, epoch, log_interval);
+            fprintf(stderr, "Remote (aggregator): %s -a server_port [-K rx_key] [-c client_addr] [-R rcv_buf] [-u client_port] [-l log_interval] [-p radio_port] [-e epoch] [-i link_id]\n", argv[0]);
+            fprintf(stderr, "Default: K='%s', connect=%s:%d, link_id=0x%06x, radio_port=%u, epoch=%" PRIu64 ", log_interval=%d, rcv_buf=system_default\n", keypair.c_str(), client_addr.c_str(), client_port, link_id, radio_port, epoch, log_interval);
             fprintf(stderr, "WFB-ng version " WFB_VERSION "\n");
             fprintf(stderr, "WFB-ng home page: <http://wfb-ng.org>\n");
             exit(1);
@@ -974,7 +979,7 @@ int main(int argc, char* const *argv)
             if (optind > argc) goto show_usage;
             Aggregator agg(client_addr, client_port, keypair, epoch, channel_id);
 
-            network_loop(srv_port, agg, log_interval);
+            network_loop(srv_port, agg, log_interval, rcv_buf);
         }else{
             throw runtime_error(string_format("Unknown rx_mode=%d", rx_mode));
         }
