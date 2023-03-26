@@ -3,7 +3,8 @@ PYTHON ?= /usr/bin/python3
 COMMIT ?= $(shell git rev-parse HEAD)
 VERSION ?= $(shell $(PYTHON) ./version.py $(shell git show -s --format="%ct" $(shell git rev-parse HEAD)) $(shell git rev-parse --abbrev-ref HEAD))
 SOURCE_DATE_EPOCH ?= $(shell git show -s --format="%ct" $(shell git rev-parse HEAD))
-DOCKER_SRC_IMAGE ?= "arm64v8/ubuntu:latest"
+ENV ?= $(PWD)/env
+DOCKER_SRC_IMAGE ?= "p2ptech/cross-build:2023-02-21-raspios-bullseye-armhf-lite"
 
 export VERSION COMMIT SOURCE_DATE_EPOCH
 
@@ -12,9 +13,9 @@ _CFLAGS := $(CFLAGS) -Wall -O2 -DWFB_VERSION='"$(VERSION)-$(shell /bin/bash -c '
 
 all: all_bin gs.key test
 
-env:
-	virtualenv env --python=$(PYTHON)
-	./env/bin/pip install --upgrade pip setuptools stdeb
+$(ENV):
+	virtualenv --python=$(PYTHON) $(ENV)
+	$(ENV)/bin/pip install --upgrade pip setuptools stdeb
 
 all_bin: wfb_rx wfb_tx wfb_keygen
 
@@ -39,21 +40,15 @@ wfb_keygen: src/keygen.o
 test: all_bin
 	PYTHONPATH=`pwd` trial3 wfb_ng.tests
 
-rpm:  all_bin env
+rpm:  all_bin $(ENV)
 	rm -rf dist
-	./env/bin/python ./setup.py bdist_rpm --force-arch $(ARCH)
+	$(PYTHON) ./setup.py bdist_rpm --force-arch $(ARCH)
 	rm -rf wfb_ng.egg-info/
 
-deb:  all_bin env
+deb:  all_bin $(ENV)
 	rm -rf deb_dist
-	./env/bin/python ./setup.py --command-packages=stdeb.command bdist_deb
+	$(ENV)/bin/python ./setup.py --command-packages=stdeb.command bdist_deb
 	rm -rf wfb_ng.egg-info/ wfb-ng-$(VERSION).tar.gz
-
-__deb_docker: all_bin
-	rm -rf deb_dist
-	$(PYTHON) ./setup.py --command-packages=stdeb.command bdist_deb
-	rm -rf wfb_ng.egg-info/ wfb-ng-$(VERSION).tar.gz
-	chown -R --reference=. .
 
 bdist: all_bin
 	rm -rf dist
@@ -63,8 +58,9 @@ bdist: all_bin
 clean:
 	rm -rf env wfb_rx wfb_tx wfb_keygen dist deb_dist build wfb_ng.egg-info wfb-ng-*.tar.gz _trial_temp *~ src/*.o
 
-
-deb_docker:
+deb_docker:  /opt/qemu/bin
+	@if ! [ -d /opt/qemu ]; then echo "Docker cross build requires patched QEMU!\nApply ./scripts/qemu/qemu.patch to qemu-7.2.0 and build it:\n  ./configure --prefix=/opt/qemu --static --disable-system && make && sudo make install"; exit 1; fi
+	if ! ls /proc/sys/fs/binfmt_misc | grep -q qemu ; then sudo ./scripts/qemu/qemu-binfmt-conf.sh --qemu-path /opt/qemu/bin --persistent yes; fi
 	TAG="wfb-ng:build-`date +%s`"; docker build -t $$TAG docker --build-arg SRC_IMAGE=$(DOCKER_SRC_IMAGE)  && \
-	docker run -i --rm -v $(PWD):/build $$TAG bash -c "export VERSION=$(VERSION) COMMIT=$(COMMIT) SOURCE_DATE_EPOCH=$(SOURCE_DATE_EPOCH) PYTHON=python3 && cd /build && make clean && make test && make __deb_docker"
+	docker run -i --rm -v $(PWD):/build $$TAG bash -c "trap 'chown -R --reference=. .' EXIT; export VERSION=$(VERSION) COMMIT=$(COMMIT) SOURCE_DATE_EPOCH=$(SOURCE_DATE_EPOCH) && cd /build && make clean && make test && make deb"
 	docker ps -a -f 'status=exited' --format '{{ .ID }} {{ .Image }}' | grep wfb-ng:build | tail -n+11 | while read c i ; do docker rm $$c && docker rmi $$i; done

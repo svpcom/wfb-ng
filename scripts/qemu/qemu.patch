@@ -1,0 +1,47 @@
+diff -urw qemu-7.2.0/linux-user/generic/sockbits.h qemu-7.2.0.new/linux-user/generic/sockbits.h
+--- qemu-7.2.0/linux-user/generic/sockbits.h	2022-12-14 19:28:44.000000000 +0300
++++ qemu-7.2.0.new/linux-user/generic/sockbits.h	2023-03-26 09:28:12.461589808 +0300
+@@ -58,4 +58,6 @@
+ 
+ #define TARGET_SO_PROTOCOL             38
+ #define TARGET_SO_DOMAIN               39
++#define TARGET_SO_RXQ_OVFL             40
++
+ #endif
+diff -urw qemu-7.2.0/linux-user/mips/sockbits.h qemu-7.2.0.new/linux-user/mips/sockbits.h
+--- qemu-7.2.0/linux-user/mips/sockbits.h	2022-12-14 19:28:44.000000000 +0300
++++ qemu-7.2.0.new/linux-user/mips/sockbits.h	2023-03-26 09:42:20.146917902 +0300
+@@ -70,6 +70,7 @@
+ #define TARGET_SO_SNDBUFFORCE          31
+ #define TARGET_SO_RCVBUFFORCE          33
+ #define TARGET_SO_PASSSEC              34
++#define TARGET_SO_RXQ_OVFL	        40
+ 
+ /** sock_type - Socket types
+  *
+diff -urw qemu-7.2.0/linux-user/strace.c qemu-7.2.0.new/linux-user/strace.c
+--- qemu-7.2.0/linux-user/strace.c	2022-12-14 19:28:45.000000000 +0300
++++ qemu-7.2.0.new/linux-user/strace.c	2023-03-26 09:53:40.414754941 +0300
+@@ -2737,6 +2737,9 @@
+         case TARGET_SO_REUSEPORT:
+             qemu_log("SO_REUSEPORT,");
+             goto print_optint;
++        case TARGET_SO_RXQ_OVFL:
++            qemu_log("SO_RXQ_OVFL,");
++            goto print_optint;
+         case TARGET_SO_TYPE:
+             qemu_log("SO_TYPE,");
+             goto print_optint;
+diff -urw qemu-7.2.0/linux-user/syscall.c qemu-7.2.0.new/linux-user/syscall.c
+--- qemu-7.2.0/linux-user/syscall.c	2022-12-14 19:28:45.000000000 +0300
++++ qemu-7.2.0.new/linux-user/syscall.c	2023-03-26 14:16:24.811649762 +0300
+@@ -2477,6 +2477,9 @@
+                 optname = SO_REUSEPORT;
+                 break;
+ #endif
++        case TARGET_SO_RXQ_OVFL:
++		optname = SO_RXQ_OVFL;
++		break;
+         case TARGET_SO_TYPE:
+ 		optname = SO_TYPE;
+ 		break;
