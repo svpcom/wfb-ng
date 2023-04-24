@@ -326,7 +326,7 @@ void data_source(shared_ptr<Transmitter> &t, vector<int> &rx_fd, int poll_timeou
 
             if (fds[i].revents & POLLIN)
             {
-                uint8_t buf[MAX_PAYLOAD_SIZE];
+                uint8_t buf[MAX_PAYLOAD_SIZE + 1];
                 ssize_t rsize;
                 uint8_t cmsgbuf[CMSG_SPACE(sizeof(uint32_t))];
 
@@ -352,6 +352,12 @@ void data_source(shared_ptr<Transmitter> &t, vector<int> &rx_fd, int poll_timeou
                     if ((rsize = recvmsg(fd, &msghdr, 0)) < 0)
                     {
                         break;
+                    }
+
+                    if (rsize > MAX_PAYLOAD_SIZE)
+                    {
+                        fprintf(stderr, "Incoming packet size > %d and will be truncated\n", MAX_PAYLOAD_SIZE);
+                        rsize = MAX_PAYLOAD_SIZE;
                     }
 
                     uint32_t cur_rxq_overflow = extract_rxq_overflow(&msghdr);
