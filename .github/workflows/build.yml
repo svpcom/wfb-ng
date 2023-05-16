@@ -12,6 +12,8 @@ jobs:
         docker-images:
           - "2023-02-21-raspios-bullseye-armhf-lite"
           - "2023-02-21-raspios-bullseye-arm64-lite"
+          - "armbian_23.02.2_nanopineo_jammy_current_5.15.93"
+          - "armbian_23.02.1_nanopineo2_jammy_current_5.15.93"
 
     steps:
       - name: Checkout repository
