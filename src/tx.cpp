@@ -354,9 +354,9 @@ void data_source(shared_ptr<Transmitter> &t, vector<int> &rx_fd, int poll_timeou
                         break;
                     }
 
-                    if (rsize > MAX_PAYLOAD_SIZE)
+                    if (rsize > (ssize_t)MAX_PAYLOAD_SIZE)
                     {
-                        fprintf(stderr, "Incoming packet size > %d and will be truncated\n", MAX_PAYLOAD_SIZE);
+                        fprintf(stderr, "Incoming packet size > %" PRIu64 " and will be truncated\n", MAX_PAYLOAD_SIZE);
                         rsize = MAX_PAYLOAD_SIZE;
                     }
 
@@ -402,7 +402,7 @@ int main(int argc, char * const *argv)
 
     string keypair = "tx.key";
 
-    while ((opt = getopt(argc, argv, "K:k:n:u:p:B:G:S:L:M:D:T:i:e:R:")) != -1) {
+    while ((opt = getopt(argc, argv, "K:k:n:u:p:B:G:S:L:M:D:T:i:e:R:f:")) != -1) {
         switch (opt) {
         case 'K':
             keypair = optarg;
@@ -449,11 +449,28 @@ int main(int argc, char * const *argv)
         case 'e':
             epoch = atoll(optarg);
             break;
+        case 'f':
+            if (strcmp(optarg, "data") == 0)
+            {
+                printf("Using data frames\n");
+                ieee80211_header[0] = FRAME_TYPE_DATA;
+            }
+            else if (strcmp(optarg, "rts") == 0)
+            {
+                printf("Using rts frames\n");
+                ieee80211_header[0] = FRAME_TYPE_RTS;
+            }
+            else
+            {
+                fprintf(stderr, "Invalid frame type: %s\n", optarg);
+                exit(1);
+            }
+            break;
         default: /* '?' */
         show_usage:
-            fprintf(stderr, "Usage: %s [-K tx_key] [-k RS_K] [-n RS_N] [-u udp_port] [-R rcv_buf] [-p radio_port] [-B bandwidth] [-G guard_interval] [-S stbc] [-L ldpc] [-M mcs_index] [-T poll_timeout] [-e epoch] [-i link_id] interface1 [interface2] ...\n",
+            fprintf(stderr, "Usage: %s [-K tx_key] [-k RS_K] [-n RS_N] [-u udp_port] [-R rcv_buf] [-p radio_port] [-B bandwidth] [-G guard_interval] [-S stbc] [-L ldpc] [-M mcs_index] [-T poll_timeout] [-e epoch] [-i link_id] [-f { data | rts }] interface1 [interface2] ...\n",
                     argv[0]);
-            fprintf(stderr, "Default: K='%s', k=%d, n=%d, udp_port=%d, link_id=0x%06x, radio_port=%u, epoch=%" PRIu64 ", bandwidth=%d guard_interval=%s stbc=%d ldpc=%d mcs_index=%d, poll_timeout=%d, rcv_buf=system_default\n",
+            fprintf(stderr, "Default: K='%s', k=%d, n=%d, udp_port=%d, link_id=0x%06x, radio_port=%u, epoch=%" PRIu64 ", bandwidth=%d guard_interval=%s stbc=%d ldpc=%d mcs_index=%d, poll_timeout=%d, rcv_buf=system_default, frame_type=data\n",
                     keypair.c_str(), k, n, udp_port, link_id, radio_port, epoch, bandwidth, short_gi ? "short" : "long", stbc, ldpc, mcs_index, poll_timeout);
             fprintf(stderr, "Radio MTU: %lu\n", (unsigned long)MAX_PAYLOAD_SIZE);
             fprintf(stderr, "WFB-ng version " WFB_VERSION "\n");

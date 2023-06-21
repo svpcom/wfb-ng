@@ -321,15 +321,31 @@ def init(profile, wlans):
 def init_mavlink(profile, wlans, link_id):
     cfg = getattr(settings, '%s_mavlink' % (profile,))
 
-    cmd_rx = ('%s -p %d -u %d -K %s -i %d' % \
-              (os.path.join(settings.path.bin_dir, 'wfb_rx'), cfg.stream_rx,
-               cfg.port_rx, os.path.join(settings.path.conf_dir, cfg.keypair), link_id)).split() + wlans
+    cmd_rx = ('%(cmd)s -p %(stream)d -u %(port)d -K %(key)s -i %(link_id)d' % \
+              dict(cmd=os.path.join(settings.path.bin_dir, 'wfb_rx'),
+                   stream=cfg.stream_rx,
+                   port=cfg.port_rx,
+                   key=os.path.join(settings.path.conf_dir, cfg.keypair),
+                   link_id=link_id)).split() + wlans
 
-    cmd_tx = ('%s -p %d -u %d -K %s -B %d -G %s -S %d -L %d -M %d -k %d -n %d -T %d -i %d -R %d' % \
-              (os.path.join(settings.path.bin_dir, 'wfb_tx'),
-               cfg.stream_tx, cfg.port_tx, os.path.join(settings.path.conf_dir, cfg.keypair),
-               cfg.bandwidth, "short" if cfg.short_gi else "long", cfg.stbc, cfg.ldpc, cfg.mcs_index,
-               cfg.fec_k, cfg.fec_n, cfg.fec_timeout, link_id, settings.common.tx_rcv_buf_size)).split() + wlans
+    cmd_tx = ('%(cmd)s -f %(frame_type)s -p %(stream)d -u %(port)d -K %(key)s -B %(bw)d '\
+              '-G %(gi)s -S %(stbc)d -L %(ldpc)d -M %(mcs)d '\
+              '-k %(fec_k)d -n %(fec_n)d -T %(fec_timeout)d -i %(link_id)d -R %(rcv_buf_size)d' % \
+              dict(cmd=os.path.join(settings.path.bin_dir, 'wfb_tx'),
+                   frame_type=cfg.frame_type,
+                   stream=cfg.stream_tx,
+                   port=cfg.port_tx,
+                   key=os.path.join(settings.path.conf_dir, cfg.keypair),
+                   bw=cfg.bandwidth,
+                   gi="short" if cfg.short_gi else "long",
+                   stbc=cfg.stbc,
+                   ldpc=cfg.ldpc,
+                   mcs=cfg.mcs_index,
+                   fec_k=cfg.fec_k,
+                   fec_n=cfg.fec_n,
+                   fec_timeout=cfg.fec_timeout,
+                   link_id=link_id,
+                   rcv_buf_size=settings.common.tx_rcv_buf_size)).split() + wlans
 
     listen = None
     connect = None
@@ -437,12 +453,26 @@ def init_video(profile, wlans, link_id):
         listen = m.group('addr'), int(m.group('port'))
         log.msg('Listen for video stream %d on %s:%d' % (cfg.stream, listen[0], listen[1]))
 
-        # We don't use TX diversity for video streaming due to only one transmitter on the vehichle
-        cmd = ('%s -p %d -u %d -K %s -B %d -G %s -S %d -L %d -M %d -k %d -n %d -T %d -i %d -R %d %s' % \
-               (os.path.join(settings.path.bin_dir, 'wfb_tx'), cfg.stream,
-                listen[1], os.path.join(settings.path.conf_dir, cfg.keypair),
-                cfg.bandwidth, "short" if cfg.short_gi else "long", cfg.stbc, cfg.ldpc, cfg.mcs_index,
-                cfg.fec_k, cfg.fec_n, cfg.fec_timeout, link_id, settings.common.tx_rcv_buf_size, wlans[0])).split()
+        cmd = ('%(cmd)s -f %(frame_type)s -p %(stream)d -u %(port)d -K %(key)s '\
+               '-B %(bw)d -G %(gi)s -S %(stbc)d -L %(ldpc)d -M %(mcs)d '\
+               '-k %(fec_k)d -n %(fec_n)d -T %(fec_timeout)d -i %(link_id)d -R %(rcv_buf_size)d' % \
+               dict(cmd=os.path.join(settings.path.bin_dir, 'wfb_tx'),
+                    frame_type=cfg.frame_type,
+                    stream=cfg.stream,
+                    port=listen[1],
+                    key=os.path.join(settings.path.conf_dir, cfg.keypair),
+                    bw=cfg.bandwidth,
+                    gi="short" if cfg.short_gi else "long",
+                    stbc=cfg.stbc,
+                    ldpc=cfg.ldpc,
+                    mcs=cfg.mcs_index,
+                    fec_k=cfg.fec_k,
+                    fec_n=cfg.fec_n,
+                    fec_timeout=cfg.fec_timeout,
+                    link_id=link_id,
+                    rcv_buf_size=settings.common.tx_rcv_buf_size)
+               ).split() + wlans[0:1]   # We don't use TX diversity for video streaming
+                                        # due to only one transmitter on the vehichle
 
         df = TXProtocol(cmd, 'video tx').start()
     elif connect_re.match(cfg.peer):
@@ -454,11 +484,13 @@ def init_video(profile, wlans, link_id):
         if cfg.stats_port:
             reactor.listenTCP(cfg.stats_port, ant_f)
 
-        cmd = ('%s -p %d -c %s -u %d -K %s -i %d' % \
-               (os.path.join(settings.path.bin_dir, 'wfb_rx'),
-                cfg.stream, connect[0], connect[1],
-                os.path.join(settings.path.conf_dir, cfg.keypair),
-                link_id)).split() + wlans
+        cmd = ('%(cmd)s -p %(stream)d -c %(ip_addr)s -u %(port)d -K %(key)s -i %(link_id)d' % \
+               dict(cmd=os.path.join(settings.path.bin_dir, 'wfb_rx'),
+                    stream=cfg.stream,
+                    ip_addr=connect[0],
+                    port=connect[1],
+                    key=os.path.join(settings.path.conf_dir, cfg.keypair),
+                    link_id=link_id)).split() + wlans
 
         df = RXProtocol(ant_f, cmd, 'video rx').start()
     else:
@@ -470,15 +502,31 @@ def init_video(profile, wlans, link_id):
 def init_tunnel(profile, wlans, link_id):
     cfg = getattr(settings, '%s_tunnel' % (profile,))
 
-    cmd_rx = ('%s -p %d -u %d -K %s -i %d' % \
-              (os.path.join(settings.path.bin_dir, 'wfb_rx'), cfg.stream_rx,
-               cfg.port_rx, os.path.join(settings.path.conf_dir, cfg.keypair), link_id)).split() + wlans
+    cmd_rx = ('%(cmd)s -p %(stream)d -u %(port)d -K %(key)s -i %(link_id)d' % \
+              dict(cmd=os.path.join(settings.path.bin_dir, 'wfb_rx'),
+                   stream=cfg.stream_rx,
+                   port=cfg.port_rx,
+                   key=os.path.join(settings.path.conf_dir, cfg.keypair),
+                   link_id=link_id)).split() + wlans
 
-    cmd_tx = ('%s -p %d -u %d -K %s -B %d -G %s -S %d -L %d -M %d -k %d -n %d -T %d -i %d -R %d' % \
-              (os.path.join(settings.path.bin_dir, 'wfb_tx'),
-               cfg.stream_tx, cfg.port_tx, os.path.join(settings.path.conf_dir, cfg.keypair),
-               cfg.bandwidth, "short" if cfg.short_gi else "long", cfg.stbc, cfg.ldpc, cfg.mcs_index,
-               cfg.fec_k, cfg.fec_n, cfg.fec_timeout, link_id, settings.common.tx_rcv_buf_size)).split() + wlans
+    cmd_tx = ('%(cmd)s -f %(frame_type)s -p %(stream)d -u %(port)d -K %(key)s -B %(bw)d -G %(gi)s '\
+              '-S %(stbc)d -L %(ldpc)d -M %(mcs)d '\
+              '-k %(fec_k)d -n %(fec_n)d -T %(fec_timeout)d -i %(link_id)d -R %(rcv_buf_size)d' % \
+              dict(cmd=os.path.join(settings.path.bin_dir, 'wfb_tx'),
+                   frame_type=cfg.frame_type,
+                   stream=cfg.stream_tx,
+                   port=cfg.port_tx,
+                   key=os.path.join(settings.path.conf_dir, cfg.keypair),
+                   bw=cfg.bandwidth,
+                   gi="short" if cfg.short_gi else "long",
+                   stbc=cfg.stbc,
+                   ldpc=cfg.ldpc,
+                   mcs=cfg.mcs_index,
+                   fec_k=cfg.fec_k,
+                   fec_n=cfg.fec_n,
+                   fec_timeout=cfg.fec_timeout,
+                   link_id=link_id,
+                   rcv_buf_size=settings.common.tx_rcv_buf_size)).split() + wlans
 
     p_in = TUNTAPProtocol(mtu=settings.common.radio_mtu,
                           agg_timeout=settings.common.tunnel_agg_timeout)

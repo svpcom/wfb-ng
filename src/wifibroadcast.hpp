@@ -85,13 +85,16 @@ static uint8_t radiotap_header[]  __attribute__((unused)) = {
 #define FRAME_SEQ_LB 22
 #define FRAME_SEQ_HB 23
 
+#define FRAME_TYPE_DATA  0x08
+#define FRAME_TYPE_RTS   0xb4
+
 // WFB-NG MAC address format: "W:B:X:X:X:X" where XXXX is channel_id
 // channel_id = (link_id << 8) + radio_port
 // First address byte 'W'(0x57) has two lower bits set that means that address is multicast and locally administred
 // See https://en.wikipedia.org/wiki/MAC_address for reference
 
 static uint8_t ieee80211_header[] __attribute__((unused)) = {
-    0x08, 0x01, 0x00, 0x00,               // data frame, not protected, from STA to DS via an AP
+    0x08, 0x01, 0x00, 0x00,               // data frame, not protected, from STA to DS via an AP, duration not set
     0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF,   // receiver is broadcast
     0x57, 0x42, 0xaa, 0xbb, 0xcc, 0xdd,   // last four bytes will be replaced by channel_id
     0x57, 0x42, 0xaa, 0xbb, 0xcc, 0xdd,   // last four bytes will be replaced by channel_id
