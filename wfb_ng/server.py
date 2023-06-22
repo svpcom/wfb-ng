@@ -534,7 +534,7 @@ def init_tunnel(profile, wlans, link_id):
     p_rx = UDPProxyProtocol()
     p_rx.peer = p_in
 
-    tun_ep = TUNTAPTransport(reactor, p_in, cfg.ifname, cfg.ifaddr, mtu=settings.common.radio_mtu)
+    tun_ep = TUNTAPTransport(reactor, p_in, cfg.ifname, cfg.ifaddr, mtu=settings.common.radio_mtu, default_route=cfg.default_route)
     sockets = [ reactor.listenUDP(cfg.port_rx, p_rx) ]
     sockets += [ reactor.listenUDP(0, p_tx) for p_tx in p_tx_l ]
 

@@ -38,7 +38,7 @@ class TUNTAPTransport(abstract.FileDescriptor):
     TUNSETIFF = 0x400454ca
     IFF_NO_PI = 0x1000
 
-    def __init__(self, reactor, protocol, name, addr, dev=b'/dev/net/tun', mtu=1400, mode=TUN):
+    def __init__(self, reactor, protocol, name, addr, dev=b'/dev/net/tun', mtu=1400, mode=TUN, default_route=False):
         abstract.FileDescriptor.__init__(self, reactor)
         self.queue = deque()
         self.mtu = mtu - 2
@@ -54,6 +54,8 @@ class TUNTAPTransport(abstract.FileDescriptor):
                 _addr, _mask = addr.split('/')
                 ip.link('set', index=ifidx, state='up', mtu=self.mtu)
                 ip.addr('add', index=ifidx, address=_addr, prefixlen=int(_mask))
+                if default_route:
+                    ip.route('add', dst='default', oif=ifidx, metric=10)
         except Exception:
             os.close(self.fd)
             raise
