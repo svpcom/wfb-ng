@@ -452,12 +452,12 @@ int main(int argc, char * const *argv)
         case 'f':
             if (strcmp(optarg, "data") == 0)
             {
-                printf("Using data frames\n");
+                fprintf(stderr, "Using data frames\n");
                 ieee80211_header[0] = FRAME_TYPE_DATA;
             }
             else if (strcmp(optarg, "rts") == 0)
             {
-                printf("Using rts frames\n");
+                fprintf(stderr, "Using rts frames\n");
                 ieee80211_header[0] = FRAME_TYPE_RTS;
             }
             else
@@ -556,10 +556,30 @@ int main(int argc, char * const *argv)
         vector<string> wlans;
         for(int i = 0; optind + i < argc; i++)
         {
-            int fd = open_udp_socket_for_rx(udp_port + i, rcv_buf);
-            fprintf(stderr, "Listen on %d for %s\n", udp_port + i, argv[optind + i]);
+            int bind_port = udp_port != 0 ? udp_port + i : 0;
+            int fd = open_udp_socket_for_rx(bind_port, rcv_buf);
+
+            if (udp_port == 0)
+            {
+                struct sockaddr_in saddr;
+                socklen_t saddr_size = sizeof(saddr);
+
+                if(getsockname(fd, (struct sockaddr *)&saddr, &saddr_size) != 0)
+                {
+                    throw runtime_error(string_format("Unable to get socket info: %s", strerror(errno)));
+                }
+                bind_port = ntohs(saddr.sin_port);
+                printf("LISTEN_UDP\t%d:%s\n", bind_port, argv[optind + i]);
+            }
+            fprintf(stderr, "Listen on %d for %s\n", bind_port, argv[optind + i]);
             rx_fd.push_back(fd);
             wlans.push_back(string(argv[optind + i]));
+        }
+
+        if(udp_port == 0)
+        {
+            printf("LISTEN_UDP_END\n");
+            fflush(stdout);
         }
 
         shared_ptr<Transmitter> t;
