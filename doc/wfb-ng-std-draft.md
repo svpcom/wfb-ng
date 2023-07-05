@@ -73,7 +73,7 @@ All other ranges reserved for future use
 There are two packet types
 
 1. Data packet (`packet_type = 1`, has encrypted and authenticated (using session key) FEC-encoded data)
-2. Session packet (`packet_type = 2`, has encrypted and signed (using RX public key and TX secret key) session parameters and session key)
+2. Session packet (`packet_type = 2`, has encrypted and authenticated session parameters and session key, see note below)
 
 Currently only supported FEC type is Reed-Solomon on Vandermonde matrix, but new FEC algorithms can be added in future.
 
@@ -105,7 +105,7 @@ Currently only supported FEC type is Reed-Solomon on Vandermonde matrix, but new
                                                      +-- encrypted and authenticated by session key
          2. Session packet:
             wsession_hdr_t { packet_type = 2, nonce = random() }
-              wsession_data_t { epoch, channel_id, fec_type, fec_k, fec_n, session_key } # -- encrypted and signed using crypto_box_easy(rx_publickey, tx_secretkey)
+              wsession_data_t { epoch, channel_id, fec_type, fec_k, fec_n, session_key } # -- encrypted and authenticated using crypto_box_easy(rx_publickey, tx_secretkey)
 
     data nonce:  56bit block_idx + 8bit fragment_idx
     session nonce: crypto_box_NONCEBYTES of random bytes
@@ -157,6 +157,7 @@ License GPLv3.
 WFB-NG encrypts data stream using libsodium.
 
 When TX starts, it generates new session key, encrypts it using public key authenticated encryption (cryptobox) and announce it every SESSION_KEY_ANNOUNCE_MSEC (default 1s).
+Session packet encryption and authentication are done using X25519 ECDH key generated from (RX public key, TX secret key) on the TX side and (TX public key, RX secret key) on the RX side.
 Data packets encrypted by crypto_aead_chacha20poly1305_encrypt using session key and packet index as nonce.
 TX can change FEC settings online, but it must generate a new session key to avoid invalid data on the RX side.
 

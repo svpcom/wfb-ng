@@ -36,6 +36,7 @@ from twisted.internet.serialport import SerialPort
 
 from . import _log_msg, ConsoleObserver, call_and_check_rc, ExecError
 from .common import abort_on_crash, exit_status, df_sleep
+from .config_parser import Section
 from .proxy import UDPProxyProtocol, MavlinkSerialProxyProtocol, MavlinkUDPProxyProtocol
 from .mavlink_protocol import MavlinkARMProtocol, MavlinkTCPFactory
 from .tuntap import TUNTAPProtocol, TUNTAPTransport
@@ -72,22 +73,31 @@ class StatisticsProtocol(Protocol):
         self.transport.write(json.dumps(data).encode('utf-8') + b'\n')
 
 
-class AntennaFactory(Factory):
+class StatsAndSelectorFactory(Factory):
     noisy = False
     protocol = StatisticsProtocol
 
-    def __init__(self, p_in, p_tx_l):
-        self.p_in = p_in
-        self.p_tx_l = p_tx_l
+    """
+    Aggregate RX stats and select TX antenna
+    """
+
+    def __init__(self):
+        self.ant_sel_cb_list = []
+        self.rssi_cb_l = []
+
+        # Select antenna #0 by default
         self.tx_sel = 0
         self.tx_sel_delta = settings.common.tx_sel_delta
 
-        # Select antenna #0 by default
-        if p_in is not None and p_tx_l is not None:
-            p_in.peer = p_tx_l[0]
-
         # tcp sockets for UI
         self.ui_sessions = []
+
+    def add_ant_sel_cb(self, ant_sel_cb):
+        self.ant_sel_cb_list.append(ant_sel_cb)
+        ant_sel_cb(self.tx_sel)
+
+    def add_rssi_cb(self, rssi_cb):
+        self.rssi_cb_l.append(rssi_cb)
 
     def select_tx_antenna(self, ant_rssi):
         wlan_rssi = {}
@@ -106,8 +116,14 @@ class AntennaFactory(Factory):
             return
 
         log.msg('Swith TX antenna from %d to %d' % (self.tx_sel, tx_max))
+
+        for ant_sel_cb in self.ant_sel_cb_list:
+            try:
+                ant_sel_cb(tx_max)
+            except Exception:
+                log.err()
+
         self.tx_sel = tx_max
-        self.p_in.peer = self.p_tx_l[tx_max]
 
     def update_stats(self, rx_id, packet_stats, ant_rssi):
         mav_rssi = []
@@ -124,17 +140,24 @@ class AntennaFactory(Factory):
         elif packet_stats['dec_ok'] == 0:
             flags |= WFBFlags.LINK_JAMMED
 
-        if self.p_in:
-            if ant_rssi: self.select_tx_antenna(ant_rssi)
-            # Send mavlink packet with radio rssi
+        if ant_rssi and self.ant_sel_cb_list:
+            self.select_tx_antenna(ant_rssi)
+
+        if self.rssi_cb_l:
             _idx = 0 if settings.common.mavlink_err_rate else 1
             rx_errors = min(packet_stats['dec_err'][_idx] + packet_stats['bad'][_idx] + packet_stats['lost'][_idx], 65535)
             rx_fec = min(packet_stats['fec_rec'][_idx], 65535)
-            self.p_in.send_rssi(rssi, rx_errors, rx_fec, flags)
+
+            for rssi_cb in self.rssi_cb_l:
+                try:
+                    rssi_cb(rx_id, rssi, rx_errors, rx_fec, flags)
+                except Exception:
+                    log.err()
 
         if settings.common.debug:
             log.msg('%s rssi %s tx#%d %s %s' % (rx_id, max(mav_rssi) if mav_rssi else 'N/A', self.tx_sel, packet_stats, ant_rssi))
 
+        # Send stats to CLI sessions
         for s in self.ui_sessions:
             s.send_stats(dict(id=rx_id, tx_ant=self.tx_sel, packets=packet_stats, rssi=ant_rssi))
 
@@ -142,8 +165,12 @@ class AntennaFactory(Factory):
 class AntennaProtocol(LineReceiver):
     delimiter = b'\n'
 
-    def __init__(self, antenna_f, rx_id):
-        self.antenna_f = antenna_f
+    """
+    wfb_rx log parser
+    """
+
+    def __init__(self, ant_stat_cb, rx_id):
+        self.ant_stat_cb = ant_stat_cb
         self.rx_id = rx_id
         self.ant = {}
         self.count_all = None
@@ -179,7 +206,10 @@ class AntennaProtocol(LineReceiver):
                                  zip((p_all, p_dec_ok, p_fec_rec, p_lost, p_dec_err, p_bad),
                                      self.count_all)))
 
-                self.antenna_f.update_stats(self.rx_id, stats, dict(self.ant))
+                # Send stats to aggregators
+                if self.ant_stat_cb is not None:
+                    self.ant_stat_cb.update_stats(self.rx_id, stats, dict(self.ant))
+
                 self.ant.clear()
 
             elif cmd == 'SESSION':
@@ -198,6 +228,10 @@ class AntennaProtocol(LineReceiver):
 class DbgProtocol(LineReceiver):
     delimiter = b'\n'
 
+    """
+    stderr parser
+    """
+
     def __init__(self, rx_id):
         self.rx_id = rx_id
 
@@ -205,11 +239,39 @@ class DbgProtocol(LineReceiver):
         log.msg('%s: %s' % (self.rx_id, line.decode('utf-8')))
 
 
+
+class TXGetUDPPortProtocol(LineReceiver):
+    delimiter = b'\n'
+
+    """
+    stderr parser
+    """
+
+    def __init__(self, df):
+        self.df = df
+        self.ports = {}
+
+    def lineReceived(self, line):
+        cols = line.decode('utf-8').strip().split('\t')
+        cmd = cols[0]
+
+        if cmd == 'LISTEN_UDP' and len(cols) == 2:
+            port, wlan = cols[1].split(':', 1)
+            self.ports[wlan] = int(port)
+
+        elif cmd == 'LISTEN_UDP_END' and self.df is not None:
+            self.df.callback(self.ports)
+
+
 class RXProtocol(ProcessProtocol):
-    def __init__(self, antenna_stat, cmd, rx_id):
+    """
+    manager for wfb_rx process
+    """
+
+    def __init__(self, ant_stat_cb, cmd, rx_id):
         self.cmd = cmd
         self.rx_id = rx_id
-        self.ant = AntennaProtocol(antenna_stat, rx_id) if antenna_stat is not None else None
+        self.ant = AntennaProtocol(ant_stat_cb, rx_id) if ant_stat_cb else None
         self.dbg = DbgProtocol(rx_id)
         self.df = defer.Deferred()
 
@@ -238,17 +300,23 @@ class RXProtocol(ProcessProtocol):
 
 
 class TXProtocol(ProcessProtocol):
-    def __init__(self, cmd, tx_id):
+    """
+    manager for wfb_tx process
+    """
+
+    def __init__(self, cmd, tx_id, ports_df=None):
         self.cmd = cmd
         self.tx_id = tx_id
         self.dbg = DbgProtocol(tx_id)
+        self.ports_df = ports_df
+        self.port_parser = TXGetUDPPortProtocol(ports_df)
         self.df = defer.Deferred()
 
     def connectionMade(self):
         log.msg('Started %s' % (self.tx_id,))
 
     def outReceived(self, data):
-        self.dbg.dataReceived(data)
+        self.port_parser.dataReceived(data)
 
     def errReceived(self, data):
         self.dbg.dataReceived(data)
@@ -256,6 +324,9 @@ class TXProtocol(ProcessProtocol):
     def processEnded(self, status):
         rc = status.value.exitCode
         log.msg('Stopped TX %s with code %s' % (self.tx_id, rc))
+
+        if self.ports_df is not None:
+            self.ports_df.cancel()
 
         if rc == 0:
             self.df.callback(str(status.value))
@@ -269,10 +340,7 @@ class TXProtocol(ProcessProtocol):
 
 
 @defer.inlineCallbacks
-def init_wlans(profile, wlans):
-    max_bw = max(getattr(getattr(settings, '%s_mavlink' % profile), 'bandwidth'),
-                 getattr(getattr(settings, '%s_video' % profile), 'bandwidth'))
-
+def init_wlans(max_bw, wlans):
     if max_bw == 20:
         ht_mode = 'HT20'
     elif max_bw == 40:
@@ -307,46 +375,114 @@ def init_wlans(profile, wlans):
             log.msg(v.stderr, isError=1)
         raise
 
-def init(profile, wlans):
-    def _init_services(_):
-        link_id = int.from_bytes(hashlib.sha1(settings.common.link_id.encode('utf-8')).digest()[:3], 'big')
-        return defer.gatherResults([defer.maybeDeferred(init_mavlink, profile, wlans, link_id),
-                                    defer.maybeDeferred(init_video, profile, wlans, link_id),
-                                    defer.maybeDeferred(init_tunnel, profile, wlans, link_id)])\
-                    .addErrback(lambda f: f.trap(defer.FirstError) and f.value.subFailure)
 
-    return defer.maybeDeferred(init_wlans, profile, wlans).addCallback(_init_services)
+def parse_services(profile_name):
+    res = []
+    for stream in getattr(settings, profile_name).streams:
+        cfg = Section()
+        stream = dict(stream)
+        name = stream.pop('name')
+        service_type = stream.pop('service_type')
+
+        for profile in stream.pop('profiles'):
+            cfg.__dict__.update(getattr(settings, profile).__dict__)
+
+        cfg.__dict__.update(stream)
+        res.append((name, service_type, cfg))
+
+    return res
 
 
-def init_mavlink(profile, wlans, link_id):
-    cfg = getattr(settings, '%s_mavlink' % (profile,))
+@defer.inlineCallbacks
+def init(profiles, wlans):
+    type_map = dict(udp_direct_rx=init_udp_direct_rx,
+                    udp_direct_tx=init_udp_direct_tx,
+                    mavlink=init_mavlink,
+                    tunnel=init_tunnel,
+                    udp_proxy=init_udp_proxy)
 
-    cmd_rx = ('%(cmd)s -p %(stream)d -u %(port)d -K %(key)s -i %(link_id)d' % \
-              dict(cmd=os.path.join(settings.path.bin_dir, 'wfb_rx'),
-                   stream=cfg.stream_rx,
-                   port=cfg.port_rx,
-                   key=os.path.join(settings.path.conf_dir, cfg.keypair),
-                   link_id=link_id)).split() + wlans
+    services = list((profile, parse_services(profile)) for profile in profiles)
+    max_bw = max(cfg.bandwidth for _, tmp in services for _, _, cfg in tmp)
 
-    cmd_tx = ('%(cmd)s -f %(frame_type)s -p %(stream)d -u %(port)d -K %(key)s -B %(bw)d '\
-              '-G %(gi)s -S %(stbc)d -L %(ldpc)d -M %(mcs)d '\
-              '-k %(fec_k)d -n %(fec_n)d -T %(fec_timeout)d -i %(link_id)d -R %(rcv_buf_size)d' % \
-              dict(cmd=os.path.join(settings.path.bin_dir, 'wfb_tx'),
-                   frame_type=cfg.frame_type,
-                   stream=cfg.stream_tx,
-                   port=cfg.port_tx,
-                   key=os.path.join(settings.path.conf_dir, cfg.keypair),
-                   bw=cfg.bandwidth,
-                   gi="short" if cfg.short_gi else "long",
-                   stbc=cfg.stbc,
-                   ldpc=cfg.ldpc,
-                   mcs=cfg.mcs_index,
-                   fec_k=cfg.fec_k,
-                   fec_n=cfg.fec_n,
-                   fec_timeout=cfg.fec_timeout,
-                   link_id=link_id,
-                   rcv_buf_size=settings.common.tx_rcv_buf_size)).split() + wlans
+    # Do cards init
+    yield init_wlans(max_bw, wlans)
 
+    dl = []
+
+    for profile, service_list in services:
+        # Domain wide antenna selector
+        ant_sel_f = StatsAndSelectorFactory()
+        profile_cfg = getattr(settings, profile)
+        link_id = int.from_bytes(hashlib.sha1(profile_cfg.link_domain.encode('utf-8')).digest()[:3], 'big')
+
+        if profile_cfg.stats_port:
+            reactor.listenTCP(profile_cfg.stats_port, ant_sel_f)
+
+        for service_name, service_type, srv_cfg in service_list:
+            log.msg('Starting %s/%s@%s on %s' % (profile, service_name, profile_cfg.link_domain, ', '.join(wlans)))
+            dl.append(defer.maybeDeferred(type_map[service_type], service_name, srv_cfg, wlans, link_id, ant_sel_f))
+
+    yield defer.gatherResults(dl, consumeErrors=True).addErrback(lambda f: f.trap(defer.FirstError) and f.value.subFailure)
+
+
+def init_udp_direct_tx(service_name, cfg, wlans, link_id, ant_sel_f):
+    if not listen_re.match(cfg.peer):
+        raise Exception('%s: unsupported peer address: %s' % (service_name, cfg.peer))
+
+    m = listen_re.match(cfg.peer)
+    listen = m.group('addr'), int(m.group('port'))
+    log.msg('Listen for %s stream %d on %s:%d' % (service_name, cfg.stream_tx, listen[0], listen[1]))
+
+    cmd = ('%(cmd)s -f %(frame_type)s -p %(stream)d -u %(port)d -K %(key)s '\
+           '-B %(bw)d -G %(gi)s -S %(stbc)d -L %(ldpc)d -M %(mcs)d '\
+           '-k %(fec_k)d -n %(fec_n)d -T %(fec_timeout)d -i %(link_id)d -R %(rcv_buf_size)d' % \
+           dict(cmd=os.path.join(settings.path.bin_dir, 'wfb_tx'),
+                frame_type=cfg.frame_type,
+                stream=cfg.stream_tx,
+                port=listen[1],
+                key=os.path.join(settings.path.conf_dir, cfg.keypair),
+                bw=cfg.bandwidth,
+                gi="short" if cfg.short_gi else "long",
+                stbc=cfg.stbc,
+                ldpc=cfg.ldpc,
+                mcs=cfg.mcs_index,
+                fec_k=cfg.fec_k,
+                fec_n=cfg.fec_n,
+                fec_timeout=cfg.fec_timeout,
+                link_id=link_id,
+                rcv_buf_size=settings.common.tx_rcv_buf_size)
+           ).split() + wlans[0:1]   # We don't use TX diversity for direct udp
+                                    # due to only one transmitter on the vehichle
+
+    df = TXProtocol(cmd, 'video tx').start()
+    log.msg('%s: %s' % (service_name, ' '.join(cmd),))
+    return df
+
+
+def init_udp_direct_rx(service_name, cfg, wlans, link_id, ant_sel_f):
+    if not connect_re.match(cfg.peer):
+        raise Exception('%s: unsupported peer address: %s' % (service_name, cfg.peer))
+
+    m = connect_re.match(cfg.peer)
+    connect = m.group('addr'), int(m.group('port'))
+    log.msg('Send %s stream %d to %s:%d' % (service_name, cfg.stream_rx, connect[0], connect[1]))
+
+    cmd = ('%(cmd)s -p %(stream)d -c %(ip_addr)s -u %(port)d -K %(key)s -i %(link_id)d' % \
+           dict(cmd=os.path.join(settings.path.bin_dir, 'wfb_rx'),
+                stream=cfg.stream_rx,
+                ip_addr=connect[0],
+                port=connect[1],
+                key=os.path.join(settings.path.conf_dir, cfg.keypair),
+                link_id=link_id)).split() + wlans
+
+    df = RXProtocol(ant_sel_f, cmd, '%s rx' % (service_name,)).start()
+
+    log.msg('%s: %s' % (service_name, ' '.join(cmd),))
+    return df
+
+
+@defer.inlineCallbacks
+def init_mavlink(service_name, cfg, wlans, link_id, ant_sel_f):
     listen = None
     connect = None
     serial = None
@@ -355,12 +491,12 @@ def init_mavlink(profile, wlans, link_id):
     if connect_re.match(cfg.peer):
         m = connect_re.match(cfg.peer)
         connect = m.group('addr'), int(m.group('port'))
-        log.msg('Connect telem stream %d(RX), %d(TX) to %s:%d' % (cfg.stream_rx, cfg.stream_tx, connect[0], connect[1]))
+        log.msg('Connect %s stream %d(RX), %d(TX) to %s:%d' % (service_name, cfg.stream_rx, cfg.stream_tx, connect[0], connect[1]))
 
     elif listen_re.match(cfg.peer):
         m = listen_re.match(cfg.peer)
         listen = m.group('addr'), int(m.group('port'))
-        log.msg('Listen for telem stream %d(RX), %d(TX) on %s:%d' % (cfg.stream_rx, cfg.stream_tx, listen[0], listen[1]))
+        log.msg('Listen for %s stream %d(RX), %d(TX) on %s:%d' % (service_name, cfg.stream_rx, cfg.stream_tx, listen[0], listen[1]))
 
     elif serial_re.match(cfg.peer):
         m = serial_re.match(cfg.peer)
@@ -373,7 +509,7 @@ def init_mavlink(profile, wlans, link_id):
     if cfg.mirror is not None and connect_re.match(cfg.mirror):
         m = connect_re.match(cfg.mirror)
         mirror = m.group('addr'), int(m.group('port'))
-        log.msg('Mirror telem stream to %s:%d' % (mirror[0], mirror[1]))
+        log.msg('Mirror %s stream to %s:%d' % (service_name, mirror[0], mirror[1]))
 
     rx_hooks = []
     tx_hooks = []
@@ -400,122 +536,26 @@ def init_mavlink(profile, wlans, link_id):
                                        mavlink_comp_id=cfg.mavlink_comp_id,
                                        rx_hooks=rx_hooks, tx_hooks=tx_hooks)
 
-    # Setup mavlink TCP proxy
-    if cfg.mavlink_tcp_port:
-        mav_tcp_f = MavlinkTCPFactory(p_in)
-        p_in.rx_hooks.append(mav_tcp_f.write)
-        reactor.listenTCP(cfg.mavlink_tcp_port, mav_tcp_f)
-
-    p_tx_l = [UDPProxyProtocol(('127.0.0.1', cfg.port_tx + i)) for i, _ in enumerate(wlans)]
     p_rx = UDPProxyProtocol()
     p_rx.peer = p_in
 
-    if serial:
-        serial_port = SerialPort(p_in, os.path.join('/dev', serial[0]), reactor, baudrate=serial[1])
-        serial_port._serial.exclusive = True
-        sockets = []
-
-    else:
-        serial_port = None
-        sockets = [ reactor.listenUDP(listen[1] if listen else 0, p_in) ]
-
-    sockets += [ reactor.listenUDP(cfg.port_rx, p_rx) ]
-    sockets += [ reactor.listenUDP(0, p_tx) for p_tx in p_tx_l ]
-
-    log.msg('Telem RX: %s' % (' '.join(cmd_rx),))
-    log.msg('Telem TX: %s' % (' '.join(cmd_tx),))
-
-    ant_f = AntennaFactory(p_in, p_tx_l)
-    if cfg.stats_port:
-        reactor.listenTCP(cfg.stats_port, ant_f)
-
-    dl = [RXProtocol(ant_f, cmd_rx, 'telem rx').start(),
-          TXProtocol(cmd_tx, 'telem tx').start()]
-
-    def _cleanup(x):
-        if serial_port is not None:
-            serial_port.loseConnection()
-            serial_port.connectionLost(failure.Failure(ti_main.CONNECTION_DONE))
-
-        for s in sockets:
-            s.stopListening()
-
-        return x
-
-    return defer.gatherResults(dl, consumeErrors=True).addBoth(_cleanup)\
-                                                      .addErrback(lambda f: f.trap(defer.FirstError) and f.value.subFailure)
-
-def init_video(profile, wlans, link_id):
-    cfg = getattr(settings, '%s_video' % (profile,))
-
-    if listen_re.match(cfg.peer):
-        m = listen_re.match(cfg.peer)
-        listen = m.group('addr'), int(m.group('port'))
-        log.msg('Listen for video stream %d on %s:%d' % (cfg.stream, listen[0], listen[1]))
-
-        cmd = ('%(cmd)s -f %(frame_type)s -p %(stream)d -u %(port)d -K %(key)s '\
-               '-B %(bw)d -G %(gi)s -S %(stbc)d -L %(ldpc)d -M %(mcs)d '\
-               '-k %(fec_k)d -n %(fec_n)d -T %(fec_timeout)d -i %(link_id)d -R %(rcv_buf_size)d' % \
-               dict(cmd=os.path.join(settings.path.bin_dir, 'wfb_tx'),
-                    frame_type=cfg.frame_type,
-                    stream=cfg.stream,
-                    port=listen[1],
-                    key=os.path.join(settings.path.conf_dir, cfg.keypair),
-                    bw=cfg.bandwidth,
-                    gi="short" if cfg.short_gi else "long",
-                    stbc=cfg.stbc,
-                    ldpc=cfg.ldpc,
-                    mcs=cfg.mcs_index,
-                    fec_k=cfg.fec_k,
-                    fec_n=cfg.fec_n,
-                    fec_timeout=cfg.fec_timeout,
-                    link_id=link_id,
-                    rcv_buf_size=settings.common.tx_rcv_buf_size)
-               ).split() + wlans[0:1]   # We don't use TX diversity for video streaming
-                                        # due to only one transmitter on the vehichle
-
-        df = TXProtocol(cmd, 'video tx').start()
-    elif connect_re.match(cfg.peer):
-        m = connect_re.match(cfg.peer)
-        connect = m.group('addr'), int(m.group('port'))
-        log.msg('Send video stream %d to %s:%d' % (cfg.stream, connect[0], connect[1]))
-
-        ant_f = AntennaFactory(None, None)
-        if cfg.stats_port:
-            reactor.listenTCP(cfg.stats_port, ant_f)
-
-        cmd = ('%(cmd)s -p %(stream)d -c %(ip_addr)s -u %(port)d -K %(key)s -i %(link_id)d' % \
-               dict(cmd=os.path.join(settings.path.bin_dir, 'wfb_rx'),
-                    stream=cfg.stream,
-                    ip_addr=connect[0],
-                    port=connect[1],
-                    key=os.path.join(settings.path.conf_dir, cfg.keypair),
-                    link_id=link_id)).split() + wlans
-
-        df = RXProtocol(ant_f, cmd, 'video rx').start()
-    else:
-        raise Exception('Unsupport peer address: %s' % (cfg.peer,))
-
-    log.msg('Video: %s' % (' '.join(cmd),))
-    return df
-
-def init_tunnel(profile, wlans, link_id):
-    cfg = getattr(settings, '%s_tunnel' % (profile,))
+    rx_socket = reactor.listenUDP(0, p_rx)
+    sockets = [rx_socket]
 
     cmd_rx = ('%(cmd)s -p %(stream)d -u %(port)d -K %(key)s -i %(link_id)d' % \
               dict(cmd=os.path.join(settings.path.bin_dir, 'wfb_rx'),
                    stream=cfg.stream_rx,
-                   port=cfg.port_rx,
+                   port=rx_socket.getHost().port,
                    key=os.path.join(settings.path.conf_dir, cfg.keypair),
                    link_id=link_id)).split() + wlans
 
-    cmd_tx = ('%(cmd)s -f %(frame_type)s -p %(stream)d -u %(port)d -K %(key)s -B %(bw)d -G %(gi)s '\
-              '-S %(stbc)d -L %(ldpc)d -M %(mcs)d '\
+    cmd_tx = ('%(cmd)s -f %(frame_type)s -p %(stream)d -u %(port)d -K %(key)s -B %(bw)d '\
+              '-G %(gi)s -S %(stbc)d -L %(ldpc)d -M %(mcs)d '\
               '-k %(fec_k)d -n %(fec_n)d -T %(fec_timeout)d -i %(link_id)d -R %(rcv_buf_size)d' % \
               dict(cmd=os.path.join(settings.path.bin_dir, 'wfb_tx'),
                    frame_type=cfg.frame_type,
                    stream=cfg.stream_tx,
-                   port=cfg.port_tx,
+                   port=0,
                    key=os.path.join(settings.path.conf_dir, cfg.keypair),
                    bw=cfg.bandwidth,
                    gi="short" if cfg.short_gi else "long",
@@ -528,26 +568,117 @@ def init_tunnel(profile, wlans, link_id):
                    link_id=link_id,
                    rcv_buf_size=settings.common.tx_rcv_buf_size)).split() + wlans
 
+    log.msg('%s RX: %s' % (service_name, ' '.join(cmd_rx)))
+    log.msg('%s TX: %s' % (service_name, ' '.join(cmd_tx)))
+
+    # Setup mavlink TCP proxy
+    if cfg.mavlink_tcp_port:
+        mav_tcp_f = MavlinkTCPFactory(p_in)
+        p_in.rx_hooks.append(mav_tcp_f.write)
+        reactor.listenTCP(cfg.mavlink_tcp_port, mav_tcp_f)
+
+    tx_ports_df = defer.Deferred()
+    dl = [TXProtocol(cmd_tx, '%s tx' % (service_name,), tx_ports_df).start()]
+
+    # Wait while wfb_tx allocates ephemeral udp ports and reports them back
+    tx_ports = yield tx_ports_df
+    log.msg('%s use wfb_tx ports %s' % (service_name, tx_ports))
+
+    p_tx_l = [UDPProxyProtocol(('127.0.0.1', tx_ports[wlan])) for wlan in wlans]
+
+    if serial:
+        serial_port = SerialPort(p_in, os.path.join('/dev', serial[0]), reactor, baudrate=serial[1])
+        serial_port._serial.exclusive = True
+
+    else:
+        serial_port = None
+        sockets += [ reactor.listenUDP(listen[1] if listen else 0, p_in) ]
+
+    sockets += [ reactor.listenUDP(0, p_tx) for p_tx in p_tx_l ]
+
+    def ant_sel_cb(ant_idx):
+        p_in.peer = p_tx_l[ant_idx]
+
+    ant_sel_f.add_ant_sel_cb(ant_sel_cb)
+
+    # Report RSSI to OSD
+    ant_sel_f.add_rssi_cb(p_in.send_rssi)
+
+    dl.append(RXProtocol(ant_sel_f, cmd_rx, '%s rx' % (service_name,)).start())
+
+    def _cleanup(x):
+        if serial_port is not None:
+            serial_port.loseConnection()
+            serial_port.connectionLost(failure.Failure(ti_main.CONNECTION_DONE))
+
+        for s in sockets:
+            s.stopListening()
+
+        return x
+
+    yield defer.gatherResults(dl, consumeErrors=True).addBoth(_cleanup)\
+                                                     .addErrback(lambda f: f.trap(defer.FirstError) and f.value.subFailure)
+
+
+@defer.inlineCallbacks
+def init_tunnel(service_name, cfg, wlans, link_id, ant_sel_f):
     p_in = TUNTAPProtocol(mtu=settings.common.radio_mtu,
                           agg_timeout=settings.common.tunnel_agg_timeout)
-    p_tx_l = [UDPProxyProtocol(('127.0.0.1', cfg.port_tx + i)) for i, _ in enumerate(wlans)]
+
     p_rx = UDPProxyProtocol()
     p_rx.peer = p_in
 
+    rx_socket = reactor.listenUDP(0, p_rx)
+    sockets = [rx_socket]
+
+    cmd_rx = ('%(cmd)s -p %(stream)d -u %(port)d -K %(key)s -i %(link_id)d' % \
+              dict(cmd=os.path.join(settings.path.bin_dir, 'wfb_rx'),
+                   stream=cfg.stream_rx,
+                   port=rx_socket.getHost().port,
+                   key=os.path.join(settings.path.conf_dir, cfg.keypair),
+                   link_id=link_id)).split() + wlans
+
+    cmd_tx = ('%(cmd)s -f %(frame_type)s -p %(stream)d -u %(port)d -K %(key)s -B %(bw)d -G %(gi)s '\
+              '-S %(stbc)d -L %(ldpc)d -M %(mcs)d '\
+              '-k %(fec_k)d -n %(fec_n)d -T %(fec_timeout)d -i %(link_id)d -R %(rcv_buf_size)d' % \
+              dict(cmd=os.path.join(settings.path.bin_dir, 'wfb_tx'),
+                   frame_type=cfg.frame_type,
+                   stream=cfg.stream_tx,
+                   port=0,
+                   key=os.path.join(settings.path.conf_dir, cfg.keypair),
+                   bw=cfg.bandwidth,
+                   gi="short" if cfg.short_gi else "long",
+                   stbc=cfg.stbc,
+                   ldpc=cfg.ldpc,
+                   mcs=cfg.mcs_index,
+                   fec_k=cfg.fec_k,
+                   fec_n=cfg.fec_n,
+                   fec_timeout=cfg.fec_timeout,
+                   link_id=link_id,
+                   rcv_buf_size=settings.common.tx_rcv_buf_size)).split() + wlans
+
+    log.msg('%s RX: %s' % (service_name, ' '.join(cmd_rx)))
+    log.msg('%s TX: %s' % (service_name, ' '.join(cmd_tx),))
+
+    tx_ports_df = defer.Deferred()
+    dl = [TXProtocol(cmd_tx, '%s tx' % (service_name,), tx_ports_df).start()]
+
+    # Wait while wfb_tx allocates ephemeral udp ports and reports them back
+    tx_ports = yield tx_ports_df
+    log.msg('%s use wfb_tx ports %s' % (service_name, tx_ports))
+
+    p_tx_l = [UDPProxyProtocol(('127.0.0.1', tx_ports[wlan])) for wlan in wlans]
+
     tun_ep = TUNTAPTransport(reactor, p_in, cfg.ifname, cfg.ifaddr, mtu=settings.common.radio_mtu, default_route=cfg.default_route)
-    sockets = [ reactor.listenUDP(cfg.port_rx, p_rx) ]
+
     sockets += [ reactor.listenUDP(0, p_tx) for p_tx in p_tx_l ]
 
-    log.msg('Tunnel RX: %s' % (' '.join(cmd_rx),))
-    log.msg('Tunnel TX: %s' % (' '.join(cmd_tx),))
+    def ant_sel_cb(ant_idx):
+        p_in.peer = p_tx_l[ant_idx]
 
-    ant_f = AntennaFactory(p_in, p_tx_l)
+    ant_sel_f.add_ant_sel_cb(ant_sel_cb)
 
-    if cfg.stats_port:
-        reactor.listenTCP(cfg.stats_port, ant_f)
-
-    dl = [RXProtocol(ant_f, cmd_rx, 'tunnel rx').start(),
-          TXProtocol(cmd_tx, 'tunnel tx').start()]
+    dl.append(RXProtocol(ant_sel_f, cmd_rx, '%s rx' % (service_name,)).start())
 
     def _cleanup(x):
         tun_ep.loseConnection()
@@ -555,8 +686,91 @@ def init_tunnel(profile, wlans, link_id):
             s.stopListening()
         return x
 
-    return defer.gatherResults(dl, consumeErrors=True).addBoth(_cleanup)\
-                                                      .addErrback(lambda f: f.trap(defer.FirstError) and f.value.subFailure)
+    yield defer.gatherResults(dl, consumeErrors=True).addBoth(_cleanup)\
+                                                     .addErrback(lambda f: f.trap(defer.FirstError) and f.value.subFailure)
+
+
+@defer.inlineCallbacks
+def init_udp_proxy(service_name, cfg, wlans, link_id, ant_sel_f):
+    listen = None
+    connect = None
+
+    if connect_re.match(cfg.peer):
+        m = connect_re.match(cfg.peer)
+        connect = m.group('addr'), int(m.group('port'))
+        log.msg('Connect %s stream %d(RX), %d(TX) to %s:%d' % (service_name, cfg.stream_rx, cfg.stream_tx, connect[0], connect[1]))
+
+    elif listen_re.match(cfg.peer):
+        m = listen_re.match(cfg.peer)
+        listen = m.group('addr'), int(m.group('port'))
+        log.msg('Listen for %s stream %d(RX), %d(TX) on %s:%d' % (service_name, cfg.stream_rx, cfg.stream_tx, listen[0], listen[1]))
+
+    else:
+        raise Exception('Unsupported peer address: %s' % (cfg.peer,))
+
+    # The first argument is not None only if we initiate mavlink connection
+    p_in = UDPProxyProtocol(connect)
+    sockets = [reactor.listenUDP(listen[1] if listen else 0, p_in)]
+    dl = []
+
+    if cfg.stream_rx is not None:
+        p_rx = UDPProxyProtocol()
+        p_rx.peer = p_in
+        rx_socket = reactor.listenUDP(0, p_rx)
+        sockets = [rx_socket]
+        cmd_rx = ('%(cmd)s -p %(stream)d -u %(port)d -K %(key)s -i %(link_id)d' % \
+                  dict(cmd=os.path.join(settings.path.bin_dir, 'wfb_rx'),
+                       stream=cfg.stream_rx,
+                       port=rx_socket.getHost().port,
+                       key=os.path.join(settings.path.conf_dir, cfg.keypair),
+                       link_id=link_id)).split() + wlans
+        log.msg('%s RX: %s' % (service_name, ' '.join(cmd_rx)))
+        dl.append(RXProtocol(ant_sel_f, cmd_rx, '%s rx' % (service_name,)).start())
+
+    if cfg.stream_tx is not None:
+        cmd_tx = ('%(cmd)s -f %(frame_type)s -p %(stream)d -u %(port)d -K %(key)s -B %(bw)d '\
+                  '-G %(gi)s -S %(stbc)d -L %(ldpc)d -M %(mcs)d '\
+                  '-k %(fec_k)d -n %(fec_n)d -T %(fec_timeout)d -i %(link_id)d -R %(rcv_buf_size)d' % \
+                  dict(cmd=os.path.join(settings.path.bin_dir, 'wfb_tx'),
+                       frame_type=cfg.frame_type,
+                       stream=cfg.stream_tx,
+                       port=0,
+                       key=os.path.join(settings.path.conf_dir, cfg.keypair),
+                       bw=cfg.bandwidth,
+                       gi="short" if cfg.short_gi else "long",
+                       stbc=cfg.stbc,
+                       ldpc=cfg.ldpc,
+                       mcs=cfg.mcs_index,
+                       fec_k=cfg.fec_k,
+                       fec_n=cfg.fec_n,
+                       fec_timeout=cfg.fec_timeout,
+                       link_id=link_id,
+                       rcv_buf_size=settings.common.tx_rcv_buf_size)).split() + wlans
+        log.msg('%s TX: %s' % (service_name, ' '.join(cmd_tx)))
+
+        tx_ports_df = defer.Deferred()
+        dl += [TXProtocol(cmd_tx, '%s tx' % (service_name,), tx_ports_df).start()]
+
+        # Wait while wfb_tx allocates ephemeral udp ports and reports them back
+        tx_ports = yield tx_ports_df
+        log.msg('%s use wfb_tx ports %s' % (service_name, tx_ports))
+
+        p_tx_l = [UDPProxyProtocol(('127.0.0.1', tx_ports[wlan])) for wlan in wlans]
+        sockets += [reactor.listenUDP(0, p_tx) for p_tx in p_tx_l ]
+
+        def ant_sel_cb(ant_idx):
+            p_in.peer = p_tx_l[ant_idx]
+
+        ant_sel_f.add_ant_sel_cb(ant_sel_cb)
+
+    def _cleanup(x):
+        for s in sockets:
+            s.stopListening()
+
+        return x
+
+    yield defer.gatherResults(dl, consumeErrors=True).addBoth(_cleanup)\
+                                                     .addErrback(lambda f: f.trap(defer.FirstError) and f.value.subFailure)
 
 def main():
     log.msg = _log_msg
@@ -576,12 +790,12 @@ def main():
 
 
     log.msg('WFB version %s-%s' % (settings.common.version, settings.common.commit[:8]))
-    profile, wlans = sys.argv[1], list(wlan for arg in sys.argv[2:] for wlan in arg.split())
+    profiles, wlans = sys.argv[1], list(wlan for arg in sys.argv[2:] for wlan in arg.split())
     uname = os.uname()
-    log.msg('Run on %s/%s @%s, profile %s using %s' % (uname[4], uname[2], uname[1], profile, ', '.join(wlans)))
+    log.msg('Run on %s/%s @%s, profile(s) %s using %s' % (uname[4], uname[2], uname[1], profiles, ', '.join(wlans)))
     log.msg('Using cfg files:\n%s' % ('\n'.join(cfg_files),))
 
-    reactor.callWhenRunning(lambda: defer.maybeDeferred(init, profile, wlans)\
+    reactor.callWhenRunning(lambda: defer.maybeDeferred(init, profiles.split(':'), wlans)\
                             .addErrback(abort_on_crash))
     reactor.run()
 
