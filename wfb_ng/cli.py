@@ -33,6 +33,29 @@ from .common import abort_on_crash, exit_status
 from .conf import settings
 
 
+# Workarond for ncurses bug that show error on output to the last position on the screen
+
+def ignore_curses_err(f, *args, **kwargs):
+    try:
+        return f(*args, **kwargs)
+    except curses.error:
+        pass
+
+
+def rectangle(win, uly, ulx, lry, lrx):
+    """Draw a rectangle with corners at the provided upper-left
+    and lower-right coordinates.
+    """
+    win.vline(uly+1, ulx, curses.ACS_VLINE, lry - uly - 1)
+    win.hline(uly, ulx+1, curses.ACS_HLINE, lrx - ulx - 1)
+    win.hline(lry, ulx+1, curses.ACS_HLINE, lrx - ulx - 1)
+    win.vline(uly+1, lrx, curses.ACS_VLINE, lry - uly - 1)
+    win.addch(uly, ulx, curses.ACS_ULCORNER)
+    win.addch(uly, lrx, curses.ACS_URCORNER)
+    ignore_curses_err(win.addch, lry, lrx, curses.ACS_LRCORNER)
+    win.addch(lry, ulx, curses.ACS_LLCORNER)
+
+
 class AntennaStat(LineReceiver):
     delimiter = b'\n'
 
@@ -126,28 +149,49 @@ class AntennaStatClientFactory(ReconnectingClientFactory):
 
 def init(stdscr, profile):
     service_list = list((s_name, cfg.show_stats) for s_name, _, cfg in  parse_services(profile))
-
     height, width = stdscr.getmaxyx()
-    height -= 1
 
     if not service_list:
-        curses.textpad.rectangle(stdscr, 0, 0, height - 1, width - 1)
+        rectangle(stdscr, 0, 0, height - 1, width - 1)
         stdscr.addstr(0, 3, '[%s not configured]' % (profile,), curses.A_REVERSE)
         stdscr.refresh()
         return
 
-    wh_list = [height // len(service_list)] * (len(service_list) - 1)
-    wh_list.append(height - sum(wh_list))
-    hoff = 0
+    n_exp = 0
+    h_exp = height
+    h_fixed = 3
+
+    for _, show_stats in service_list:
+        if show_stats:
+            n_exp += 1
+        else:
+            h_exp -= h_fixed
+
+    if n_exp > 0:
+        h_exp = h_exp / n_exp
+
+    hoff_int = 0
+    hoff_float = 0
 
     windows = {}
-    for (name, show_stats), wh in zip(service_list, wh_list):
-        window = stdscr.subpad(wh - 2, width - 2, hoff + 1, 1)
+    for name, show_stats in service_list:
+        if show_stats:
+            hoff_float += h_exp
+            err = round(hoff_float) - (hoff_int + int(h_exp))
+            wh = int(h_exp) + err
+            log.msg('%f %f %d %d' % (h_exp, hoff_float, err, wh))
+            if wh < h_fixed:
+                raise Exception('Terminal height is too small')
+        else:
+            hoff_float += h_fixed
+            wh = h_fixed
+
+        window = stdscr.subpad(wh - 2, width - 2, hoff_int + 1, 1)
         window.idlok(1)
         window.scrollok(1)
 
-        curses.textpad.rectangle(stdscr, hoff, 0, hoff + wh - 1, width - 1)
-        stdscr.addstr(hoff, 3, '[%s %s]' % (profile, name))
+        rectangle(stdscr, hoff_int, 0, hoff_int + wh - 1, width - 1)
+        stdscr.addstr(hoff_int, 3, '[%s %s]' % (profile, name))
 
         if show_stats:
             windows['%s rx' % name] = window
@@ -155,7 +199,7 @@ def init(stdscr, profile):
             window.addstr(0, 0, '[statistics disabled]', curses.A_REVERSE)
             window.refresh()
 
-        hoff += wh
+        hoff_int += wh
 
     stats_port = getattr(settings, profile).stats_port
     reactor.connectTCP('127.0.0.1', stats_port, AntennaStatClientFactory(windows))
@@ -187,9 +231,10 @@ def main():
 
     if rc:
         log.msg('Exiting with code %d' % rc)
-        fd.seek(0)
-        for l in fd:
-            stderr.write(l)
+
+    fd.seek(0)
+    for l in fd:
+        stderr.write(l)
 
     sys.exit(rc)
 

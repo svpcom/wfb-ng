@@ -127,7 +127,6 @@ class StatsAndSelectorFactory(Factory):
 
     def update_stats(self, rx_id, packet_stats, ant_rssi):
         mav_rssi = []
-        flags = 0
 
         for i, (k, v) in enumerate(sorted(ant_rssi.items())):
             pkt_s, rssi_min, rssi_avg, rssi_max = v
@@ -135,16 +134,18 @@ class StatsAndSelectorFactory(Factory):
 
         rssi = (max(mav_rssi) if mav_rssi else -128) % 256
 
-        if not mav_rssi:
-            flags |= WFBFlags.LINK_LOST
-        elif packet_stats['dec_ok'] == 0:
-            flags |= WFBFlags.LINK_JAMMED
-
         if ant_rssi and self.ant_sel_cb_list:
             self.select_tx_antenna(ant_rssi)
 
         if self.rssi_cb_l:
             _idx = 0 if settings.common.mavlink_err_rate else 1
+            flags = 0
+
+            if not mav_rssi:
+                flags |= WFBFlags.LINK_LOST
+            elif packet_stats['dec_err'][0] + packet_stats['bad'][0] > 0:
+                flags |= WFBFlags.LINK_JAMMED
+
             rx_errors = min(packet_stats['dec_err'][_idx] + packet_stats['bad'][_idx] + packet_stats['lost'][_idx], 65535)
             rx_fec = min(packet_stats['fec_rec'][_idx], 65535)
 

@@ -140,11 +140,12 @@ class MavlinkProxyProtocol(ProxyProtocol):
             flags = 0
 
             for _rssi, _rx_errors, _rx_fec, _flags in self.radio_stats_d.values():
-                rssi = max(rssi, _rssi)
-                rx_errors = max(rx_errors, _rx_errors)
-                rx_fec = max(rx_fec, _rx_fec)
+                rssi += _rssi
+                rx_errors += _rx_errors
+                rx_fec += _rx_fec
                 flags |= _flags
 
+            rssi //= len(self.radio_stats_d)
             self.radio_mav.radio_status_send(rssi, rssi, 100, 0, flags, rx_errors, rx_fec)
 
 
