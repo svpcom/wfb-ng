@@ -179,7 +179,6 @@ def init(stdscr, profile):
             hoff_float += h_exp
             err = round(hoff_float) - (hoff_int + int(h_exp))
             wh = int(h_exp) + err
-            log.msg('%f %f %d %d' % (h_exp, hoff_float, err, wh))
             if wh < h_fixed:
                 raise Exception('Terminal height is too small')
         else:
