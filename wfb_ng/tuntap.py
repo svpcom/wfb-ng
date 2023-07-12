@@ -132,6 +132,7 @@ class TUNTAPProtocol(Protocol, ProxyProtocol):
     keepalive_interval = 0.9
 
     def __init__(self, mtu, agg_timeout=None):
+        self.all_peers = []
         ProxyProtocol.__init__(self,
                                agg_max_size=mtu,
                                agg_timeout=agg_timeout)
@@ -139,6 +140,10 @@ class TUNTAPProtocol(Protocol, ProxyProtocol):
         # Sent keepalive packets
         self.lc = task.LoopingCall(self.send_keepalive)
         self.lc.start(self.keepalive_interval, now=False)
+
+    def _send_to_all_peers(self, data):
+        for peer in self.all_peers:
+            self.peer.write(data)
 
     def _cleanup(self):
         self.lc.stop()
@@ -168,7 +173,10 @@ class TUNTAPProtocol(Protocol, ProxyProtocol):
             i += pkt_size
 
     def send_keepalive(self):
-        self._send_to_peer(b'')
+        # Send keepalive message via all antennas.
+        # This allow to use multiple directed antennas on the both ends
+        # and/or use different frequency channels on different cards.
+        self._send_to_all_peers(b'')
 
     def dataReceived(self, data):
         self.lc.reset()  # reset keepalive timer

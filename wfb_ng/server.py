@@ -366,7 +366,15 @@ def init_wlans(max_bw, wlans):
             yield call_and_check_rc('ip', 'link', 'set', wlan, 'down')
             yield call_and_check_rc('iw', 'dev', wlan, 'set', 'monitor', 'otherbss')
             yield call_and_check_rc('ip', 'link', 'set', wlan, 'up')
-            yield call_and_check_rc('iw', 'dev', wlan, 'set', 'channel', str(settings.common.wifi_channel), ht_mode)
+
+            # You can set own frequency channel for each card
+            if isinstance(settings.common.wifi_channel, dict):
+                channel = settings.common.wifi_channel[wlan]
+            else:
+                channel = settings.common.wifi_channel
+
+            yield call_and_check_rc('iw', 'dev', wlan, 'set', 'channel', str(channel), ht_mode)
+
             if settings.common.wifi_txpower:
                 yield call_and_check_rc('iw', 'dev', wlan, 'set', 'txpower', 'fixed', str(settings.common.wifi_txpower))
     except ExecError as v:
@@ -677,6 +685,10 @@ def init_tunnel(service_name, cfg, wlans, link_id, ant_sel_f):
     def ant_sel_cb(ant_idx):
         p_in.peer = p_tx_l[ant_idx]
 
+    # Broadcast keepalive message to all cards, not to active one
+    # This allow to use direct antennas on both ends and/or differenct frequencies.
+
+    p_in.all_peers = p_tx_l
     ant_sel_f.add_ant_sel_cb(ant_sel_cb)
 
     dl.append(RXProtocol(ant_sel_f, cmd_rx, '%s rx' % (service_name,)).start())
