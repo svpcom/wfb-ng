@@ -444,6 +444,7 @@ def init_udp_direct_tx(service_name, cfg, wlans, link_id, ant_sel_f):
 
     cmd = ('%(cmd)s -f %(frame_type)s -p %(stream)d -u %(port)d -K %(key)s '\
            '-B %(bw)d -G %(gi)s -S %(stbc)d -L %(ldpc)d -M %(mcs)d '\
+           '%(mirror)s'\
            '-k %(fec_k)d -n %(fec_n)d -T %(fec_timeout)d -i %(link_id)d -R %(rcv_buf_size)d' % \
            dict(cmd=os.path.join(settings.path.bin_dir, 'wfb_tx'),
                 frame_type=cfg.frame_type,
@@ -455,6 +456,7 @@ def init_udp_direct_tx(service_name, cfg, wlans, link_id, ant_sel_f):
                 stbc=cfg.stbc,
                 ldpc=cfg.ldpc,
                 mcs=cfg.mcs_index,
+                mirror='-m ' if cfg.mirror else '',
                 fec_k=cfg.fec_k,
                 fec_n=cfg.fec_n,
                 fec_timeout=cfg.fec_timeout,
@@ -560,6 +562,7 @@ def init_mavlink(service_name, cfg, wlans, link_id, ant_sel_f):
 
     cmd_tx = ('%(cmd)s -f %(frame_type)s -p %(stream)d -u %(port)d -K %(key)s -B %(bw)d '\
               '-G %(gi)s -S %(stbc)d -L %(ldpc)d -M %(mcs)d '\
+              '%(mirror)s'\
               '-k %(fec_k)d -n %(fec_n)d -T %(fec_timeout)d -i %(link_id)d -R %(rcv_buf_size)d' % \
               dict(cmd=os.path.join(settings.path.bin_dir, 'wfb_tx'),
                    frame_type=cfg.frame_type,
@@ -571,6 +574,7 @@ def init_mavlink(service_name, cfg, wlans, link_id, ant_sel_f):
                    stbc=cfg.stbc,
                    ldpc=cfg.ldpc,
                    mcs=cfg.mcs_index,
+                   mirror='-m ' if cfg.mirror else '',
                    fec_k=cfg.fec_k,
                    fec_n=cfg.fec_n,
                    fec_timeout=cfg.fec_timeout,
@@ -649,6 +653,7 @@ def init_tunnel(service_name, cfg, wlans, link_id, ant_sel_f):
 
     cmd_tx = ('%(cmd)s -f %(frame_type)s -p %(stream)d -u %(port)d -K %(key)s -B %(bw)d -G %(gi)s '\
               '-S %(stbc)d -L %(ldpc)d -M %(mcs)d '\
+              '%(mirror)s'\
               '-k %(fec_k)d -n %(fec_n)d -T %(fec_timeout)d -i %(link_id)d -R %(rcv_buf_size)d' % \
               dict(cmd=os.path.join(settings.path.bin_dir, 'wfb_tx'),
                    frame_type=cfg.frame_type,
@@ -660,6 +665,7 @@ def init_tunnel(service_name, cfg, wlans, link_id, ant_sel_f):
                    stbc=cfg.stbc,
                    ldpc=cfg.ldpc,
                    mcs=cfg.mcs_index,
+                   mirror='-m ' if cfg.mirror else '',
                    fec_k=cfg.fec_k,
                    fec_n=cfg.fec_n,
                    fec_timeout=cfg.fec_timeout,
@@ -687,8 +693,13 @@ def init_tunnel(service_name, cfg, wlans, link_id, ant_sel_f):
 
     # Broadcast keepalive message to all cards, not to active one
     # This allow to use direct antennas on both ends and/or differenct frequencies.
+    # But when mirroring enabled it will be done by wfb_tx itself
 
-    p_in.all_peers = p_tx_l
+    if cfg.mirror:
+        p_in.all_peers = [p_tx_l[0]]
+    else:
+        p_in.all_peers = p_tx_l
+
     ant_sel_f.add_ant_sel_cb(ant_sel_cb)
 
     dl.append(RXProtocol(ant_sel_f, cmd_rx, '%s rx' % (service_name,)).start())
@@ -743,6 +754,7 @@ def init_udp_proxy(service_name, cfg, wlans, link_id, ant_sel_f):
     if cfg.stream_tx is not None:
         cmd_tx = ('%(cmd)s -f %(frame_type)s -p %(stream)d -u %(port)d -K %(key)s -B %(bw)d '\
                   '-G %(gi)s -S %(stbc)d -L %(ldpc)d -M %(mcs)d '\
+                  '%(mirror)s'\
                   '-k %(fec_k)d -n %(fec_n)d -T %(fec_timeout)d -i %(link_id)d -R %(rcv_buf_size)d' % \
                   dict(cmd=os.path.join(settings.path.bin_dir, 'wfb_tx'),
                        frame_type=cfg.frame_type,
@@ -754,6 +766,7 @@ def init_udp_proxy(service_name, cfg, wlans, link_id, ant_sel_f):
                        stbc=cfg.stbc,
                        ldpc=cfg.ldpc,
                        mcs=cfg.mcs_index,
+                       mirror='-m ' if cfg.mirror else '',
                        fec_k=cfg.fec_k,
                        fec_n=cfg.fec_n,
                        fec_timeout=cfg.fec_timeout,

@@ -100,6 +100,7 @@ public:
 
     virtual void select_output(int idx)
     {
+        assert(idx >= 0);
         saddr.sin_port = htons((unsigned short)(base_port + idx));
     }
 
