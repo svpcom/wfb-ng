@@ -19,7 +19,6 @@
 #
 
 import sys
-import time
 import json
 import os
 import re
@@ -29,9 +28,8 @@ from itertools import groupby
 from twisted.python import log, failure
 from twisted.python.logfile import LogFile
 from twisted.internet import reactor, defer, main as ti_main
-from twisted.internet.protocol import ProcessProtocol, DatagramProtocol, Protocol, Factory
+from twisted.internet.protocol import ProcessProtocol, Protocol, Factory
 from twisted.protocols.basic import LineReceiver
-from twisted.internet.error import ReactorNotRunning
 from twisted.internet.serialport import SerialPort
 
 from . import _log_msg, ConsoleObserver, call_and_check_rc, ExecError
@@ -101,29 +99,31 @@ class StatsAndSelectorFactory(Factory):
 
     def select_tx_antenna(self, ant_rssi):
         wlan_rssi = {}
+
         for k, grp in groupby(sorted(((int(ant_id, 16) >> 8) & 0xff, rssi_avg) \
                                      for ant_id, (pkt_s, rssi_min, rssi_avg, rssi_max) in ant_rssi.items()),
                               lambda x: x[0]):
-            # Select max average rssi from all wlan's antennas
+            # Select max average rssi [dBm] from all wlan's antennas
             wlan_rssi[k] = max(rssi for _, rssi in grp)
 
-        tx_max = None
-        for k, v in wlan_rssi.items():
-            if tx_max is None or k != tx_max and v > wlan_rssi[tx_max]:
-                tx_max = k
-
-        if tx_max is None or wlan_rssi[tx_max] <= wlan_rssi.get(self.tx_sel, -200) + self.tx_sel_delta:
+        if not wlan_rssi:
             return
 
-        log.msg('Swith TX antenna from %d to %d' % (self.tx_sel, tx_max))
+        cur_ant_rssi = wlan_rssi.get(self.tx_sel, -1000)
+        max_rssi, max_rssi_ant = max((rssi, idx) for idx, rssi in wlan_rssi.items())
+
+        if max_rssi <= cur_ant_rssi + self.tx_sel_delta:
+            return
+
+        log.msg('Switch TX antenna from %d to %d' % (self.tx_sel, max_rssi_ant))
 
         for ant_sel_cb in self.ant_sel_cb_list:
             try:
-                ant_sel_cb(tx_max)
+                ant_sel_cb(max_rssi_ant)
             except Exception:
                 log.err()
 
-        self.tx_sel = tx_max
+        self.tx_sel = max_rssi_ant
 
     def update_stats(self, rx_id, packet_stats, ant_rssi):
         mav_rssi = []
