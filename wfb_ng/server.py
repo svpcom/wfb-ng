@@ -462,8 +462,10 @@ def init_udp_direct_tx(service_name, cfg, wlans, link_id, ant_sel_f):
                 fec_timeout=cfg.fec_timeout,
                 link_id=link_id,
                 rcv_buf_size=settings.common.tx_rcv_buf_size)
-           ).split() + wlans[0:1]   # We don't use TX diversity for direct udp
-                                    # due to only one transmitter on the vehichle
+           ).split() + wlans[0:(None if cfg.mirror else 1)]
+
+    # Direct udp doesn't support TX diversity - only first card will be used.
+    # But if mirror mode is enabled it will use all cards.
 
     df = TXProtocol(cmd, 'video tx').start()
     log.msg('%s: %s' % (service_name, ' '.join(cmd),))
