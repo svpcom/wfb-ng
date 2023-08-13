@@ -39,6 +39,7 @@ ssh pi@192.168.0.111
 - On the Pi used as ground station:
 ```
 sudo systemctl enable wifibroadcast@gs
+sudo systemctl enable rtsp
 sudo systemctl enable fpv-video
 sudo systemctl enable osd
 sudo reboot
