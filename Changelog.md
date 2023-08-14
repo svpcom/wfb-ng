@@ -24,6 +24,7 @@
     3. Multiple profiles can be active simultaneously (no need to run multiple instances of wfb-server when using the same wifi adapters for different links). For example: `systemctl enable wifbroadcast@gs1:gs2:gs3:gs4`
     4. Added support for raw udp data streams. They don't use any frame aggregation or mavlink injection.
     5. TX antenna selection is now `link_domain` wide - for example one-way `udp_proxy` TX will use active antenna selected by other RX streams.
+    6. Added mirror mode. Use it only if you use different frequency channels for multiple cards. In this mode each packet will be send via all cards (by default only active cards send packets). This allow to add redundancy for multi-frequency link
 
     Compatibility:
     This commit maintain both radio and config compatibility with previous version.
@@ -38,4 +39,4 @@
      Or you can use multiple directional antennas on both sides of the link, as point (2) solves the chicken and egg problem of allowing directional antennas
      (and/or different frequency channels) to agree on the direction (and/or frequency) of transmission
 
-     In the case of different frequency channels, the solution is not quite ideal, because only RSSI is used to select the active channel, and the number of errors is ignored.
+     In the case of different frequency channels, the solution is not quite ideal, because only RSSI is used to select the active channel, and the number of errors is ignored. Use mirror mode in this case.

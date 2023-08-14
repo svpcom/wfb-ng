@@ -2,7 +2,7 @@ name: WFB-ng package builder
 
 on:
   push:
-    branches: [ master ]
+    branches: [ master, release-23.08 ]
 
 jobs:
   build_and_test:
