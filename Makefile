@@ -1,7 +1,7 @@
 ARCH ?= $(shell uname -i)
 PYTHON ?= /usr/bin/python3
 COMMIT ?= $(shell git rev-parse HEAD)
-VERSION ?= $(shell $(PYTHON) ./version.py $(shell git show -s --format="%ct" $(shell git rev-parse HEAD)) $(shell git rev-parse --abbrev-ref HEAD))
+VERSION ?= $(shell $(PYTHON) ./version.py $(shell git show -s --format="%ct" $(shell git rev-parse HEAD)) "release-23.08")
 SOURCE_DATE_EPOCH ?= $(shell git show -s --format="%ct" $(shell git rev-parse HEAD))
 ENV ?= $(PWD)/env
 DOCKER_SRC_IMAGE ?= "p2ptech/cross-build:2023-02-21-raspios-bullseye-armhf-lite"
