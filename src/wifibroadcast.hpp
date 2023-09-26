@@ -36,9 +36,6 @@
 #include <endian.h>
 #include <string>
 
-#define MAX_PACKET_SIZE 1510
-#define MAX_RX_INTERFACES 8
-
 extern std::string string_format(const char *format, ...);
 
 /* this is the template radiotap header we send packets out with */
@@ -74,6 +71,16 @@ static uint8_t radiotap_header[]  __attribute__((unused)) = {
     0x08, 0x00,  // RADIOTAP_F_TX_NOACK
     MCS_KNOWN , 0x00, 0x00 // bitmap, flags, mcs_index
 };
+
+#define WIFI_MTU  1500  // WiFi interface mtu. You can increase it if your card allow larger packets,
+                        // but this can lead to interoperability issues and/or kernel crashes.
+                        // If you use non-default MTU then you need to configure proper MTU on WiFi cards manually.
+                        // Also you must update radio_mtu in master.cfg - set it to MAX_PAYLOAD_SIZE
+                        // or see in output of wfb_tx (Radio MTU)
+
+// Radiotap header will be discarded after injection so we can ingnore it in MTU calculations
+#define MAX_PACKET_SIZE  (WIFI_MTU + sizeof(radiotap_header))
+#define MAX_RX_INTERFACES  8
 
 // offset of MCS_FLAGS and MCS index
 #define MCS_FLAGS_OFF 11

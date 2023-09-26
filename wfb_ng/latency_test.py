@@ -130,10 +130,13 @@ def run_test(port_in, port_out, size, count, rate):
     log.msg('Sent %d, Lost %d, Dup: %d, Packet rate: %d/%d pkt/s, Bitrate: %.2f MBit/s, TX slowdown: %.2f%% Lmin %.2f ms, Lmax %.2f ms, Lavg %.2f ms' % \
             (sent, lost, dup, p1.rate, rate, bitrate, 100.0 * p1.tx_slowdown, 1000.0 * p2.lmin, 1000.0 * p2.lmax, 1000.0 * p2.lavg / p2.count if p2.count else -1))
 
+    if p2.count == 0:
+        raise RuntimeError('ALL PACKETS LOST. Check MTU settings')
+
     yield ep1.stopListening()
     yield ep2.stopListening()
 
-    defer.returnValue((lost, p2.lavg / p2.count if p2.count else -1, bitrate))
+    defer.returnValue((lost, p2.lavg / p2.count if p2.count else -1, bitrate, p1.tx_slowdown))
 
 
 @defer.inlineCallbacks
@@ -145,8 +148,8 @@ def eval_max_rate(port_in, port_out, size, max_rate):
             break
         rate = min_rate + dr
         count = 3 * rate # run each test for 3s
-        lost, lavg, bitrate = yield run_test(port_in, port_out, size, count, rate)
-        if lost >= max(count * 0.01, 10) or lavg > 0.005:
+        lost, lavg, bitrate, slowdown = yield run_test(port_in, port_out, size, count, rate)
+        if lost >= max(count * 0.01, 10) or lavg > 0.005 or slowdown > 0:
             # rate too big
             max_rate = rate
         else:

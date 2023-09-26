@@ -748,10 +748,15 @@ void Aggregator::apply_fec(int ring_idx)
 
 void radio_loop(int argc, char* const *argv, int optind, uint32_t channel_id, shared_ptr<BaseAggregator> agg, int log_interval)
 {
-    int nfds = min(argc - optind, MAX_RX_INTERFACES);
+    int nfds = argc - optind;
     uint64_t log_send_ts = 0;
     struct pollfd fds[MAX_RX_INTERFACES];
     Receiver* rx[MAX_RX_INTERFACES];
+
+    if (nfds > MAX_RX_INTERFACES)
+    {
+        throw runtime_error(string_format("Too many wifi adapters, increase MAX_RX_INTERFACES"));
+    }
 
     memset(fds, '\0', sizeof(fds));
 
