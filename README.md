@@ -24,7 +24,7 @@ Main features:
 ## Getting Started
 
 For detailed instructions on how to get started read through 
-[PX4-Guide](https://docs.px4.io/main/en/tutorials/video_streaming_wifi_broadcast.html)
+[PX4-Guide](https://docs.px4.io/main/en/companion_computer/video_streaming_wfb_ng_wifi.html)
 and follow the [Setup HowTo](https://github.com/svpcom/wfb-ng/wiki/Setup-HOWTO)
 
 ### Quick start using Raspberry Pi
