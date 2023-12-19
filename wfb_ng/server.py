@@ -499,7 +499,7 @@ def init_mavlink(service_name, cfg, wlans, link_id, ant_sel_f):
     listen = None
     connect = None
     serial = None
-    mirror = None
+    osd_peer = None
 
     if connect_re.match(cfg.peer):
         m = connect_re.match(cfg.peer)
@@ -519,10 +519,10 @@ def init_mavlink(service_name, cfg, wlans, link_id, ant_sel_f):
     else:
         raise Exception('Unsupported peer address: %s' % (cfg.peer,))
 
-    if cfg.mirror is not None and connect_re.match(cfg.mirror):
-        m = connect_re.match(cfg.mirror)
-        mirror = m.group('addr'), int(m.group('port'))
-        log.msg('Mirror %s stream to %s:%d' % (service_name, mirror[0], mirror[1]))
+    if cfg.osd is not None and connect_re.match(cfg.osd):
+        m = connect_re.match(cfg.osd)
+        osd_peer = m.group('addr'), int(m.group('port'))
+        log.msg('Mirror %s stream to OSD at %s:%d' % (service_name, osd_peer[0], osd_peer[1]))
 
     rx_hooks = []
     tx_hooks = []
@@ -544,7 +544,7 @@ def init_mavlink(service_name, cfg, wlans, link_id, ant_sel_f):
         p_in = MavlinkUDPProxyProtocol(connect, agg_max_size=settings.common.radio_mtu,
                                        agg_timeout=settings.common.mavlink_agg_timeout,
                                        inject_rssi=cfg.inject_rssi,
-                                       mirror=mirror,
+                                       mirror=osd_peer,
                                        mavlink_sys_id=cfg.mavlink_sys_id,
                                        mavlink_comp_id=cfg.mavlink_comp_id,
                                        rx_hooks=rx_hooks, tx_hooks=tx_hooks)
