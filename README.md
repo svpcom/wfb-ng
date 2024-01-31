@@ -128,11 +128,11 @@ If you like WFB-ng you can make a donation to `bitcoin:bc1qfvlsvr0ea7tzzydngq5cf
 
 **Q: Is only Raspberry PI supported?**
 
-**A:** WFB-NG is not tied to any GPU - it operates with UDP packets. But to get RTP stream you need a video encoder (with encodes raw data from camera to x264 stream). In my case RPI is only used for video encoding (becase RPI Zero is too slow to do anything else) and all other tasks (including WFB-NG) are done by other board (NanoPI NEO2).
+**A:** WFB-NG is not tied to any GPU - it operates with UDP packets. But to get RTP stream you need a video encoder (which encodes raw data from camera to x264 stream). In my case RPI is only used for video encoding (becase RPI Zero is too slow to do anything else) and all other tasks (including WFB-NG) are done by other board (NanoPI NEO2).
 
 **Q: What is a difference from original wifibroadcast?**
 
-**A:** Original version of wifibroadcast uses a byte-stream as input and splits it to packets of fixed size (1024 by default). If radio packet was lost and this is not corrected by FEC you'll got a hole at random (unexpected) place of stream. This is especially bad if data protocol is not resistant to (was not desired for) such random erasures. So i've rewritten it to use UDP as data source and pack one source UDP packet into one radio packet. Radio packets now have variable size depending on payload size. This reduces video latency a lot.
+**A:** Original version of wifibroadcast uses a byte-stream as input and splits it to packets of fixed size (1024 by default). If radio packets were lost and this is not corrected by FEC you'll got a hole at random (unexpected) place of stream. This is especially bad if data protocol is not resistant to (was not desired for) such random erasures. So i've rewritten it to use UDP as data source and pack one source UDP packet into one radio packet. Radio packets now have variable size depending on payload size. This reduces video latency a lot.
 
 ## Theory
 WFB-NG puts the wifi cards into monitor mode. This mode allows to send and receive arbitrary packets without association and waiting for ACK packets.
