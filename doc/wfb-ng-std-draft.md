@@ -40,7 +40,7 @@ Each link has:
 The last four bytes of the sender's MAC address are used to set the connection membership.
 Thus the MAC address has the format: `0x57, 0x42, 0xaa, 0xbb, 0xcc, 0xdd`, where the first two bytes are the protocol header (`'W'`,`'B'`),
 then three bytes - the link id and the last byte - the number of the stream inside the link.
-First address byte `'W'`(0x57) has two lower bits set which means that address is multicast and locally administred.
+First address byte `'W'`(0x57) has two lower bits set which means that address is multicast and locally administered.
 
 1. The initial data transfer quantum is a UDP packet. The contents of the packet is opaque and can be any of:
   - RTP packet with video or audio.
