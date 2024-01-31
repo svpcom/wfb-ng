@@ -5,7 +5,7 @@
  - Added mavlink tcp proxy. Now it is possible to use backup link via LTE modem or connect onboard computer without external mavlink-router.
    To connect as backup link in QGC use tcp connection to port 5760 and check "high latency link" checkbox.
 
- - Self-injected frames are ingnored now in case when TX and RX use the same radio port.
+ - Self-injected frames are ignored now in case when TX and RX use the same radio port.
  - Added cross-build support via qemu + docker.
  - Improved udp socket buffer overflow handling:
 
@@ -20,7 +20,7 @@
  - Large refactoring of WFB-ng control-plane:
 
     1. Added support for multiple profiles and profile inheritance (no need to have multiple copies of wifibroadcast.cfg).
-    2. No hadcoded streams (video/mavlink/tunnel) anymore. You can define own profiles and any number of data streams can be added/removed to profiles without any code change.
+    2. No hardcoded streams (video/mavlink/tunnel) anymore. You can define own profiles and any number of data streams can be added/removed to profiles without any code change.
     3. Multiple profiles can be active simultaneously (no need to run multiple instances of wfb-server when using the same wifi adapters for different links). For example: `systemctl enable wifbroadcast@gs1:gs2:gs3:gs4`
     4. Added support for raw udp data streams. They don't use any frame aggregation or mavlink injection.
     5. TX antenna selection is now `link_domain` wide - for example one-way `udp_proxy` TX will use active antenna selected by other RX streams.
@@ -28,7 +28,7 @@
 
     Compatibility:
     This commit maintain both radio and config compatibility with previous version.
-    So you can use previous verion of wfb-ng on the other link side and import most of your customizations from /etc/wifibroadcast.cfg
+    So you can use previous version of wfb-ng on the other link side and import most of your customizations from /etc/wifibroadcast.cfg
     The only config incompatible change is that `common.link_id` was moved to profile section and renamed to `link_domain`.
 
  - Added support for multiple directed antennas on both ends and different frequency channels on different cards:
