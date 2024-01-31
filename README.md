@@ -132,7 +132,7 @@ If you like WFB-ng you can make a donation to `bitcoin:bc1qfvlsvr0ea7tzzydngq5cf
 
 **Q: What is a difference from original wifibroadcast?**
 
-**A:** Original version of wifibroadcast use a byte-stream as input and splits it to packets of fixed size (1024 by default). If radio packet was lost and this is not corrected by FEC you'll got a hole at random (unexpected) place of stream. This is especially bad if data protocol is not resistent to (was not desired for) such random erasures. So i've rewrite it to use UDP as data source and pack one source UDP packet into one radio packet. Radio packets now have variable size depends on payload size. This is reduces a video latency a lot.
+**A:** Original version of wifibroadcast use a byte-stream as input and splits it to packets of fixed size (1024 by default). If radio packet was lost and this is not corrected by FEC you'll got a hole at random (unexpected) place of stream. This is especially bad if data protocol is not resistent to (was not desired for) such random erasures. So i've rewritten it to use UDP as data source and pack one source UDP packet into one radio packet. Radio packets now have variable size depends on payload size. This reduces video latency a lot.
 
 ## Theory
 WFB-NG puts the wifi cards into monitor mode. This mode allows to send and receive arbitrary packets without association and waiting for ACK packets.
@@ -192,7 +192,7 @@ You need to generate encryption keys for gs(ground station) and drone:
 ```
 wfb_keygen
 ```
-Leave them inplace for development build or copy to `/etc` for binary install.
+Leave them in place for development build or copy to `/etc` for binary install.
 Put `drone.key` to drone and `gs.key` to gs.
 
 Supported WiFi hardware:
