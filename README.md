@@ -8,7 +8,7 @@ Main features:
  - 1:1 map of RTP to IEEE80211 packets for minimum latency (doesn't serialize to byte steam)
  - Smart FEC support (immediately yeild packet to video decoder if FEC pipeline without gaps)
  - [Bidirectional mavlink telemetry](https://github.com/svpcom/wfb-ng/wiki/Setup-HOWTO). You can use it for mavlink up/down and video down link.
- - IP-over-WFB tunnel support. You can transmit ordinary ip packets over WFB link. Note, don't use ip tunnel for high-bandwidth transfers like video or mavlink. It use less efficient FEC coding and doesn't aggregate small packets.
+ - IP-over-WFB tunnel support. You can transmit ordinary ip packets over WFB link. Note, don't use ip tunnel for high-bandwidth transfers like video or mavlink. It uses less efficient FEC coding and doesn't aggregate small packets.
  - Automatic TX diversity (select TX card based on RX RSSI)
  - Stream encryption and authentication ([libsodium](https://download.libsodium.org/doc/))
  - Distributed operation. It can gather data from cards on different hosts. So you don't limited to bandwidth of single USB bus.
@@ -122,17 +122,17 @@ If you like WFB-ng you can make a donation to `bitcoin:bc1qfvlsvr0ea7tzzydngq5cf
 
 **A:** Any UDP with packet size <= 1445. For example x264 inside RTP or Mavlink.
 
-**Q: What are transmission guarancies?**
+**Q: What are transmission guarantees?**
 
-**A:** Wifibrodcast use FEC (forward error correction) which can recover 4 lost packets from 12 packets block with default settings. You can tune it (both TX and RX simultaniuosly!) to fit your needs.
+**A:** Wifibrodcast uses FEC (forward error correction) which can recover 4 lost packets from 12 packets block with default settings. You can tune it (both TX and RX simultaneously!) to fit your needs.
 
 **Q: Is only Raspberry PI supported?**
 
-**A:** WFB-NG is not tied to any GPU - it operates with UDP packets. But to get RTP stream you need a video encoder (with encode raw data from camera to x264 stream). In my case RPI is only used for video encoding (becase RPI Zero is too slow to do anything else) and all other tasks (including WFB-NG) are done by other board (NanoPI NEO2).
+**A:** WFB-NG is not tied to any GPU - it operates with UDP packets. But to get RTP stream you need a video encoder (which encodes raw data from camera to x264 stream). In my case RPI is only used for video encoding (becase RPI Zero is too slow to do anything else) and all other tasks (including WFB-NG) are done by other board (NanoPI NEO2).
 
 **Q: What is a difference from original wifibroadcast?**
 
-**A:** Original version of wifibroadcast use a byte-stream as input and splits it to packets of fixed size (1024 by default). If radio packet was lost and this is not corrected by FEC you'll got a hole at random (unexpected) place of stream. This is especially bad if data protocol is not resistent to (was not desired for) such random erasures. So i've rewritten it to use UDP as data source and pack one source UDP packet into one radio packet. Radio packets now have variable size depends on payload size. This reduces video latency a lot.
+**A:** Original version of wifibroadcast uses a byte-stream as input and splits it to packets of fixed size (1024 by default). If radio packets were lost and this is not corrected by FEC you'll get a hole at random (unexpected) place of stream. This is especially bad if data protocol is not resistant to (was not desired for) such random erasures. So i've rewritten it to use UDP as data source and pack one source UDP packet into one radio packet. Radio packets now have variable size depending on payload size. This reduces video latency a lot.
 
 ## Theory
 WFB-NG puts the wifi cards into monitor mode. This mode allows to send and receive arbitrary packets without association and waiting for ACK packets.
@@ -145,7 +145,7 @@ Sample usage chain:
 Camera -> gstreamer --[RTP stream (UDP)]--> wfb_tx --//--[ RADIO ]--//--> wfb_rx --[RTP stream (UDP)]--> gstreamer --> Display
 ```
 
-For encode logitech c920 camera:
+For encoding logitech c920 camera:
 ```
 gst-launch-1.0 uvch264src device=/dev/video0 initial-bitrate=6000000 average-bitrate=6000000 iframe-period=1000 name=src auto-start=true \
                src.vidsrc ! queue ! video/x-h264,width=1920,height=1080,framerate=30/1 ! h264parse ! rtph264pay ! udpsink host=localhost port=5600
