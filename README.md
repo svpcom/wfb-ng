@@ -2,7 +2,6 @@
 
 This is the next generation of long-range **packet** radio link based on **raw WiFi radio**
 
-
 Main features:
 --------------
  - 1:1 map of RTP to IEEE80211 packets for minimum latency (doesn't serialize to byte stream)
@@ -20,6 +19,12 @@ Main features:
 > :warning: **Warranty/Disclaimer** <br />
 > This is free software and comes with no warranty, as stated in parts 15 and 16 of the GPLv3 license. The creators and contributors of the software are not responsible for how it is used.
 > See [License and Support](https://github.com/svpcom/wfb-ng/wiki/License-and-Support) for details.
+
+
+## Support project
+If you like WFB-ng you can support author via:
+- https://boosty.to/svpcom/donate
+- `bitcoin:bc1qfvlsvr0ea7tzzydngq5cflf4yypemlacgt6t05`
 
 ## Getting Started
 
@@ -110,9 +115,6 @@ wifi_channel = 161     # 161 -- radio channel @5825 MHz, range: 5815–5835 MHz,
                        # see https://en.wikipedia.org/wiki/List_of_WLAN_channels for reference
 ```
 Ensure the WiFi channel selected is the same on the ground and on the drone.
-
-## Support project
-If you like WFB-ng you can make a donation to `bitcoin:bc1qfvlsvr0ea7tzzydngq5cflf4yypemlacgt6t05`
 
 ---
 
