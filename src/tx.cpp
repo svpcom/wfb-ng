@@ -240,7 +240,6 @@ void Transmitter::send_session_key(void)
 
 void Transmitter::send_packet(const uint8_t *buf, size_t size, uint8_t flags)
 {
-    wpacket_hdr_t packet_hdr;
     assert(size <= MAX_PAYLOAD_SIZE);
 
     // FEC-only packets are only for closing already opened blocks
@@ -249,14 +248,16 @@ void Transmitter::send_packet(const uint8_t *buf, size_t size, uint8_t flags)
         return;
     }
 
-    packet_hdr.packet_size = htobe16(size);
-    packet_hdr.flags = flags;
-    memset(block[fragment_idx], '\0', MAX_FEC_PAYLOAD);
-    memcpy(block[fragment_idx], &packet_hdr, sizeof(packet_hdr));
-    memcpy(block[fragment_idx] + sizeof(packet_hdr), buf, size);
+    wpacket_hdr_t *packet_hdr = (wpacket_hdr_t*)block[fragment_idx];
 
-    send_block_fragment(sizeof(packet_hdr) + size);
-    max_packet_size = max(max_packet_size, sizeof(packet_hdr) + size);
+    packet_hdr->flags = flags;
+    packet_hdr->packet_size = htobe16(size);
+
+    memcpy(block[fragment_idx] + sizeof(wpacket_hdr_t), buf, size);
+    memset(block[fragment_idx] + sizeof(wpacket_hdr_t) + size, '\0', MAX_FEC_PAYLOAD - (sizeof(wpacket_hdr_t) + size));
+
+    send_block_fragment(sizeof(wpacket_hdr_t) + size);
+    max_packet_size = max(max_packet_size, sizeof(wpacket_hdr_t) + size);
     fragment_idx += 1;
 
     if (fragment_idx < fec_k)  return;
