@@ -38,7 +38,8 @@ public:
     void send_session_key(void);
     virtual void select_output(int idx) = 0;
 protected:
-    virtual void inject_packet(const uint8_t *buf, size_t size) = 0;
+    virtual uint8_t* inject_packet_buffer() = 0;
+    virtual void inject_packet(size_t size) = 0;
 
 private:
     void send_block_fragment(size_t packet_size);
@@ -69,11 +70,13 @@ public:
     virtual ~PcapTransmitter();
     virtual void select_output(int idx) { current_output = idx; }
 private:
-    virtual void inject_packet(const uint8_t *buf, size_t size);
+    virtual uint8_t* inject_packet_buffer();
+    virtual void inject_packet(size_t size);
     const uint32_t channel_id;
     int current_output;
     uint16_t ieee80211_seq;
     std::vector<pcap_t*> ppcap;
+    uint8_t txbuf[MAX_PACKET_SIZE];
 };
 
 
@@ -105,7 +108,12 @@ public:
     }
 
 private:
-    virtual void inject_packet(const uint8_t *buf, size_t size)
+    virtual uint8_t* inject_packet_buffer()
+    {
+        return txbuf;
+    }
+
+    virtual void inject_packet(size_t size)
     {
         wrxfwd_t fwd_hdr = { .wlan_idx = (uint8_t)(rand() % 2) };
 
@@ -117,7 +125,7 @@ private:
 
         struct iovec iov[2] = {{ .iov_base = (void*)&fwd_hdr,
                                  .iov_len = sizeof(fwd_hdr)},
-                               { .iov_base = (void*)buf,
+                               { .iov_base = (void*)txbuf,
                                  .iov_len = size }};
 
         struct msghdr msghdr = { .msg_name = &saddr,
@@ -134,4 +142,5 @@ private:
     int sockfd;
     int base_port;
     struct sockaddr_in saddr;
+    uint8_t txbuf[MAX_FORWARDER_PACKET_SIZE];
 };

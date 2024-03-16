@@ -149,10 +149,13 @@ PcapTransmitter::PcapTransmitter(int k, int n, const string &keypair, uint64_t e
     }
 }
 
-
-void PcapTransmitter::inject_packet(const uint8_t *buf, size_t size)
+uint8_t* PcapTransmitter::inject_packet_buffer()
 {
-    uint8_t txbuf[MAX_PACKET_SIZE];
+    return txbuf + sizeof(radiotap_header) + sizeof(ieee80211_header);
+}
+
+void PcapTransmitter::inject_packet(size_t size)
+{
     uint8_t *p = txbuf;
 
     assert(size <= MAX_FORWARDER_PACKET_SIZE);
@@ -176,7 +179,6 @@ void PcapTransmitter::inject_packet(const uint8_t *buf, size_t size)
     p += sizeof(ieee80211_header);
 
     // FEC data
-    memcpy(p, buf, size);
     p += size;
 
     if (current_output >= 0)
@@ -211,7 +213,7 @@ PcapTransmitter::~PcapTransmitter()
 
 void Transmitter::send_block_fragment(size_t packet_size)
 {
-    uint8_t ciphertext[MAX_FORWARDER_PACKET_SIZE];
+    uint8_t *ciphertext = inject_packet_buffer();
     wblock_hdr_t *block_hdr = (wblock_hdr_t*)ciphertext;
     long long unsigned int ciphertext_len;
 
@@ -229,13 +231,13 @@ void Transmitter::send_block_fragment(size_t packet_size)
         throw runtime_error("Unable to encrypt packet!");
     }
 
-    inject_packet(ciphertext, sizeof(wblock_hdr_t) + ciphertext_len);
+    inject_packet(sizeof(wblock_hdr_t) + ciphertext_len);
 }
 
 void Transmitter::send_session_key(void)
 {
-    //fprintf(stderr, "Announce session key\n");
-    inject_packet((uint8_t*)session_key_packet, sizeof(session_key_packet));
+    memcpy(inject_packet_buffer(), session_key_packet, sizeof(session_key_packet));
+    inject_packet(sizeof(session_key_packet));
 }
 
 void Transmitter::send_packet(const uint8_t *buf, size_t size, uint8_t flags)
