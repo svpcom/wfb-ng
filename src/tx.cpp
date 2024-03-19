@@ -191,7 +191,7 @@ void RawSocketTransmitter::inject_packet(const uint8_t *buf, size_t size)
             { .iov_base = (void*)ieee_hdr,
               .iov_len = sizeof(ieee_hdr)
             },
-            // FEC encoded data
+            // packet payload
             { .iov_base = (void*)buf,
               .iov_len = size
             }
