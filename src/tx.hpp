@@ -61,19 +61,18 @@ private:
     uint8_t session_key_packet[sizeof(wsession_hdr_t) + sizeof(wsession_data_t) + crypto_box_MACBYTES];
 };
 
-
-class PcapTransmitter : public Transmitter
+class RawSocketTransmitter : public Transmitter
 {
 public:
-    PcapTransmitter(int k, int m, const std::string &keypair, uint64_t epoch, uint32_t channel_id, const std::vector<std::string> &wlans);
-    virtual ~PcapTransmitter();
+    RawSocketTransmitter(int k, int m, const std::string &keypair, uint64_t epoch, uint32_t channel_id, const std::vector<std::string> &wlans);
+    virtual ~RawSocketTransmitter();
     virtual void select_output(int idx) { current_output = idx; }
 private:
     virtual void inject_packet(const uint8_t *buf, size_t size);
     const uint32_t channel_id;
     int current_output;
     uint16_t ieee80211_seq;
-    std::vector<pcap_t*> ppcap;
+    std::vector<int> sockfds;
 };
 
 
@@ -107,6 +106,7 @@ public:
 private:
     virtual void inject_packet(const uint8_t *buf, size_t size)
     {
+        assert(size <= MAX_FORWARDER_PACKET_SIZE);
         wrxfwd_t fwd_hdr = { .wlan_idx = (uint8_t)(rand() % 2) };
 
         memset(fwd_hdr.antenna, 0xff, sizeof(fwd_hdr.antenna));

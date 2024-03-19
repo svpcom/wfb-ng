@@ -25,10 +25,12 @@
 #include <poll.h>
 #include <time.h>
 #include <sys/resource.h>
-#include <pcap/pcap.h>
 #include <assert.h>
 #include <sys/ioctl.h>
 #include <sys/socket.h>
+#include <net/if.h>
+#include <linux/if_packet.h>
+#include <linux/if_ether.h>
 #include <linux/random.h>
 #include <inttypes.h>
 
@@ -122,89 +124,115 @@ void Transmitter::make_session_key(void)
     }
 }
 
-
-PcapTransmitter::PcapTransmitter(int k, int n, const string &keypair, uint64_t epoch, uint32_t channel_id, const vector<string> &wlans) : \
+RawSocketTransmitter::RawSocketTransmitter(int k, int n, const string &keypair, uint64_t epoch, uint32_t channel_id, const vector<string> &wlans) : \
     Transmitter(k, n, keypair, epoch, channel_id),
     channel_id(channel_id),
     current_output(0),
     ieee80211_seq(0)
 {
-    char errbuf[PCAP_ERRBUF_SIZE];
     for(auto it=wlans.begin(); it!=wlans.end(); it++)
     {
-        pcap_t *p = pcap_create(it->c_str(), errbuf);
-        if (p == NULL){
-            throw runtime_error(string_format("Unable to open interface %s in pcap: %s", it->c_str(), errbuf));
+        int fd = socket(PF_PACKET, SOCK_RAW, htons(ETH_P_ALL));
+        if (fd < 0)
+        {
+            throw runtime_error(string_format("Unable to open PF_PACKET socket: %s", strerror(errno)));
         }
-        if (pcap_set_snaplen(p, 4096) !=0) throw runtime_error("set_snaplen failed");
-        if (pcap_set_promisc(p, 1) != 0) throw runtime_error("set_promisc failed");
-        //if (pcap_set_rfmon(p, 1) !=0) throw runtime_error("set_rfmon failed");
-        if (pcap_set_timeout(p, -1) !=0) throw runtime_error("set_timeout failed");
-        //if (pcap_set_buffer_size(p, 2048) !=0) throw runtime_error("set_buffer_size failed");
-        if (pcap_set_immediate_mode(p, 1) != 0) throw runtime_error(string_format("pcap_set_immediate_mode failed: %s", pcap_geterr(p)));
-        if (pcap_activate(p) !=0) throw runtime_error(string_format("pcap_activate failed: %s", pcap_geterr(p)));
-        //if (pcap_setnonblock(p, 1, errbuf) != 0) throw runtime_error(string_format("set_nonblock failed: %s", errbuf));
 
-        ppcap.push_back(p);
+        struct ifreq ifr;
+        memset(&ifr, '\0', sizeof(ifr));
+        strncpy(ifr.ifr_name, it->c_str(), sizeof(ifr.ifr_name) - 1);
+
+        if (ioctl(fd, SIOCGIFINDEX, &ifr) < 0)
+        {
+            close(fd);
+            throw runtime_error(string_format("Unable to get interface index for %s", it->c_str()));
+        }
+
+        struct sockaddr_ll sll;
+        memset(&sll, '\0', sizeof(sll));
+        sll.sll_family = AF_PACKET;
+        sll.sll_ifindex = ifr.ifr_ifindex;
+        sll.sll_protocol = htons(ETH_P_ALL);
+
+        if (bind(fd, (struct sockaddr *) &sll, sizeof(sll)) < 0)
+        {
+            close(fd);
+            throw runtime_error(string_format("Unable to bind to %s", it->c_str()));
+        }
+
+        sockfds.push_back(fd);
     }
 }
 
-
-void PcapTransmitter::inject_packet(const uint8_t *buf, size_t size)
+void RawSocketTransmitter::inject_packet(const uint8_t *buf, size_t size)
 {
-    uint8_t txbuf[MAX_PACKET_SIZE];
-    uint8_t *p = txbuf;
-
     assert(size <= MAX_FORWARDER_PACKET_SIZE);
 
-    // radiotap header
-    memcpy(p, radiotap_header, sizeof(radiotap_header));
-    p += sizeof(radiotap_header);
-
-    // ieee80211 header
-    memcpy(p, ieee80211_header, sizeof(ieee80211_header));
+    uint8_t ieee_hdr[sizeof(ieee80211_header)];
+    memcpy(ieee_hdr, ieee80211_header, sizeof(ieee80211_header));
 
     // channel_id
     uint32_t channel_id_be = htobe32(channel_id);
-    memcpy(p + SRC_MAC_THIRD_BYTE, &channel_id_be, sizeof(uint32_t));
-    memcpy(p + DST_MAC_THIRD_BYTE, &channel_id_be, sizeof(uint32_t));
+    memcpy(ieee_hdr + SRC_MAC_THIRD_BYTE, &channel_id_be, sizeof(uint32_t));
+    memcpy(ieee_hdr + DST_MAC_THIRD_BYTE, &channel_id_be, sizeof(uint32_t));
 
     // sequence number
-    p[FRAME_SEQ_LB] = ieee80211_seq & 0xff;
-    p[FRAME_SEQ_HB] = (ieee80211_seq >> 8) & 0xff;
+    ieee_hdr[FRAME_SEQ_LB] = ieee80211_seq & 0xff;
+    ieee_hdr[FRAME_SEQ_HB] = (ieee80211_seq >> 8) & 0xff;
     ieee80211_seq += 16;
-    p += sizeof(ieee80211_header);
 
-    // FEC data
-    memcpy(p, buf, size);
-    p += size;
+    struct iovec iov[3] = \
+        {
+            // radiotap header
+            { .iov_base = (void*)radiotap_header,
+              .iov_len = sizeof(radiotap_header)
+            },
+            // ieee80211 header
+            { .iov_base = (void*)ieee_hdr,
+              .iov_len = sizeof(ieee_hdr)
+            },
+            // FEC encoded data
+            { .iov_base = (void*)buf,
+              .iov_len = size
+            }
+        };
+
+    struct msghdr msghdr = \
+        { .msg_name = NULL,
+          .msg_namelen = 0,
+          .msg_iov = iov,
+          .msg_iovlen = 3,
+          .msg_control = NULL,
+          .msg_controllen = 0,
+          .msg_flags = 0};
 
     if (current_output >= 0)
     {
         // Normal mode
-        if (pcap_inject(ppcap[current_output], txbuf, p - txbuf) != p - txbuf)
+        if (sendmsg(sockfds[current_output], &msghdr, 0) < 0)
         {
-            throw runtime_error(string_format("Unable to inject packet"));
+            throw runtime_error(string_format("Unable to inject packet: %s", strerror(errno)));
         }
     }
     else
     {
         // Mirror mode - transmit packet via all cards
         // Use only for different frequency channels
-        for(auto it=ppcap.begin(); it != ppcap.end(); it++)
+        for(auto it=sockfds.begin(); it != sockfds.end(); it++)
         {
-            if (pcap_inject(*it, txbuf, p - txbuf) != p - txbuf)
+            if (sendmsg(*it, &msghdr, 0) < 0)
             {
-                throw runtime_error(string_format("Unable to inject packet"));
+                throw runtime_error(string_format("Unable to inject packet: %s", strerror(errno)));
             }
         }
     }
 }
 
-PcapTransmitter::~PcapTransmitter()
+RawSocketTransmitter::~RawSocketTransmitter()
 {
-    for(auto it=ppcap.begin(); it != ppcap.end(); it++){
-        pcap_close(*it);
+    for(auto it=sockfds.begin(); it != sockfds.end(); it++)
+    {
+        close(*it);
     }
 }
 
@@ -611,7 +639,7 @@ int main(int argc, char * const *argv)
             fprintf(stderr, "Using %zu ports from %d for wlan emulation\n", wlans.size(), debug_port);
             t = shared_ptr<UdpTransmitter>(new UdpTransmitter(k, n, keypair, "127.0.0.1", debug_port, epoch, channel_id));
         } else {
-            t = shared_ptr<PcapTransmitter>(new PcapTransmitter(k, n, keypair, epoch, channel_id, wlans));
+            t = shared_ptr<RawSocketTransmitter>(new RawSocketTransmitter(k, n, keypair, epoch, channel_id, wlans));
         }
 
         data_source(t, rx_fd, poll_timeout, mirror);

@@ -8,7 +8,7 @@ DOCKER_SRC_IMAGE ?= "p2ptech/cross-build:2023-02-21-raspios-bullseye-armhf-lite"
 
 export VERSION COMMIT SOURCE_DATE_EPOCH
 
-_LDFLAGS := $(LDFLAGS) -lrt -lpcap -lsodium
+_LDFLAGS := $(LDFLAGS) -lrt -lsodium
 _CFLAGS := $(CFLAGS) -Wall -O2 -DWFB_VERSION='"$(VERSION)-$(shell /bin/bash -c '_tmp=$(COMMIT); echo $${_tmp::8}')"'
 
 all: all_bin gs.key test
@@ -29,7 +29,7 @@ src/%.o: src/%.cpp src/*.hpp src/*.h
 	$(CXX) $(_CFLAGS) -std=gnu++11 -c -o $@ $<
 
 wfb_rx: src/rx.o src/radiotap.o src/fec.o src/wifibroadcast.o
-	$(CXX) -o $@ $^ $(_LDFLAGS)
+	$(CXX) -o $@ $^ $(_LDFLAGS) -lpcap
 
 wfb_tx: src/tx.o src/fec.o src/wifibroadcast.o
 	$(CXX) -o $@ $^ $(_LDFLAGS)
