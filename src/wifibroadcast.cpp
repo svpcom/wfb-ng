@@ -49,6 +49,14 @@ uint64_t get_time_ms(void) // in milliseconds
     return ts.tv_sec * 1000LL + ts.tv_nsec / 1000000;
 }
 
+uint64_t get_time_us(void) // in microseconds
+{
+    struct timespec ts;
+    int rc = clock_gettime(CLOCK_MONOTONIC, &ts);
+    if (rc < 0) throw runtime_error(string_format("Error getting time: %s", strerror(errno)));
+    return ts.tv_sec * 1000000LL + ts.tv_nsec / 1000;
+}
+
 int open_udp_socket_for_rx(int port, int rcv_buf_size)
 {
     struct sockaddr_in saddr;

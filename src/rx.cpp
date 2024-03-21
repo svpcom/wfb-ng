@@ -204,7 +204,7 @@ Aggregator::Aggregator(const string &client_addr, int client_port, const string 
     fec_p(NULL), fec_k(-1), fec_n(-1), seq(0), rx_ring_front(0), rx_ring_alloc(0),
     last_known_block((uint64_t)-1), epoch(epoch), channel_id(channel_id),
     count_p_all(0), count_p_dec_err(0), count_p_dec_ok(0), count_p_fec_recovered(0),
-    count_p_lost(0), count_p_bad(0), count_p_override(0)
+    count_p_lost(0), count_p_bad(0), count_p_override(0), count_p_outgoing(0)
 {
     sockfd = open_udp_socket_for_tx(client_addr, client_port);
     memset(session_key, '\0', sizeof(session_key));
@@ -398,13 +398,13 @@ void Aggregator::dump_stats(FILE *fp)
     //timestamp in ms
     uint64_t ts = get_time_ms();
 
-    for(antenna_stat_t::iterator it = antenna_stat.begin(); it != antenna_stat.end(); it++)
+    for(rx_antenna_stat_t::iterator it = antenna_stat.begin(); it != antenna_stat.end(); it++)
     {
-        fprintf(fp, "%" PRIu64 "\tANT\t%" PRIx64 "\t%d:%d:%d:%d\n", ts, it->first, it->second.count_all, it->second.rssi_min, it->second.rssi_sum / it->second.count_all, it->second.rssi_max);
+        fprintf(fp, "%" PRIu64 "\tRX_ANT\t%" PRIx64 "\t%d:%d:%d:%d\n", ts, it->first, it->second.count_all, it->second.rssi_min, it->second.rssi_sum / it->second.count_all, it->second.rssi_max);
     }
     antenna_stat.clear();
 
-    fprintf(fp, "%" PRIu64 "\tPKT\t%u:%u:%u:%u:%u:%u\n", ts, count_p_all, count_p_dec_err, count_p_dec_ok, count_p_fec_recovered, count_p_lost, count_p_bad);
+    fprintf(fp, "%" PRIu64 "\tPKT\t%u:%u:%u:%u:%u:%u:%u\n", ts, count_p_all, count_p_dec_err, count_p_dec_ok, count_p_fec_recovered, count_p_lost, count_p_bad, count_p_outgoing);
     fflush(fp);
 
     if(count_p_override)
@@ -424,6 +424,7 @@ void Aggregator::dump_stats(FILE *fp)
     count_p_lost = 0;
     count_p_bad = 0;
     count_p_override = 0;
+    count_p_outgoing = 0;
 }
 
 
@@ -498,7 +499,7 @@ void Aggregator::process_packet(const uint8_t *buf, size_t size, uint8_t wlan_id
 
         if (be32toh(new_session_data.channel_id) != channel_id)
         {
-            fprintf(stderr, "Session channel_id doesn't match: %d != %d\n", be32toh(new_session_data.channel_id), channel_id);
+            fprintf(stderr, "Session channel_id doesn't match: %u != %u\n", be32toh(new_session_data.channel_id), channel_id);
             count_p_dec_err += 1;
             return;
         }
@@ -525,6 +526,7 @@ void Aggregator::process_packet(const uint8_t *buf, size_t size, uint8_t wlan_id
         }
 
         count_p_dec_ok += 1;
+        log_rssi(sockaddr, wlan_idx, antenna, rssi);
 
         if (memcmp(session_key, new_session_data.session_key, sizeof(session_key)) != 0)
         {
@@ -538,7 +540,7 @@ void Aggregator::process_packet(const uint8_t *buf, size_t size, uint8_t wlan_id
 
             init_fec(new_session_data.k, new_session_data.n);
 
-            fprintf(stdout, "%" PRIu64 "\tSESSION\t%" PRIu64 ":%u:%u:%u\n", get_time_ms(), epoch, WFB_FEC_VDM_RS, fec_k, fec_n);
+            fprintf(stdout, "%" PRIu64 "\tSESSION\t%" PRIu64 ":%u:%d:%d\n", get_time_ms(), epoch, WFB_FEC_VDM_RS, fec_k, fec_n);
             fflush(stdout);
 
         }
@@ -706,6 +708,7 @@ void Aggregator::send_packet(int ring_idx, int fragment_idx)
     }else if(!(flags & WFB_PACKET_FEC_ONLY))
     {
         send(sockfd, payload, packet_size, MSG_DONTWAIT);
+        count_p_outgoing += 1;
     }
 }
 
@@ -777,9 +780,7 @@ void radio_loop(int argc, char* const *argv, int optind, uint32_t channel_id, sh
             throw runtime_error(string_format("Poll error: %s", strerror(errno)));
         }
 
-        cur_ts = get_time_ms();
-
-        if (cur_ts >= log_send_ts)
+        if (get_time_ms() >= log_send_ts)
         {
             agg->dump_stats(stdout);
             log_send_ts = get_time_ms() + log_interval;
@@ -811,11 +812,6 @@ void network_loop(int srv_port, Aggregator &agg, int log_interval, int rcv_buf_s
     struct pollfd fds[1];
     int fd = open_udp_socket_for_rx(srv_port, rcv_buf_size);
 
-    if(fcntl(fd, F_SETFL, fcntl(fd, F_GETFL, 0) | O_NONBLOCK) < 0)
-    {
-        throw runtime_error(string_format("Unable to set socket into nonblocked mode: %s", strerror(errno)));
-    }
-
     memset(fds, '\0', sizeof(fds));
     fds[0].fd = fd;
     fds[0].events = POLLIN;
@@ -830,9 +826,7 @@ void network_loop(int srv_port, Aggregator &agg, int log_interval, int rcv_buf_s
             throw runtime_error(string_format("poll error: %s", strerror(errno)));
         }
 
-        cur_ts = get_time_ms();
-
-        if (cur_ts >= log_send_ts)
+        if (get_time_ms() >= log_send_ts)
         {
             agg.dump_stats(stdout);
             log_send_ts = get_time_ms() + log_interval;
@@ -865,7 +859,7 @@ void network_loop(int srv_port, Aggregator &agg, int log_interval, int rcv_buf_s
                                          .msg_controllen = 0,
                                          .msg_flags = 0};
 
-                ssize_t rsize = recvmsg(fd, &msghdr, 0);
+                ssize_t rsize = recvmsg(fd, &msghdr, MSG_DONTWAIT);
                 if (rsize < 0)
                 {
                     break;

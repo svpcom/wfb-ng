@@ -45,7 +45,7 @@ class TXRXTestCase(unittest.TestCase):
                   '-i', str(link_id), '-e', str(epoch), '-R', str(512 * 1024), 'wlan0']
 
         self.rx_pp = RXProtocol(None, cmd_rx, 'debug rx')
-        self.tx_pp = TXProtocol(cmd_tx, 'debug tx')
+        self.tx_pp = TXProtocol(None, cmd_tx, 'debug tx')
 
         self.rx_pp.start().addErrback(lambda f: f.trap('twisted.internet.error.ProcessTerminated'))
         self.tx_pp.start().addErrback(lambda f: f.trap('twisted.internet.error.ProcessTerminated'))

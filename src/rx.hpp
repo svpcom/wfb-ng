@@ -90,10 +90,10 @@ static inline int modN(int x, int base)
     return (base + (x % base)) % base;
 }
 
-class antennaItem
+class rxAntennaItem
 {
 public:
-    antennaItem(void) : count_all(0), rssi_sum(0), rssi_min(0), rssi_max(0) {}
+    rxAntennaItem(void) : count_all(0), rssi_sum(0), rssi_min(0), rssi_max(0) {}
 
     void log_rssi(int8_t rssi){
         if(count_all == 0){
@@ -113,7 +113,7 @@ public:
     int8_t rssi_max;
 };
 
-typedef std::unordered_map<uint64_t, antennaItem> antenna_stat_t;
+typedef std::unordered_map<uint64_t, rxAntennaItem> rx_antenna_stat_t;
 
 class Aggregator : public BaseAggregator
 {
@@ -147,7 +147,7 @@ private:
     uint8_t tx_publickey[crypto_box_PUBLICKEYBYTES];
     uint8_t session_key[crypto_aead_chacha20poly1305_KEYBYTES];
 
-    antenna_stat_t antenna_stat;
+    rx_antenna_stat_t antenna_stat;
     uint32_t count_p_all;
     uint32_t count_p_dec_err;
     uint32_t count_p_dec_ok;
@@ -155,6 +155,7 @@ private:
     uint32_t count_p_lost;
     uint32_t count_p_bad;
     uint32_t count_p_override;
+    uint32_t count_p_outgoing;
 };
 
 class Receiver

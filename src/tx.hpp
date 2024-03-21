@@ -17,6 +17,7 @@
  *   51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
  */
 
+#include <unordered_map>
 #include <sys/socket.h>
 #include <netinet/in.h>
 #include <arpa/inet.h>
@@ -34,9 +35,10 @@ class Transmitter
 public:
     Transmitter(int k, int m, const std::string &keypair, uint64_t epoch, uint32_t channel_id);
     virtual ~Transmitter();
-    void send_packet(const uint8_t *buf, size_t size, uint8_t flags);
+    bool send_packet(const uint8_t *buf, size_t size, uint8_t flags);
     void send_session_key(void);
     virtual void select_output(int idx) = 0;
+    virtual void dump_stats(FILE *fp, uint64_t ts, uint32_t &injected, uint32_t &dropped) = 0;
 protected:
     virtual void inject_packet(const uint8_t *buf, size_t size) = 0;
 
@@ -61,18 +63,50 @@ private:
     uint8_t session_key_packet[sizeof(wsession_hdr_t) + sizeof(wsession_data_t) + crypto_box_MACBYTES];
 };
 
+class txAntennaItem
+{
+public:
+    txAntennaItem(void) : count_injected(0), count_dropped(0), latency_sum(0), latency_min(0), latency_max(0) {}
+
+    void log_latency(uint64_t latency, bool succeeded) {
+        if(count_injected + count_dropped == 0)
+        {
+            latency_min = latency;
+            latency_max = latency;
+        } else {
+            latency_min = std::min(latency, latency_min);
+            latency_max = std::max(latency, latency_max);
+        }
+
+        latency_sum += latency;
+
+        if (succeeded) count_injected += 1;
+        else count_dropped += 1;
+    }
+
+    uint32_t count_injected;
+    uint32_t count_dropped;
+    uint64_t latency_sum;
+    uint64_t latency_min;
+    uint64_t latency_max;
+};
+
+typedef std::unordered_map<uint64_t, txAntennaItem> tx_antenna_stat_t;
+
 class RawSocketTransmitter : public Transmitter
 {
 public:
     RawSocketTransmitter(int k, int m, const std::string &keypair, uint64_t epoch, uint32_t channel_id, const std::vector<std::string> &wlans);
     virtual ~RawSocketTransmitter();
     virtual void select_output(int idx) { current_output = idx; }
+    virtual void dump_stats(FILE *fp, uint64_t ts, uint32_t &injected, uint32_t &dropped);
 private:
     virtual void inject_packet(const uint8_t *buf, size_t size);
     const uint32_t channel_id;
     int current_output;
     uint16_t ieee80211_seq;
     std::vector<int> sockfds;
+    tx_antenna_stat_t antenna_stat;
 };
 
 
@@ -91,6 +125,8 @@ public:
         saddr.sin_addr.s_addr = inet_addr(client_addr.c_str());
         saddr.sin_port = htons((unsigned short)base_port);
     }
+
+    virtual void dump_stats(FILE *fp, uint64_t ts, uint32_t &injected, uint32_t &dropped) {}
 
     virtual ~UdpTransmitter()
     {

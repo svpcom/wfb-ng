@@ -149,7 +149,7 @@ def eval_max_rate(port_in, port_out, size, max_rate):
         rate = min_rate + dr
         count = 3 * rate # run each test for 3s
         lost, lavg, bitrate, slowdown = yield run_test(port_in, port_out, size, count, rate)
-        if lost >= max(count * 0.01, 10) or lavg > 0.005 or slowdown > 0:
+        if lost >= max(count * 0.01, 10) or lavg > 0.005: # or slowdown > 0:
             # rate too big
             max_rate = rate
         else:

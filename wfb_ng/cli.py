@@ -61,6 +61,13 @@ class AntennaStat(LineReceiver):
 
     def lineReceived(self, line):
         attrs = json.loads(line)
+
+        if attrs['type'] == 'rx':
+            self.draw_rx(attrs)
+        elif attrs['type'] == 'tx':
+            self.draw_tx(attrs)
+
+    def draw_rx(self, attrs):
         p = attrs['packets']
         rssi_d = attrs['rssi']
         tx_ant = attrs.get('tx_ant')
@@ -74,6 +81,7 @@ class AntennaStat(LineReceiver):
         window.addstr(0, 0, '[RX] pkt/s pkt')
 
         msg_l = (('recv  %4d %d' % tuple(p['all']),     0),
+                 ('udp   %4d %d' % tuple(p['out']),     0),
                  ('fec_r %4d %d' % tuple(p['fec_rec']), curses.A_REVERSE if p['fec_rec'][0] else 0),
                  ('lost  %4d %d' % tuple(p['lost']),    curses.A_REVERSE if p['lost'][0] else 0),
                  ('d_err %4d %d' % tuple(p['dec_err']), curses.A_REVERSE if p['dec_err'][0] else 0),
@@ -85,7 +93,7 @@ class AntennaStat(LineReceiver):
                 window.addstr(y, 0, msg, attr)
 
         if rssi_d:
-            window.addstr(0, 25, '[ANT] pkt/s        RSSI')
+            window.addstr(0, 25, '[ANT] pkt/s     RSSI [dBm]')
             for y, (k, v) in enumerate(sorted(rssi_d.items()), 1):
                 pkt_s, rssi_min, rssi_avg, rssi_max = v
                 if y < ymax:
@@ -96,6 +104,40 @@ class AntennaStat(LineReceiver):
 
         window.refresh()
 
+    def draw_tx(self, attrs):
+        p = attrs['packets']
+        latency_d = attrs['latency']
+        tx_id = attrs['id']
+
+        window = self.factory.windows.get(tx_id)
+        if window is None:
+            return
+
+        window.erase()
+        window.addstr(0, 0, '[TX] pkt/s pkt')
+
+        msg_l = (('sent  %4d %d' % tuple(p['injected']),     0),
+                 ('udp   %4d %d' % tuple(p['incoming']),     0),
+                 ('fec_t %4d %d' % tuple(p['fec_timeouts']), 0),
+                 ('drop  %4d %d' % tuple(p['dropped']),    curses.A_REVERSE if p['dropped'][0] else 0),
+                 ('trunc %4d %d' % tuple(p['truncated']), curses.A_REVERSE if p['truncated'][0] else 0))
+
+        ymax = window.getmaxyx()[0]
+        for y, (msg, attr) in enumerate(msg_l, 1):
+            if y < ymax:
+                window.addstr(y, 0, msg, attr)
+
+        if latency_d:
+            window.addstr(0, 25, '[ANT] pkt/s     Injection [us]')
+            for y, (k, v) in enumerate(sorted(latency_d.items()), 1):
+                injected, dropped, lat_min, lat_avg, lat_max = v
+                if y < ymax:
+                    window.addstr(y, 25, '%04x:  %4d  %4d < %4d < %4d' % (int(k, 16), injected, lat_min, lat_avg, lat_max))
+        else:
+            window.addstr(0, 25, '[No data]', curses.A_REVERSE)
+
+
+        window.refresh()
 
 
 class AntennaStatClientFactory(ReconnectingClientFactory):
@@ -148,7 +190,7 @@ class AntennaStatClientFactory(ReconnectingClientFactory):
 
 
 def init(stdscr, profile):
-    service_list = list((s_name, cfg.show_stats) for s_name, _, cfg in  parse_services(profile))
+    service_list = list((s_name, cfg.show_rx_stats, cfg.show_tx_stats) for s_name, _, cfg in  parse_services(profile))
     height, width = stdscr.getmaxyx()
 
     if not service_list:
@@ -161,8 +203,8 @@ def init(stdscr, profile):
     h_exp = height
     h_fixed = 3
 
-    for _, show_stats in service_list:
-        if show_stats:
+    for _, show_rx_stats, show_tx_stats in service_list:
+        if show_rx_stats or show_tx_stats:
             n_exp += 1
         else:
             h_exp -= h_fixed
@@ -174,8 +216,8 @@ def init(stdscr, profile):
     hoff_float = 0
 
     windows = {}
-    for name, show_stats in service_list:
-        if show_stats:
+    for name, show_rx_stats, show_tx_stats in service_list:
+        if show_rx_stats or show_tx_stats:
             hoff_float += h_exp
             err = round(hoff_float) - (hoff_int + int(h_exp))
             wh = int(h_exp) + err
@@ -185,18 +227,21 @@ def init(stdscr, profile):
             hoff_float += h_fixed
             wh = h_fixed
 
-        window = stdscr.subpad(wh - 2, width - 2, hoff_int + 1, 1)
-        window.idlok(1)
-        window.scrollok(1)
+        for ww, xoff, txrx, show_stats in [((width // 2 - 1), 0, 'rx', show_rx_stats),
+                                           ((width - width // 2 - 1), width - width // 2 - 1, 'tx', show_tx_stats)]:
 
-        rectangle(stdscr, hoff_int, 0, hoff_int + wh - 1, width - 1)
-        stdscr.addstr(hoff_int, 3, '[%s %s]' % (profile, name))
+            window = stdscr.subpad(wh - 2, ww - 2, hoff_int + 1, xoff + 1)
+            window.idlok(1)
+            window.scrollok(1)
 
-        if show_stats:
-            windows['%s rx' % name] = window
-        else:
-            window.addstr(0, 0, '[statistics disabled]', curses.A_REVERSE)
-            window.refresh()
+            rectangle(stdscr, hoff_int, xoff, hoff_int + wh - 1, xoff + ww)
+            stdscr.addstr(hoff_int, 3 + xoff, '[%s %s %s]' % (profile, name, txrx))
+
+            if show_stats:
+                windows['%s %s' % (name, txrx)] = window
+            else:
+                window.addstr(0, 0, '[statistics disabled]', curses.A_REVERSE)
+                window.refresh()
 
         hoff_int += wh
 

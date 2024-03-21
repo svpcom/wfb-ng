@@ -78,6 +78,8 @@ static uint8_t radiotap_header[]  __attribute__((unused)) = {
                         // Also you must update radio_mtu in master.cfg - set it to MAX_PAYLOAD_SIZE
                         // or see in output of wfb_tx (Radio MTU)
 
+#define PACKET_INJECTION_TIMEOUT_MS  5
+
 // Radiotap header will be discarded after injection so we can ingnore it in MTU calculations
 #define MAX_PACKET_SIZE  (WIFI_MTU + sizeof(radiotap_header))
 #define MAX_RX_INTERFACES  8
@@ -188,5 +190,6 @@ typedef struct {
 
 int open_udp_socket_for_rx(int port, int rcv_buf_size);
 uint64_t get_time_ms(void);
+uint64_t get_time_us(void);
 
 #endif
