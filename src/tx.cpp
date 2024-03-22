@@ -367,13 +367,14 @@ uint32_t extract_rxq_overflow(struct msghdr *msg)
 void data_source(shared_ptr<Transmitter> &t, vector<int> &rx_fd, int fec_timeout, bool mirror, int log_interval)
 {
     int nfds = rx_fd.size();
+    assert(nfds > 0);
+
     struct pollfd fds[nfds];
     memset(fds, '\0', sizeof(fds));
 
-    int i = 0;
-    for(auto it=rx_fd.begin(); it != rx_fd.end(); it++, i++)
+    for(size_t i=0; i < rx_fd.size(); i++)
     {
-        fds[i].fd = *it;
+        fds[i].fd = rx_fd[i];
         fds[i].events = POLLIN;
     }
 
@@ -386,6 +387,7 @@ void data_source(shared_ptr<Transmitter> &t, vector<int> &rx_fd, int fec_timeout
     uint32_t count_p_injected = 0;  // successfully injected (include additional fec packets)
     uint32_t count_p_dropped = 0;   // dropped due to rxq overflows or injection timeout
     uint32_t count_p_truncated = 0; // injected large packets that were truncated
+    int start_fd_idx = 0;
 
     for(;;)
     {
@@ -448,25 +450,29 @@ void data_source(shared_ptr<Transmitter> &t, vector<int> &rx_fd, int fec_timeout
             continue;
         }
 
-        // rc > 0: some events detected
+        // rc > 0: events detected
 
-        for(i = 0; i < nfds; i++)
+        // start from last fd index and reset it to zero
+        int i = start_fd_idx;
+        for(start_fd_idx = 0; rc > 0; i++)
         {
-            if (fds[i].revents & (POLLERR | POLLNVAL))
+            if (fds[i % nfds].revents & (POLLERR | POLLNVAL))
             {
                 throw runtime_error(string_format("socket error: %s", strerror(errno)));
             }
 
-            if (fds[i].revents & POLLIN)
+            if (fds[i % nfds].revents & POLLIN)
             {
                 uint8_t buf[MAX_PAYLOAD_SIZE + 1];
                 ssize_t rsize;
                 uint8_t cmsgbuf[CMSG_SPACE(sizeof(uint32_t))];
+                rc -= 1;
 
-                t->select_output(mirror ? -1 : i);
+                t->select_output(mirror ? -1 : (i % nfds));
 
                 for(;;)
                 {
+                    int fd = fds[i % nfds].fd;
                     struct iovec iov = { .iov_base = (void*)buf,
                                          .iov_len = sizeof(buf) };
 
@@ -480,7 +486,7 @@ void data_source(shared_ptr<Transmitter> &t, vector<int> &rx_fd, int fec_timeout
 
                     memset(cmsgbuf, '\0', sizeof(cmsgbuf));
 
-                    if ((rsize = recvmsg(fds[i].fd, &msghdr, MSG_DONTWAIT)) < 0)
+                    if ((rsize = recvmsg(fd, &msghdr, MSG_DONTWAIT)) < 0)
                     {
                         if (errno != EWOULDBLOCK) throw runtime_error(string_format("Error receiving packet: %s", strerror(errno)));
                         break;
@@ -516,6 +522,8 @@ void data_source(shared_ptr<Transmitter> &t, vector<int> &rx_fd, int fec_timeout
 
                     if (cur_ts >= log_send_ts)  // log timeout expired
                     {
+                        // We need to transmit all packets from the queue before tx card switch
+                        start_fd_idx = i % nfds;
                         break;
                     }
                 }

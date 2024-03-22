@@ -780,10 +780,11 @@ void radio_loop(int argc, char* const *argv, int optind, uint32_t channel_id, sh
             throw runtime_error(string_format("Poll error: %s", strerror(errno)));
         }
 
-        if (get_time_ms() >= log_send_ts)
+        cur_ts = get_time_ms();
+        if (cur_ts >= log_send_ts)
         {
             agg->dump_stats(stdout);
-            log_send_ts = get_time_ms() + log_interval;
+            log_send_ts = cur_ts + log_interval;
         }
 
         if (rc == 0) continue; // timeout expired
@@ -826,10 +827,11 @@ void network_loop(int srv_port, Aggregator &agg, int log_interval, int rcv_buf_s
             throw runtime_error(string_format("poll error: %s", strerror(errno)));
         }
 
-        if (get_time_ms() >= log_send_ts)
+        cur_ts = get_time_ms();
+        if (cur_ts >= log_send_ts)
         {
             agg.dump_stats(stdout);
-            log_send_ts = get_time_ms() + log_interval;
+            log_send_ts = cur_ts + log_interval;
         }
 
         if (rc == 0) continue; // timeout expired
