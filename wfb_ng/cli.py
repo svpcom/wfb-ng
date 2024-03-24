@@ -20,9 +20,10 @@
 
 import sys
 import curses
-import curses.textpad
 import json
 import tempfile
+import signal
+import termios
 
 from twisted.python import log
 from twisted.internet import reactor, defer
@@ -56,6 +57,14 @@ def rectangle(win, uly, ulx, lry, lrx):
     win.addch(lry, ulx, curses.ACS_LLCORNER)
 
 
+def addstr(window, y, x, s, *attrs):
+    try:
+        for i, c in enumerate(s, x):
+            window.addch(y, i, c, *attrs)
+    except curses.error:
+        pass
+
+
 class AntennaStat(LineReceiver):
     delimiter = b'\n'
 
@@ -78,7 +87,7 @@ class AntennaStat(LineReceiver):
             return
 
         window.erase()
-        window.addstr(0, 0, '[RX] pkt/s pkt')
+        addstr(window, 0, 0, '[RX] pkt/s pkt')
 
         msg_l = (('recv  %4d %d' % tuple(p['all']),     0),
                  ('udp   %4d %d' % tuple(p['out']),     0),
@@ -90,17 +99,17 @@ class AntennaStat(LineReceiver):
         ymax = window.getmaxyx()[0]
         for y, (msg, attr) in enumerate(msg_l, 1):
             if y < ymax:
-                window.addstr(y, 0, msg, attr)
+                addstr(window, y, 0, msg, attr)
 
         if rssi_d:
-            window.addstr(0, 25, '[ANT] pkt/s     RSSI [dBm]')
+            addstr(window, 0, 25, '[ANT] pkt/s     RSSI [dBm]')
             for y, (k, v) in enumerate(sorted(rssi_d.items()), 1):
                 pkt_s, rssi_min, rssi_avg, rssi_max = v
                 if y < ymax:
                     active_tx = '*' if (int(k, 16) >> 8) == tx_ant else ' '
-                    window.addstr(y, 24, '%s%04x:  %4d  %3d < %3d < %3d' % (active_tx, int(k, 16), pkt_s, rssi_min, rssi_avg, rssi_max))
+                    addstr(window, y, 24, '%s%04x:  %4d  %3d < %3d < %3d' % (active_tx, int(k, 16), pkt_s, rssi_min, rssi_avg, rssi_max))
         else:
-            window.addstr(0, 25, '[Link lost]', curses.A_REVERSE)
+            addstr(window, 0, 25, '[No data]', curses.A_REVERSE)
 
         window.refresh()
 
@@ -114,7 +123,7 @@ class AntennaStat(LineReceiver):
             return
 
         window.erase()
-        window.addstr(0, 0, '[TX] pkt/s pkt')
+        addstr(window, 0, 0, '[TX] pkt/s pkt')
 
         msg_l = (('sent  %4d %d' % tuple(p['injected']),     0),
                  ('udp   %4d %d' % tuple(p['incoming']),     0),
@@ -125,16 +134,16 @@ class AntennaStat(LineReceiver):
         ymax = window.getmaxyx()[0]
         for y, (msg, attr) in enumerate(msg_l, 1):
             if y < ymax:
-                window.addstr(y, 0, msg, attr)
+                addstr(window, y, 0, msg, attr)
 
         if latency_d:
-            window.addstr(0, 25, '[ANT] pkt/s     Injection [us]')
+            addstr(window, 0, 25, '[ANT] pkt/s     Injection [us]')
             for y, (k, v) in enumerate(sorted(latency_d.items()), 1):
                 injected, dropped, lat_min, lat_avg, lat_max = v
                 if y < ymax:
-                    window.addstr(y, 25, '%04x:  %4d  %4d < %4d < %4d' % (int(k, 16), injected, lat_min, lat_avg, lat_max))
+                    addstr(window, y, 25, '%04x:  %4d  %4d < %4d < %4d' % (int(k, 16), injected, lat_min, lat_avg, lat_max))
         else:
-            window.addstr(0, 25, '[No data]', curses.A_REVERSE)
+            addstr(window, 0, 25, '[No data]', curses.A_REVERSE)
 
 
         window.refresh()
@@ -144,15 +153,82 @@ class AntennaStatClientFactory(ReconnectingClientFactory):
     noisy = False
     maxDelay  = 1.0
 
-    def __init__(self, windows):
-        self.windows = windows
+    def __init__(self, stdscr, profile):
+        self.stdscr = stdscr
+        self.profile = profile
+        self.windows = {}
+        self.init_windows()
+
+    def init_windows(self):
+        self.windows.clear()
+        height, width = termios.tcgetwinsize(1)
+        curses.resize_term(height, width)
+        self.stdscr.clear()
+
+        service_list = list((s_name, cfg.show_rx_stats, cfg.show_tx_stats) for s_name, _, cfg in  parse_services(self.profile))
+
+        if not service_list:
+            rectangle(self.stdscr, 0, 0, height - 1, width - 1)
+            addstr(self.stdscr, 0, 3, '[%s not configured]' % (self.profile,), curses.A_REVERSE)
+            self.stdscr.refresh()
+            return
+
+        n_exp = 0
+        h_exp = height
+        h_fixed = 3
+
+        for _, show_rx_stats, show_tx_stats in service_list:
+            if show_rx_stats or show_tx_stats:
+                n_exp += 1
+            else:
+                h_exp -= h_fixed
+
+        if n_exp > 0:
+            h_exp = h_exp / n_exp
+
+        hoff_int = 0
+        hoff_float = 0
+
+        for name, show_rx_stats, show_tx_stats in service_list:
+            if show_rx_stats or show_tx_stats:
+                hoff_float += h_exp
+            else:
+                hoff_float += h_fixed
+
+            whl = []
+            for ww, xoff, txrx, show_stats in [((width // 2 - 1), 0, 'rx', show_rx_stats),
+                                               ((width - width // 2 - 1), width // 2, 'tx', show_tx_stats)]:
+                if show_stats:
+                    err = round(hoff_float) - (hoff_int + int(h_exp))
+                    wh = int(h_exp) + err
+                    if wh < h_fixed:
+                        raise Exception('Terminal height is too small')
+                else:
+                    wh = h_fixed
+
+                window = self.stdscr.subpad(wh - 2, ww - 2, hoff_int + 1, xoff + 1)
+                window.idlok(1)
+                window.scrollok(1)
+
+                rectangle(self.stdscr, hoff_int, xoff, hoff_int + wh - 1, xoff + ww)
+                addstr(self.stdscr, hoff_int, 3 + xoff, '[%s %s %s]' % (self.profile, name, txrx))
+
+                if show_stats:
+                    self.windows['%s %s' % (name, txrx)] = window
+                else:
+                    addstr(window, 0, 0, '[statistics disabled]', curses.A_REVERSE)
+                    window.refresh()
+
+                whl.append(wh)
+            hoff_int += max(whl)
+        self.stdscr.refresh()
 
     def startedConnecting(self, connector):
         log.msg('Connecting to %s:%d ...' % (connector.host, connector.port))
 
         for window in self.windows.values():
             window.erase()
-            window.addstr(0, 0, 'Connecting...')
+            addstr(window, 0, 0, 'Connecting...')
             window.refresh()
 
     def buildProtocol(self, addr):
@@ -160,7 +236,7 @@ class AntennaStatClientFactory(ReconnectingClientFactory):
 
         for window in self.windows.values():
             window.erase()
-            window.addstr(0, 0, 'Waiting for data...')
+            addstr(window, 0, 0, 'Waiting for data...')
             window.refresh()
 
         self.resetDelay()
@@ -173,7 +249,7 @@ class AntennaStatClientFactory(ReconnectingClientFactory):
 
         for window in self.windows.values():
             window.erase()
-            window.addstr(0, 0, 'Connection lost: %s' % (reason.value,))
+            addstr(window, 0, 0, 'Connection lost: %s' % (reason.value,))
             window.refresh()
 
         ReconnectingClientFactory.clientConnectionLost(self, connector, reason)
@@ -183,71 +259,24 @@ class AntennaStatClientFactory(ReconnectingClientFactory):
 
         for window in self.windows.values():
             window.erase()
-            window.addstr(0, 0, 'Connection failed: %s' % (reason.value,))
+            addstr(window, 0, 0, 'Connection failed: %s' % (reason.value,))
             window.refresh()
 
         ReconnectingClientFactory.clientConnectionFailed(self, connector, reason)
 
 
 def init(stdscr, profile):
-    service_list = list((s_name, cfg.show_rx_stats, cfg.show_tx_stats) for s_name, _, cfg in  parse_services(profile))
-    height, width = stdscr.getmaxyx()
-
-    if not service_list:
-        rectangle(stdscr, 0, 0, height - 1, width - 1)
-        stdscr.addstr(0, 3, '[%s not configured]' % (profile,), curses.A_REVERSE)
-        stdscr.refresh()
-        return
-
-    n_exp = 0
-    h_exp = height
-    h_fixed = 3
-
-    for _, show_rx_stats, show_tx_stats in service_list:
-        if show_rx_stats or show_tx_stats:
-            n_exp += 1
-        else:
-            h_exp -= h_fixed
-
-    if n_exp > 0:
-        h_exp = h_exp / n_exp
-
-    hoff_int = 0
-    hoff_float = 0
-
-    windows = {}
-    for name, show_rx_stats, show_tx_stats in service_list:
-        if show_rx_stats or show_tx_stats:
-            hoff_float += h_exp
-            err = round(hoff_float) - (hoff_int + int(h_exp))
-            wh = int(h_exp) + err
-            if wh < h_fixed:
-                raise Exception('Terminal height is too small')
-        else:
-            hoff_float += h_fixed
-            wh = h_fixed
-
-        for ww, xoff, txrx, show_stats in [((width // 2 - 1), 0, 'rx', show_rx_stats),
-                                           ((width - width // 2 - 1), width - width // 2 - 1, 'tx', show_tx_stats)]:
-
-            window = stdscr.subpad(wh - 2, ww - 2, hoff_int + 1, xoff + 1)
-            window.idlok(1)
-            window.scrollok(1)
-
-            rectangle(stdscr, hoff_int, xoff, hoff_int + wh - 1, xoff + ww)
-            stdscr.addstr(hoff_int, 3 + xoff, '[%s %s %s]' % (profile, name, txrx))
-
-            if show_stats:
-                windows['%s %s' % (name, txrx)] = window
-            else:
-                window.addstr(0, 0, '[statistics disabled]', curses.A_REVERSE)
-                window.refresh()
-
-        hoff_int += wh
-
     stats_port = getattr(settings, profile).stats_port
-    reactor.connectTCP('127.0.0.1', stats_port, AntennaStatClientFactory(windows))
-    stdscr.refresh()
+    f = AntennaStatClientFactory(stdscr, profile)
+
+    # Resize windows on terminal size change
+    def sigwinch_handler(signum, sigstack):
+        reactor.callFromThread(lambda: defer.maybeDeferred(f.init_windows).addErrback(abort_on_crash))
+
+    signal.signal(signal.SIGWINCH, sigwinch_handler)
+    reactor.connectTCP('127.0.0.1', stats_port, f)
+
+
 
 def main():
     stderr = sys.stderr
