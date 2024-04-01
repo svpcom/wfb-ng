@@ -1,4 +1,4 @@
-// Copyright (C) 2017 - 2022 Vasily Evseenko <svpcom@p2ptech.org>
+// Copyright (C) 2017 - 2024 Vasily Evseenko <svpcom@p2ptech.org>
 
 /*
  *   This program is free software; you can redistribute it and/or modify
@@ -149,6 +149,8 @@ typedef struct {
     uint8_t wlan_idx;
     uint8_t antenna[RX_ANT_MAX]; //RADIOTAP_ANTENNA, list of antenna idx, 0xff for unused slot
     int8_t rssi[RX_ANT_MAX]; //RADIOTAP_DBM_ANTSIGNAL, list of rssi for corresponding antenna idx
+    int8_t noise[RX_ANT_MAX]; //RADIOTAP_DBM_ANTNOISE, list of (rssi - snr) for corresponding antenna idx
+    uint16_t freq; //IEEE80211_RADIOTAP_CHANNEL -- channel frequency in MHz
 } __attribute__ ((packed)) wrxfwd_t;
 
 // Network packet headers. All numbers are in network (big endian) format

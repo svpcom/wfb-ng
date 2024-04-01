@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
 
-# Copyright (C) 2018-2022 Vasily Evseenko <svpcom@p2ptech.org>
+# Copyright (C) 2018-2024 Vasily Evseenko <svpcom@p2ptech.org>
 
 #
 #   This program is free software; you can redistribute it and/or modify
@@ -19,7 +19,7 @@
 #
 
 import sys
-import json
+import msgpack
 import os
 import re
 import hashlib
@@ -29,7 +29,7 @@ from twisted.python import log, failure
 from twisted.python.logfile import LogFile
 from twisted.internet import reactor, defer, main as ti_main
 from twisted.internet.protocol import ProcessProtocol, Protocol, Factory
-from twisted.protocols.basic import LineReceiver
+from twisted.protocols.basic import LineReceiver, Int32StringReceiver
 from twisted.internet.serialport import SerialPort
 
 from . import _log_msg, ConsoleObserver, call_and_check_rc, ExecError
@@ -57,18 +57,20 @@ class WFBFlags(object):
 fec_types = {1: 'VDM_RS'}
 
 
-class StatisticsProtocol(Protocol):
+class StatisticsProtocol(Int32StringReceiver):
+    MAX_LENGTH = 1024 * 1024
+
     def connectionMade(self):
         self.factory.ui_sessions.append(self)
 
-    def dataReceived(self, data):
+    def stringReceived(self, string):
         pass
 
     def connectionLost(self, reason):
         self.factory.ui_sessions.remove(self)
 
     def send_stats(self, data):
-        self.transport.write(json.dumps(data).encode('utf-8') + b'\n')
+        self.sendString(msgpack.packb(data))
 
 
 class StatsAndSelectorFactory(Factory):
@@ -97,11 +99,41 @@ class StatsAndSelectorFactory(Factory):
     def add_rssi_cb(self, rssi_cb):
         self.rssi_cb_l.append(rssi_cb)
 
-    def select_tx_antenna(self, ant_rssi):
+    def _stats_agg_by_freq(self, ant_stats):
+        stats_agg = {}
+
+        for (freq, ant_id), (pkt_s,
+                             rssi_min, rssi_avg, rssi_max,
+                             snr_min, snr_avg, snr_max) in ant_stats.items():
+
+            if ant_id not in stats_agg:
+                stats_agg[ant_id] = (pkt_s,
+                                     rssi_min, rssi_avg * pkt_s, rssi_max,
+                                     snr_min, snr_avg * pkt_s, snr_max)
+            else:
+                tmp = stats_agg[ant_id]
+                stats_agg[ant_id] = (pkt_s + tmp[0],
+                                    min(rssi_min, tmp[1]),
+                                    rssi_avg * pkt_s + tmp[2],
+                                    max(rssi_max, tmp[3]),
+                                    min(snr_min, tmp[4]),
+                                    snr_avg * pkt_s + tmp[5],
+                                    max(snr_max, tmp[6]))
+
+        return dict((ant_id, (pkt_s,
+                              rssi_min, rssi_avg // pkt_s, rssi_max,
+                              snr_min, snr_avg // pkt_s, snr_max)) \
+                    for ant_id, (pkt_s,
+                                 rssi_min, rssi_avg, rssi_max,
+                                 snr_min, snr_avg, snr_max) in stats_agg.items())
+
+    def select_tx_antenna(self, stats_agg):
         wlan_rssi = {}
 
-        for k, grp in groupby(sorted(((int(ant_id, 16) >> 8) & 0xff, rssi_avg) \
-                                     for ant_id, (pkt_s, rssi_min, rssi_avg, rssi_max) in ant_rssi.items()),
+        for k, grp in groupby(sorted(((ant_id >> 8) & 0xff, rssi_avg) \
+                                     for ant_id, (pkt_s,
+                                                  rssi_min, rssi_avg, rssi_max,
+                                                  snr_min, snr_avg, snr_max) in stats_agg.items()),
                               lambda x: x[0]):
             # Select max average rssi [dBm] from all wlan's antennas
             wlan_rssi[k] = max(rssi for _, rssi in grp)
@@ -125,42 +157,43 @@ class StatsAndSelectorFactory(Factory):
 
         self.tx_sel = max_rssi_ant
 
-    def update_rx_stats(self, rx_id, packet_stats, ant_rssi):
-        mav_rssi = []
+    def update_rx_stats(self, rx_id, packet_stats, ant_stats):
+        stats_agg = self._stats_agg_by_freq(ant_stats)
+        card_rssi_l = list(rssi_avg
+                           for pkt_s,
+                               rssi_min, rssi_avg, rssi_max,
+                               snr_min, snr_avg, snr_max
+                           in stats_agg.values())
 
-        for i, (k, v) in enumerate(sorted(ant_rssi.items())):
-            pkt_s, rssi_min, rssi_avg, rssi_max = v
-            mav_rssi.append(rssi_avg)
-
-        rssi = (max(mav_rssi) if mav_rssi else -128) % 256
-
-        if ant_rssi and self.ant_sel_cb_list:
-            self.select_tx_antenna(ant_rssi)
+        if stats_agg and self.ant_sel_cb_list:
+            self.select_tx_antenna(stats_agg)
 
         if self.rssi_cb_l:
             _idx = 0 if settings.common.mavlink_err_rate else 1
             flags = 0
 
-            if not mav_rssi:
+            if not card_rssi_l:
                 flags |= WFBFlags.LINK_LOST
+
             elif packet_stats['dec_err'][0] + packet_stats['bad'][0] > 0:
                 flags |= WFBFlags.LINK_JAMMED
 
             rx_errors = min(packet_stats['dec_err'][_idx] + packet_stats['bad'][_idx] + packet_stats['lost'][_idx], 65535)
             rx_fec = min(packet_stats['fec_rec'][_idx], 65535)
+            mav_rssi = (max(card_rssi_l) if card_rssi_l else -128) % 256
 
             for rssi_cb in self.rssi_cb_l:
                 try:
-                    rssi_cb(rx_id, rssi, rx_errors, rx_fec, flags)
+                    rssi_cb(rx_id, mav_rssi, rx_errors, rx_fec, flags)
                 except Exception:
                     log.err()
 
         if settings.common.debug:
-            log.msg('%s rssi %s tx#%d %s %s' % (rx_id, max(mav_rssi) if mav_rssi else 'N/A', self.tx_sel, packet_stats, ant_rssi))
+            log.msg('%s rssi %s tx#%d %s %s' % (rx_id, max(card_rssi_l) if card_rssi_l else 'N/A', self.tx_sel, packet_stats, ant_stats))
 
         # Send stats to CLI sessions
         for s in self.ui_sessions:
-            s.send_stats(dict(type='rx', id=rx_id, tx_ant=self.tx_sel, packets=packet_stats, rssi=ant_rssi))
+            s.send_stats(dict(type='rx', id=rx_id, tx_ant=self.tx_sel, packets=packet_stats, rx_ant_stats=ant_stats))
 
     def update_tx_stats(self, tx_id, packet_stats, ant_latency):
         if settings.common.debug:
@@ -197,9 +230,9 @@ class RXAntennaProtocol(LineReceiver):
             cmd = cols[1]
 
             if cmd == 'RX_ANT':
-                if len(cols) != 4:
+                if len(cols) != 5:
                     raise BadTelemetry()
-                self.ant[cols[2]] = tuple(int(i) for i in cols[3].split(':'))
+                self.ant[(int(cols[2]), int(cols[3], 16))] = tuple(int(i) for i in cols[4].split(':'))
 
             elif cmd == 'PKT':
                 if len(cols) != 3:
@@ -280,7 +313,7 @@ class TXAntennaProtocol(LineReceiver):
         elif cmd == 'TX_ANT':
             if len(cols) != 4:
                 raise BadTelemetry()
-            self.ant[cols[2]] = tuple(int(i) for i in cols[3].split(':'))
+            self.ant[int(cols[2], 16)] = tuple(int(i) for i in cols[3].split(':'))
 
         elif cmd == 'PKT':
             if len(cols) != 3:

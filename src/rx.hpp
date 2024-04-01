@@ -1,6 +1,6 @@
 // -*- C++ -*-
 //
-// Copyright (C) 2017 - 2022 Vasily Evseenko <svpcom@p2ptech.org>
+// Copyright (C) 2017 - 2024 Vasily Evseenko <svpcom@p2ptech.org>
 
 /*
  *   This program is free software; you can redistribute it and/or modify
@@ -39,7 +39,7 @@ typedef enum {
 class BaseAggregator
 {
 public:
-    virtual void process_packet(const uint8_t *buf, size_t size, uint8_t wlan_idx, const uint8_t *antenna, const int8_t *rssi, sockaddr_in *sockaddr) = 0;
+    virtual void process_packet(const uint8_t *buf, size_t size, uint8_t wlan_idx, const uint8_t *antenna, const int8_t *rssi, const int8_t *noise, uint16_t freq, sockaddr_in *sockaddr) = 0;
     virtual void dump_stats(FILE *fp) = 0;
 protected:
     int open_udp_socket_for_tx(const std::string &client_addr, int client_port)
@@ -67,7 +67,7 @@ class Forwarder : public BaseAggregator
 public:
     Forwarder(const std::string &client_addr, int client_port);
     ~Forwarder();
-    virtual void process_packet(const uint8_t *buf, size_t size, uint8_t wlan_idx, const uint8_t *antenna, const int8_t *rssi, sockaddr_in *sockaddr);
+    virtual void process_packet(const uint8_t *buf, size_t size, uint8_t wlan_idx, const uint8_t *antenna, const int8_t *rssi, const int8_t *noise, uint16_t freq, sockaddr_in *sockaddr);
     virtual void dump_stats(FILE *) {}
 private:
     int sockfd;
@@ -93,17 +93,26 @@ static inline int modN(int x, int base)
 class rxAntennaItem
 {
 public:
-    rxAntennaItem(void) : count_all(0), rssi_sum(0), rssi_min(0), rssi_max(0) {}
+    rxAntennaItem(void) : count_all(0),
+                          rssi_sum(0), rssi_min(0), rssi_max(0),
+                          snr_sum(0), snr_min(0), snr_max(0) {}
 
-    void log_rssi(int8_t rssi){
+    void log_rssi(int8_t rssi, int8_t noise){
+        int8_t snr = (noise != SCHAR_MAX) ? rssi - noise : 0;
+
         if(count_all == 0){
             rssi_min = rssi;
             rssi_max = rssi;
+            snr_min = snr;
+            snr_max = snr;
         } else {
             rssi_min = std::min(rssi, rssi_min);
             rssi_max = std::max(rssi, rssi_max);
+            snr_min = std::min(snr, snr_min);
+            snr_max = std::max(snr, snr_max);
         }
         rssi_sum += rssi;
+        snr_sum += snr;
         count_all += 1;
     }
 
@@ -111,23 +120,48 @@ public:
     int32_t rssi_sum;
     int8_t rssi_min;
     int8_t rssi_max;
+    int32_t snr_sum;
+    int8_t snr_min;
+    int8_t snr_max;
 };
 
-typedef std::unordered_map<uint64_t, rxAntennaItem> rx_antenna_stat_t;
+struct rxAntennaKey
+{
+    uint16_t freq;
+    uint64_t antenna_id;
+
+    bool operator==(const rxAntennaKey &other) const
+    {
+        return (freq == other.freq && antenna_id == other.antenna_id);
+    }
+};
+
+template<>
+struct std::hash<rxAntennaKey>
+{
+    std::size_t operator()(const rxAntennaKey& k) const noexcept
+    {
+        std::size_t h1 = std::hash<uint16_t>{}(k.freq);
+        std::size_t h2 = std::hash<uint64_t>{}(k.antenna_id);
+        return h1 ^ (h2 << 1); // combine hashes
+    }
+};
+
+typedef std::unordered_map<rxAntennaKey, rxAntennaItem> rx_antenna_stat_t;
 
 class Aggregator : public BaseAggregator
 {
 public:
     Aggregator(const std::string &client_addr, int client_port, const std::string &keypair, uint64_t epoch, uint32_t channel_id);
     ~Aggregator();
-    virtual void process_packet(const uint8_t *buf, size_t size, uint8_t wlan_idx, const uint8_t *antenna, const int8_t *rssi, sockaddr_in *sockaddr);
+    virtual void process_packet(const uint8_t *buf, size_t size, uint8_t wlan_idx, const uint8_t *antenna, const int8_t *rssi, const int8_t *noise, uint16_t freq, sockaddr_in *sockaddr);
     virtual void dump_stats(FILE *fp);
 private:
     void init_fec(int k, int n);
     void deinit_fec(void);
     void send_packet(int ring_idx, int fragment_idx);
     void apply_fec(int ring_idx);
-    void log_rssi(const sockaddr_in *sockaddr, uint8_t wlan_idx, const uint8_t *ant, const int8_t *rssi);
+    void log_rssi(const sockaddr_in *sockaddr, uint8_t wlan_idx, const uint8_t *ant, const int8_t *rssi, const int8_t *noise, uint16_t freq);
     int get_block_ring_idx(uint64_t block_idx);
     int rx_ring_push(void);
     fec_t* fec_p;

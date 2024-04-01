@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
 
-# Copyright (C) 2018-2022 Vasily Evseenko <svpcom@p2ptech.org>
+# Copyright (C) 2018-2024 Vasily Evseenko <svpcom@p2ptech.org>
 
 #
 #   This program is free software; you can redistribute it and/or modify
@@ -20,7 +20,7 @@
 
 import sys
 import curses
-import json
+import msgpack
 import tempfile
 import signal
 import termios
@@ -28,7 +28,7 @@ import termios
 from twisted.python import log
 from twisted.internet import reactor, defer
 from twisted.internet.protocol import ReconnectingClientFactory
-from twisted.protocols.basic import LineReceiver
+from twisted.protocols.basic import Int32StringReceiver
 from .server import parse_services
 from .common import abort_on_crash, exit_status
 from .conf import settings
@@ -65,11 +65,11 @@ def addstr(window, y, x, s, *attrs):
         pass
 
 
-class AntennaStat(LineReceiver):
-    delimiter = b'\n'
+class AntennaStat(Int32StringReceiver):
+    MAX_LENGTH = 1024 * 1024
 
-    def lineReceived(self, line):
-        attrs = json.loads(line)
+    def stringReceived(self, string):
+        attrs = msgpack.unpackb(string, strict_map_key=False, use_list=False)
 
         if attrs['type'] == 'rx':
             self.draw_rx(attrs)
@@ -78,7 +78,7 @@ class AntennaStat(LineReceiver):
 
     def draw_rx(self, attrs):
         p = attrs['packets']
-        rssi_d = attrs['rssi']
+        stats_d = attrs['rx_ant_stats']
         tx_ant = attrs.get('tx_ant')
         rx_id = attrs['id']
 
@@ -101,13 +101,16 @@ class AntennaStat(LineReceiver):
             if y < ymax:
                 addstr(window, y, 0, msg, attr)
 
-        if rssi_d:
-            addstr(window, 0, 25, '[ANT] pkt/s     RSSI [dBm]')
-            for y, (k, v) in enumerate(sorted(rssi_d.items()), 1):
-                pkt_s, rssi_min, rssi_avg, rssi_max = v
+        if stats_d:
+            addstr(window, 0, 24, 'Freq  [ANT] pkt/s     RSSI [dBm]        SNR [dB]')
+            for y, ((freq, ant_id), v) in enumerate(sorted(stats_d.items()), 1):
+                pkt_s, rssi_min, rssi_avg, rssi_max, snr_min, snr_avg, snr_max = v
                 if y < ymax:
-                    active_tx = '*' if (int(k, 16) >> 8) == tx_ant else ' '
-                    addstr(window, y, 24, '%s%04x:  %4d  %3d < %3d < %3d' % (active_tx, int(k, 16), pkt_s, rssi_min, rssi_avg, rssi_max))
+                    active_tx = '*' if (ant_id >> 8) == tx_ant else ' '
+                    addstr(window, y, 24, '%04d  %s%04x  %4d  %3d < %3d < %3d  %3d < %3d < %3d' % \
+                           (freq, active_tx, ant_id, pkt_s,
+                            rssi_min, rssi_avg, rssi_max,
+                            snr_min, snr_avg, snr_max))
         else:
             addstr(window, 0, 25, '[No data]', curses.A_REVERSE)
 
@@ -139,9 +142,10 @@ class AntennaStat(LineReceiver):
         if latency_d:
             addstr(window, 0, 25, '[ANT] pkt/s     Injection [us]')
             for y, (k, v) in enumerate(sorted(latency_d.items()), 1):
+                k = int(k) # json doesn't support int keys
                 injected, dropped, lat_min, lat_avg, lat_max = v
                 if y < ymax:
-                    addstr(window, y, 25, '%04x:  %4d  %4d < %4d < %4d' % (int(k, 16), injected, lat_min, lat_avg, lat_max))
+                    addstr(window, y, 25, '%04x:  %4d  %4d < %4d < %4d' % (k, injected, lat_min, lat_avg, lat_max))
         else:
             addstr(window, 0, 25, '[No data]', curses.A_REVERSE)
 
