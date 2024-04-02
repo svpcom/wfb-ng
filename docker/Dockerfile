@@ -8,7 +8,7 @@ RUN apt update && \
     libpcap-dev libsodium-dev \
     python3-twisted python3-pyroute2 \
     python3-future python3-all python3-all-dev \
-    python3-serial dh-python
+    python3-serial dh-python python3-msgpack
 
 ENV ENV=/opt/env
 ENV PYTHON=python3
