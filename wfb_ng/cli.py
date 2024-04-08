@@ -24,6 +24,8 @@ import msgpack
 import tempfile
 import signal
 import termios
+import struct
+import fcntl
 
 from twisted.python import log
 from twisted.internet import reactor, defer
@@ -165,7 +167,8 @@ class AntennaStatClientFactory(ReconnectingClientFactory):
 
     def init_windows(self):
         self.windows.clear()
-        height, width = termios.tcgetwinsize(1)
+        # python < 3.11 doesn't have termios.tcgetwinsize
+        height, width = struct.unpack('hh', fcntl.ioctl(1, termios.TIOCGWINSZ, b' ' * 4))
         curses.resize_term(height, width)
         self.stdscr.clear()
 
