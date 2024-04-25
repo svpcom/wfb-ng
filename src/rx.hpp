@@ -156,6 +156,31 @@ public:
     ~Aggregator();
     virtual void process_packet(const uint8_t *buf, size_t size, uint8_t wlan_idx, const uint8_t *antenna, const int8_t *rssi, const int8_t *noise, uint16_t freq, sockaddr_in *sockaddr);
     virtual void dump_stats(FILE *fp);
+
+    // Make stats public for android userspace receiver
+    void clear_stats(void)
+    {
+        antenna_stat.clear();
+        count_p_all = 0;
+        count_p_dec_err = 0;
+        count_p_dec_ok = 0;
+        count_p_fec_recovered = 0;
+        count_p_lost = 0;
+        count_p_bad = 0;
+        count_p_override = 0;
+        count_p_outgoing = 0;
+    }
+
+    rx_antenna_stat_t antenna_stat;
+    uint32_t count_p_all;
+    uint32_t count_p_dec_err;
+    uint32_t count_p_dec_ok;
+    uint32_t count_p_fec_recovered;
+    uint32_t count_p_lost;
+    uint32_t count_p_bad;
+    uint32_t count_p_override;
+    uint32_t count_p_outgoing;
+
 private:
     void init_fec(int k, int n);
     void deinit_fec(void);
@@ -180,16 +205,6 @@ private:
     uint8_t rx_secretkey[crypto_box_SECRETKEYBYTES];
     uint8_t tx_publickey[crypto_box_PUBLICKEYBYTES];
     uint8_t session_key[crypto_aead_chacha20poly1305_KEYBYTES];
-
-    rx_antenna_stat_t antenna_stat;
-    uint32_t count_p_all;
-    uint32_t count_p_dec_err;
-    uint32_t count_p_dec_ok;
-    uint32_t count_p_fec_recovered;
-    uint32_t count_p_lost;
-    uint32_t count_p_bad;
-    uint32_t count_p_override;
-    uint32_t count_p_outgoing;
 };
 
 class Receiver

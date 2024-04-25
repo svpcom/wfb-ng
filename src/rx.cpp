@@ -26,7 +26,7 @@
 #include <unistd.h>
 #include <time.h>
 #include <sys/resource.h>
-#include <pcap/pcap.h>
+#include <pcap.h>
 #include <poll.h>
 #include <sys/socket.h>
 #include <netinet/in.h>
@@ -213,10 +213,10 @@ void Receiver::loop_iter(void)
 
 
 Aggregator::Aggregator(const string &client_addr, int client_port, const string &keypair, uint64_t epoch, uint32_t channel_id) : \
-    fec_p(NULL), fec_k(-1), fec_n(-1), seq(0), rx_ring_front(0), rx_ring_alloc(0),
-    last_known_block((uint64_t)-1), epoch(epoch), channel_id(channel_id),
     count_p_all(0), count_p_dec_err(0), count_p_dec_ok(0), count_p_fec_recovered(0),
-    count_p_lost(0), count_p_bad(0), count_p_override(0), count_p_outgoing(0)
+    count_p_lost(0), count_p_bad(0), count_p_override(0), count_p_outgoing(0),
+    fec_p(NULL), fec_k(-1), fec_n(-1), seq(0), rx_ring_front(0), rx_ring_alloc(0),
+    last_known_block((uint64_t)-1), epoch(epoch), channel_id(channel_id)
 {
     sockfd = open_udp_socket_for_tx(client_addr, client_port);
     memset(session_key, '\0', sizeof(session_key));
@@ -419,7 +419,6 @@ void Aggregator::dump_stats(FILE *fp)
                 it->second.rssi_min, it->second.rssi_sum / it->second.count_all, it->second.rssi_max,
                 it->second.snr_min, it->second.snr_sum / it->second.count_all, it->second.snr_max);
     }
-    antenna_stat.clear();
 
     fprintf(fp, "%" PRIu64 "\tPKT\t%u:%u:%u:%u:%u:%u:%u\n", ts, count_p_all, count_p_dec_err, count_p_dec_ok, count_p_fec_recovered, count_p_lost, count_p_bad, count_p_outgoing);
     fflush(fp);
@@ -434,14 +433,7 @@ void Aggregator::dump_stats(FILE *fp)
         fprintf(stderr, "%u packets lost\n", count_p_lost);
     }
 
-    count_p_all = 0;
-    count_p_dec_err = 0;
-    count_p_dec_ok = 0;
-    count_p_fec_recovered = 0;
-    count_p_lost = 0;
-    count_p_bad = 0;
-    count_p_override = 0;
-    count_p_outgoing = 0;
+    clear_stats();
 }
 
 
@@ -897,6 +889,8 @@ void network_loop(int srv_port, Aggregator &agg, int log_interval, int rcv_buf_s
     }
 }
 
+#ifndef __WFB_RX_SHARED_LIBRARY__
+
 int main(int argc, char* const *argv)
 {
     int opt;
@@ -1009,3 +1003,5 @@ int main(int argc, char* const *argv)
     }
     return 0;
 }
+
+#endif

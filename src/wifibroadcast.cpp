@@ -87,7 +87,7 @@ int open_udp_socket_for_rx(int port, int rcv_buf_size)
     saddr.sin_addr.s_addr = htonl(INADDR_ANY);
     saddr.sin_port = htons((unsigned short)port);
 
-    if (bind(fd, (struct sockaddr *) &saddr, sizeof(saddr)) < 0)
+    if (::bind(fd, (struct sockaddr *) &saddr, sizeof(saddr)) < 0)
     {
         throw runtime_error(string_format("Bind error: %s", strerror(errno)));
     }

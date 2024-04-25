@@ -161,7 +161,7 @@ RawSocketTransmitter::RawSocketTransmitter(int k, int n, const string &keypair, 
         sll.sll_ifindex = ifr.ifr_ifindex;
         sll.sll_protocol = 0;
 
-        if (bind(fd, (struct sockaddr *) &sll, sizeof(sll)) < 0)
+        if (::bind(fd, (struct sockaddr *) &sll, sizeof(sll)) < 0)
         {
             close(fd);
             throw runtime_error(string_format("Unable to bind to %s: %s", it->c_str(), strerror(errno)));
