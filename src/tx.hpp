@@ -96,7 +96,7 @@ typedef std::unordered_map<uint64_t, txAntennaItem> tx_antenna_stat_t;
 class RawSocketTransmitter : public Transmitter
 {
 public:
-    RawSocketTransmitter(int k, int m, const std::string &keypair, uint64_t epoch, uint32_t channel_id, const std::vector<std::string> &wlans);
+    RawSocketTransmitter(int k, int m, const std::string &keypair, uint64_t epoch, uint32_t channel_id, const std::vector<std::string> &wlans, shared_ptr<uint8_t[]> radiotap_header, size_t radiotap_header_len, uint8_t frame_type);
     virtual ~RawSocketTransmitter();
     virtual void select_output(int idx) { current_output = idx; }
     virtual void dump_stats(FILE *fp, uint64_t ts, uint32_t &injected, uint32_t &dropped);
@@ -107,6 +107,9 @@ private:
     uint16_t ieee80211_seq;
     std::vector<int> sockfds;
     tx_antenna_stat_t antenna_stat;
+    shared_ptr<uint8_t[]> radiotap_header;
+    size_t radiotap_header_len;
+    uint8_t frame_type;
 };
 
 

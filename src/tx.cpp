@@ -43,10 +43,11 @@ extern "C"
 #include "fec.h"
 }
 
+using namespace std;
+
 #include "wifibroadcast.hpp"
 #include "tx.hpp"
 
-using namespace std;
 
 Transmitter::Transmitter(int k, int n, const string &keypair, uint64_t epoch, uint32_t channel_id) : \
     fec_k(k), fec_n(n), block_idx(0),
@@ -124,11 +125,15 @@ void Transmitter::make_session_key(void)
     }
 }
 
-RawSocketTransmitter::RawSocketTransmitter(int k, int n, const string &keypair, uint64_t epoch, uint32_t channel_id, const vector<string> &wlans) : \
+RawSocketTransmitter::RawSocketTransmitter(int k, int n, const string &keypair, uint64_t epoch, uint32_t channel_id, const vector<string> &wlans,
+                                           shared_ptr<uint8_t[]> radiotap_header, size_t radiotap_header_len, uint8_t frame_type) : \
     Transmitter(k, n, keypair, epoch, channel_id),
     channel_id(channel_id),
     current_output(0),
-    ieee80211_seq(0)
+    ieee80211_seq(0),
+    radiotap_header(radiotap_header),
+    radiotap_header_len(radiotap_header_len),
+    frame_type(frame_type)
 {
     for(auto it=wlans.begin(); it!=wlans.end(); it++)
     {
@@ -174,9 +179,13 @@ RawSocketTransmitter::RawSocketTransmitter(int k, int n, const string &keypair, 
 void RawSocketTransmitter::inject_packet(const uint8_t *buf, size_t size)
 {
     assert(size <= MAX_FORWARDER_PACKET_SIZE);
-
     uint8_t ieee_hdr[sizeof(ieee80211_header)];
+
+    // fill default values
     memcpy(ieee_hdr, ieee80211_header, sizeof(ieee80211_header));
+
+    // frame_type
+    ieee_hdr[0] = frame_type;
 
     // channel_id
     uint32_t channel_id_be = htobe32(channel_id);
@@ -191,8 +200,8 @@ void RawSocketTransmitter::inject_packet(const uint8_t *buf, size_t size)
     struct iovec iov[3] = \
         {
             // radiotap header
-            { .iov_base = (void*)radiotap_header,
-              .iov_len = sizeof(radiotap_header)
+            { .iov_base = (void*)radiotap_header.get(),
+              .iov_len = radiotap_header_len
             },
             // ieee80211 header
             { .iov_base = (void*)ieee_hdr,
@@ -553,13 +562,18 @@ int main(int argc, char * const *argv)
     int stbc = 0;
     int ldpc = 0;
     int mcs_index = 1;
+    int vht_nss = 1;
     int debug_port = 0;
     int fec_timeout = 0;
     int rcv_buf = 0;
     bool mirror = false;
+    bool vht_mode = false;
     string keypair = "tx.key";
+    shared_ptr<uint8_t[]> radiotap_header = NULL;
+    size_t radiotap_header_len = 0;
+    uint8_t frame_type = FRAME_TYPE_DATA;
 
-    while ((opt = getopt(argc, argv, "K:k:n:u:p:l:B:G:S:L:M:D:T:i:e:R:f:m")) != -1) {
+    while ((opt = getopt(argc, argv, "K:k:n:u:p:l:B:G:S:L:M:N:D:T:i:e:R:f:m")) != -1) {
         switch (opt) {
         case 'K':
             keypair = optarg;
@@ -594,6 +608,9 @@ int main(int argc, char * const *argv)
         case 'M':
             mcs_index = atoi(optarg);
             break;
+        case 'N':
+            vht_nss = atoi(optarg);
+            break;
         case 'D':
             debug_port = atoi(optarg);
             break;
@@ -616,12 +633,12 @@ int main(int argc, char * const *argv)
             if (strcmp(optarg, "data") == 0)
             {
                 fprintf(stderr, "Using data frames\n");
-                ieee80211_header[0] = FRAME_TYPE_DATA;
+                frame_type = FRAME_TYPE_DATA;
             }
             else if (strcmp(optarg, "rts") == 0)
             {
                 fprintf(stderr, "Using rts frames\n");
-                ieee80211_header[0] = FRAME_TYPE_RTS;
+                frame_type = FRAME_TYPE_RTS;
             }
             else
             {
@@ -631,10 +648,10 @@ int main(int argc, char * const *argv)
             break;
         default: /* '?' */
         show_usage:
-            fprintf(stderr, "Usage: %s [-K tx_key] [-k RS_K] [-n RS_N] [-u udp_port] [-R rcv_buf] [-p radio_port] [-B bandwidth] [-G guard_interval] [-S stbc] [-L ldpc] [-M mcs_index] [-T fec_timeout] [-l log_interval] [-e epoch] [-i link_id] [-f { data | rts }] [ -m ] interface1 [interface2] ...\n",
+            fprintf(stderr, "Usage: %s [-K tx_key] [-k RS_K] [-n RS_N] [-u udp_port] [-R rcv_buf] [-p radio_port] [-B bandwidth] [-G guard_interval] [-S stbc] [-L ldpc] [-M mcs_index] [-N VHT_NSS] [-T fec_timeout] [-l log_interval] [-e epoch] [-i link_id] [-f { data | rts }] [ -m ] interface1 [interface2] ...\n",
                     argv[0]);
-            fprintf(stderr, "Default: K='%s', k=%d, n=%d, udp_port=%d, link_id=0x%06x, radio_port=%u, epoch=%" PRIu64 ", bandwidth=%d guard_interval=%s stbc=%d ldpc=%d mcs_index=%d, fec_timeout=%d, log_interval=%d, rcv_buf=system_default, frame_type=data, mirror=false\n",
-                    keypair.c_str(), k, n, udp_port, link_id, radio_port, epoch, bandwidth, short_gi ? "short" : "long", stbc, ldpc, mcs_index, fec_timeout, log_interval);
+            fprintf(stderr, "Default: K='%s', k=%d, n=%d, udp_port=%d, link_id=0x%06x, radio_port=%u, epoch=%" PRIu64 ", bandwidth=%d guard_interval=%s stbc=%d ldpc=%d mcs_index=%d vht_nss=%d, fec_timeout=%d, log_interval=%d, rcv_buf=system_default, frame_type=data, mirror=false\n",
+                    keypair.c_str(), k, n, udp_port, link_id, radio_port, epoch, bandwidth, short_gi ? "short" : "long", stbc, ldpc, mcs_index, vht_nss, fec_timeout, log_interval);
             fprintf(stderr, "Radio MTU: %lu\n", (unsigned long)MAX_PAYLOAD_SIZE);
             fprintf(stderr, "WFB-ng version " WFB_VERSION "\n");
             fprintf(stderr, "WFB-ng home page: <http://wfb-ng.org>\n");
@@ -646,9 +663,16 @@ int main(int argc, char * const *argv)
         goto show_usage;
     }
 
-    // Set flags in radiotap header
+    // Only use VHT when BW set to 80 or higher
+    if (bandwidth >= 80) {
+        vht_mode = true;
+    }
+
+    if (!vht_mode)
     {
+        // Set flags in HT radiotap header
         uint8_t flags = 0;
+
         switch(bandwidth) {
         case 20:
             flags |= IEEE80211_RADIOTAP_MCS_BW_20;
@@ -688,8 +712,51 @@ int main(int argc, char * const *argv)
             flags |= IEEE80211_RADIOTAP_MCS_FEC_LDPC;
         }
 
+        radiotap_header_len = sizeof(radiotap_header_ht);
+        radiotap_header = shared_ptr<uint8_t[]>(new uint8_t[radiotap_header_len]);
+        memcpy(radiotap_header.get(), radiotap_header_ht, radiotap_header_len);
+
         radiotap_header[MCS_FLAGS_OFF] = flags;
         radiotap_header[MCS_IDX_OFF] = mcs_index;
+    }
+    else
+    {
+        // Set flags in VHT radiotap header
+        uint8_t flags = 0;
+        radiotap_header_len = sizeof(radiotap_header_vht);
+        radiotap_header = shared_ptr<uint8_t[]>(new uint8_t[radiotap_header_len]);
+        memcpy(radiotap_header.get(), radiotap_header_vht, radiotap_header_len);
+
+        if (short_gi)
+        {
+            flags |= IEEE80211_RADIOTAP_VHT_FLAG_SGI;
+        }
+
+        if (stbc)
+        {
+            flags |= IEEE80211_RADIOTAP_VHT_FLAG_STBC;
+        }
+
+        switch(bandwidth) {
+        case 80:
+            radiotap_header[VHT_BW_OFF] = IEEE80211_RADIOTAP_VHT_BW_80M;
+            break;
+        case 160:
+            radiotap_header[VHT_BW_OFF] = IEEE80211_RADIOTAP_VHT_BW_160M;
+            break;
+        default:
+            fprintf(stderr, "Unsupported bandwidth: %d\n", bandwidth);
+            exit(1);
+        }
+
+        if (ldpc)
+        {
+            radiotap_header[VHT_CODING_OFF] = IEEE80211_RADIOTAP_VHT_CODING_LDPC_USER0;
+        }
+
+        radiotap_header[VHT_FLAGS_OFF] = flags;
+        radiotap_header[VHT_MCSNSS0_OFF] |= ((mcs_index<<IEEE80211_RADIOTAP_VHT_MCS_SHIFT) & IEEE80211_RADIOTAP_VHT_MCS_MASK);
+        radiotap_header[VHT_MCSNSS0_OFF] |= ((vht_nss<<IEEE80211_RADIOTAP_VHT_NSS_SHIFT) & IEEE80211_RADIOTAP_VHT_NSS_MASK);
     }
 
     {
@@ -754,7 +821,8 @@ int main(int argc, char * const *argv)
             fprintf(stderr, "Using %zu ports from %d for wlan emulation\n", wlans.size(), debug_port);
             t = shared_ptr<UdpTransmitter>(new UdpTransmitter(k, n, keypair, "127.0.0.1", debug_port, epoch, channel_id));
         } else {
-            t = shared_ptr<RawSocketTransmitter>(new RawSocketTransmitter(k, n, keypair, epoch, channel_id, wlans));
+            t = shared_ptr<RawSocketTransmitter>(new RawSocketTransmitter(k, n, keypair, epoch, channel_id, wlans,
+                                                                          radiotap_header, radiotap_header_len, frame_type));
         }
 
         data_source(t, rx_fd, fec_timeout, mirror, log_interval);

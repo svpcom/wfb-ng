@@ -420,6 +420,10 @@ def init_wlans(max_bw, wlans):
         ht_mode = 'HT20'
     elif max_bw == 40:
         ht_mode = 'HT40+'
+    elif max_bw == 80:
+        ht_mode = '80MHz'
+    elif max_bw == 160:
+        ht_mode = '160MHz'
     else:
         raise Exception('Unsupported bandwith %d MHz' % (max_bw,))
 
