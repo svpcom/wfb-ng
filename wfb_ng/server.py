@@ -416,7 +416,9 @@ class TXProtocol(ProcessProtocol):
 
 @defer.inlineCallbacks
 def init_wlans(max_bw, wlans):
-    if max_bw == 20:
+    if max_bw == 10:
+        ht_mode = '10MHz'
+    elif max_bw == 20:
         ht_mode = 'HT20'
     elif max_bw == 40:
         ht_mode = 'HT40+'

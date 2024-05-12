@@ -674,6 +674,9 @@ int main(int argc, char * const *argv)
         uint8_t flags = 0;
 
         switch(bandwidth) {
+        case 10:
+            flags |= IEEE80211_RADIOTAP_MCS_BW_20;
+            break;
         case 20:
             flags |= IEEE80211_RADIOTAP_MCS_BW_20;
             break;
