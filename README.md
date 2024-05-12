@@ -199,8 +199,8 @@ Put `drone.key` to drone and `gs.key` to gs.
 
 Supported WiFi hardware:
 ------------------------
-My primary hardware target is Realtek **RTL8812au**. 802.11ac capable. Easy to buy. [**Requires external patched driver!**](https://github.com/svpcom/rtl8812au)  System was tested with ALPHA AWUS036ACH on both sides in 5GHz mode.
-
+ - **RTL8812au**. (stable) 802.11ac capable. [**Requires external patched driver!**](https://github.com/svpcom/rtl8812au)  System was tested with ALPHA AWUS036ACH on both sides in 5GHz mode.
+ - **RTL8812eu**. (beta) 802.11ac capable. [**Requires external patched driver!**](https://github.com/svpcom/rtl8812eu) System was tested with [LB-LINK's BL-M8812EU2 module](https://www.lb-link.com/product_36_183.html)
 
 Wiki:
 -----
