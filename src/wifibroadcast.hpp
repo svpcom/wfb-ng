@@ -96,11 +96,27 @@ static const uint8_t radiotap_header_vht[]  __attribute__((unused)) = {
     0x00, 0x00  // Partial AID, not used
 };
 
-#define WIFI_MTU  1500  // WiFi interface mtu. You can increase it if your card allow larger packets,
+#define WIFI_MTU  4045  // Max injected packet size including all wfb-headers.
+                        // Please note, that resulting data packet size depends from input UDP packet size
+                        // and FEC packet size is max of all UDP packet sizes in this block.
+                        // I.e. you can have WIFI_MTU=4045 but if you will not feed large UDP packets
+                        // then resulting radio packets will be small.
+
+                        // I've set it to 4045 to allow wfb_rx compatibility with custom wfb_tx builds that can
+                        // have maximum allowed mtu value, but I don't recommend to feed UDP packets
+                        // larger that 1448 bytes in production.
+
+                        // You can increase it if your card allow larger packets,
                         // but this can lead to interoperability issues and/or kernel crashes.
-                        // If you use non-default MTU then you need to configure proper MTU on WiFi cards manually.
-                        // Also you must update radio_mtu in master.cfg - set it to MAX_PAYLOAD_SIZE
+                        // Use values > 1500 with caution!
+
+                        // If you use non-default MTU then you need to configure proper MTU on WiFi cards manually
+                        // (but 8812au and 8812eu drivers set max mtu by default)
+
+                        // Also you may update radio_mtu in master.cfg - set it to not more than MAX_PAYLOAD_SIZE
                         // or see in output of wfb_tx (Radio MTU)
+
+                        // Experemental max allowed WIFI_MTU for: rtl8812au -- 4049, rtl8812eu -- 4045
 
 #define PACKET_INJECTION_TIMEOUT_MS  5
 
