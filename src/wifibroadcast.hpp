@@ -85,8 +85,9 @@ static const uint8_t radiotap_header_ht[]  __attribute__((unused)) = {
 
 static const uint8_t radiotap_header_vht[]  __attribute__((unused)) = {
     0x00, 0x00, // <-- radiotap version
-    0x14, 0x00, // <- radiotap header length
-    0x00, 0x00, 0x20, 0x00, // <-- radiotap present flags: VHT Information
+    0x16, 0x00, // <- radiotap header length
+    0x00, 0x80, 0x20, 0x00, // <-- radiotap present flags: RADIOTAP_TX_FLAGS + VHT Information
+    0x08, 0x00,  // RADIOTAP_F_TX_NOACK
     0x45, 0x00, // Known VHT information: 0000 0000 0100 0101, BW, GI, STBC
     0x00,       // Flags, BIT(0)=STBC, BIT(2)=GI
     0x04,       // BW, 0:20M, 1:40M, 4:80, 11:160
@@ -128,10 +129,10 @@ static const uint8_t radiotap_header_vht[]  __attribute__((unused)) = {
 #define MCS_IDX_OFF 12
 
 // offset of VHT information
-#define VHT_FLAGS_OFF 10
-#define VHT_BW_OFF 11
-#define VHT_MCSNSS0_OFF 12
-#define VHT_CODING_OFF 16
+#define VHT_FLAGS_OFF 12
+#define VHT_BW_OFF 13
+#define VHT_MCSNSS0_OFF 14
+#define VHT_CODING_OFF 18
 
 //the last four bytes used for channel_id
 #define SRC_MAC_THIRD_BYTE 12
