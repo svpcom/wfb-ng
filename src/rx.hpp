@@ -39,7 +39,10 @@ typedef enum {
 class BaseAggregator
 {
 public:
-    virtual void process_packet(const uint8_t *buf, size_t size, uint8_t wlan_idx, const uint8_t *antenna, const int8_t *rssi, const int8_t *noise, uint16_t freq, sockaddr_in *sockaddr) = 0;
+    virtual void process_packet(const uint8_t *buf, size_t size, uint8_t wlan_idx, const uint8_t *antenna,
+                                const int8_t *rssi, const int8_t *noise, uint16_t freq, uint8_t mcs_index,
+                                uint8_t bandwidth, sockaddr_in *sockaddr) = 0;
+
     virtual void dump_stats(FILE *fp) = 0;
 protected:
     int open_udp_socket_for_tx(const std::string &client_addr, int client_port)
@@ -67,7 +70,9 @@ class Forwarder : public BaseAggregator
 public:
     Forwarder(const std::string &client_addr, int client_port);
     ~Forwarder();
-    virtual void process_packet(const uint8_t *buf, size_t size, uint8_t wlan_idx, const uint8_t *antenna, const int8_t *rssi, const int8_t *noise, uint16_t freq, sockaddr_in *sockaddr);
+    virtual void process_packet(const uint8_t *buf, size_t size, uint8_t wlan_idx, const uint8_t *antenna,
+                                const int8_t *rssi, const int8_t *noise, uint16_t freq, uint8_t mcs_index,
+                                uint8_t bandwidth,sockaddr_in *sockaddr);
     virtual void dump_stats(FILE *) {}
 private:
     int sockfd;
@@ -129,21 +134,37 @@ struct rxAntennaKey
 {
     uint16_t freq;
     uint64_t antenna_id;
+    uint8_t mcs_index;
+    uint8_t bandwidth;
 
     bool operator==(const rxAntennaKey &other) const
     {
-        return (freq == other.freq && antenna_id == other.antenna_id);
+        return (freq == other.freq && \
+                antenna_id == other.antenna_id && \
+                mcs_index == other.mcs_index && \
+                bandwidth == other.bandwidth);
     }
 };
+
+
+template <typename T>
+void hash_combine(std::size_t& seed, const T& v)
+{
+    seed ^= std::hash<T>{}(v) + 0x9e3779b9 + (seed << 6) + (seed >> 2);
+}
+
 
 template<>
 struct std::hash<rxAntennaKey>
 {
     std::size_t operator()(const rxAntennaKey& k) const noexcept
     {
-        std::size_t h1 = std::hash<uint16_t>{}(k.freq);
-        std::size_t h2 = std::hash<uint64_t>{}(k.antenna_id);
-        return h1 ^ (h2 << 1); // combine hashes
+        std::size_t h = 0;
+        hash_combine(h, k.freq);
+        hash_combine(h, k.antenna_id);
+        hash_combine(h, k.mcs_index);
+        hash_combine(h, k.bandwidth);
+        return h;
     }
 };
 
@@ -154,7 +175,9 @@ class Aggregator : public BaseAggregator
 public:
     Aggregator(const std::string &client_addr, int client_port, const std::string &keypair, uint64_t epoch, uint32_t channel_id);
     ~Aggregator();
-    virtual void process_packet(const uint8_t *buf, size_t size, uint8_t wlan_idx, const uint8_t *antenna, const int8_t *rssi, const int8_t *noise, uint16_t freq, sockaddr_in *sockaddr);
+    virtual void process_packet(const uint8_t *buf, size_t size, uint8_t wlan_idx, const uint8_t *antenna,
+                                const int8_t *rssi, const int8_t *noise, uint16_t freq, uint8_t mcs_index,
+                                uint8_t bandwidth, sockaddr_in *sockaddr);
     virtual void dump_stats(FILE *fp);
 
     // Make stats public for android userspace receiver
@@ -162,6 +185,7 @@ public:
     {
         antenna_stat.clear();
         count_p_all = 0;
+        count_b_all = 0;
         count_p_dec_err = 0;
         count_p_dec_ok = 0;
         count_p_fec_recovered = 0;
@@ -169,10 +193,12 @@ public:
         count_p_bad = 0;
         count_p_override = 0;
         count_p_outgoing = 0;
+        count_b_outgoing = 0;
     }
 
     rx_antenna_stat_t antenna_stat;
     uint32_t count_p_all;
+    uint32_t count_b_all;
     uint32_t count_p_dec_err;
     uint32_t count_p_dec_ok;
     uint32_t count_p_fec_recovered;
@@ -180,13 +206,15 @@ public:
     uint32_t count_p_bad;
     uint32_t count_p_override;
     uint32_t count_p_outgoing;
+    uint32_t count_b_outgoing;
 
 private:
     void init_fec(int k, int n);
     void deinit_fec(void);
     void send_packet(int ring_idx, int fragment_idx);
     void apply_fec(int ring_idx);
-    void log_rssi(const sockaddr_in *sockaddr, uint8_t wlan_idx, const uint8_t *ant, const int8_t *rssi, const int8_t *noise, uint16_t freq);
+    void log_rssi(const sockaddr_in *sockaddr, uint8_t wlan_idx, const uint8_t *ant, const int8_t *rssi,
+                  const int8_t *noise, uint16_t freq, uint8_t mcs_index, uint8_t bandwidth);
     int get_block_ring_idx(uint64_t block_idx);
     int rx_ring_push(void);
     fec_t* fec_p;

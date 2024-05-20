@@ -197,6 +197,8 @@ typedef struct {
     int8_t rssi[RX_ANT_MAX]; //RADIOTAP_DBM_ANTSIGNAL, list of rssi for corresponding antenna idx
     int8_t noise[RX_ANT_MAX]; //RADIOTAP_DBM_ANTNOISE, list of (rssi - snr) for corresponding antenna idx
     uint16_t freq; //IEEE80211_RADIOTAP_CHANNEL -- channel frequency in MHz
+    uint8_t mcs_index;
+    uint8_t bandwidth;
 } __attribute__ ((packed)) wrxfwd_t;
 
 // Network packet headers. All numbers are in network (big endian) format

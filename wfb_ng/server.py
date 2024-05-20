@@ -61,6 +61,7 @@ class StatisticsProtocol(Int32StringReceiver):
     MAX_LENGTH = 1024 * 1024
 
     def connectionMade(self):
+        self.sendString(msgpack.packb(dict(type='cli_title', cli_title=self.factory.cli_title)))
         self.factory.ui_sessions.append(self)
 
     def stringReceived(self, string):
@@ -81,7 +82,7 @@ class StatsAndSelectorFactory(Factory):
     Aggregate RX stats and select TX antenna
     """
 
-    def __init__(self):
+    def __init__(self, profile, wlans, link_domain):
         self.ant_sel_cb_list = []
         self.rssi_cb_l = []
 
@@ -91,6 +92,9 @@ class StatsAndSelectorFactory(Factory):
 
         # tcp sockets for UI
         self.ui_sessions = []
+
+        # CLI title
+        self.cli_title = 'WFB-ng_%s @%s %s [%s]' % (settings.common.version, profile, ', '.join(wlans), link_domain)
 
     def add_ant_sel_cb(self, ant_sel_cb):
         self.ant_sel_cb_list.append(ant_sel_cb)
@@ -102,9 +106,10 @@ class StatsAndSelectorFactory(Factory):
     def _stats_agg_by_freq(self, ant_stats):
         stats_agg = {}
 
-        for (freq, ant_id), (pkt_s,
-                             rssi_min, rssi_avg, rssi_max,
-                             snr_min, snr_avg, snr_max) in ant_stats.items():
+        for (((freq, mcs_index, bandwith), ant_id),
+             (pkt_s,
+              rssi_min, rssi_avg, rssi_max,
+              snr_min, snr_avg, snr_max)) in ant_stats.items():
 
             if ant_id not in stats_agg:
                 stats_agg[ant_id] = (pkt_s,
@@ -157,7 +162,7 @@ class StatsAndSelectorFactory(Factory):
 
         self.tx_sel = max_rssi_ant
 
-    def update_rx_stats(self, rx_id, packet_stats, ant_stats):
+    def update_rx_stats(self, rx_id, packet_stats, ant_stats, session):
         stats_agg = self._stats_agg_by_freq(ant_stats)
         card_rssi_l = list(rssi_avg
                            for pkt_s,
@@ -193,7 +198,9 @@ class StatsAndSelectorFactory(Factory):
 
         # Send stats to CLI sessions
         for s in self.ui_sessions:
-            s.send_stats(dict(type='rx', id=rx_id, tx_ant=self.tx_sel, packets=packet_stats, rx_ant_stats=ant_stats))
+            s.send_stats(dict(type='rx', id=rx_id, tx_ant=self.tx_sel,
+                              packets=packet_stats, rx_ant_stats=ant_stats,
+                              session=session))
 
     def update_tx_stats(self, tx_id, packet_stats, ant_latency):
         if settings.common.debug:
@@ -217,6 +224,7 @@ class RXAntennaProtocol(LineReceiver):
         self.rx_id = rx_id
         self.ant = {}
         self.count_all = None
+        self.session = None
 
     def lineReceived(self, line):
         line = line.decode('utf-8').strip()
@@ -232,27 +240,27 @@ class RXAntennaProtocol(LineReceiver):
             if cmd == 'RX_ANT':
                 if len(cols) != 5:
                     raise BadTelemetry()
-                self.ant[(int(cols[2]), int(cols[3], 16))] = tuple(int(i) for i in cols[4].split(':'))
+                self.ant[(tuple(int(i) for i in cols[2].split(':')), int(cols[3], 16))] = tuple(int(i) for i in cols[4].split(':'))
 
             elif cmd == 'PKT':
                 if len(cols) != 3:
                     raise BadTelemetry()
 
-                p_all, p_dec_err, p_dec_ok, p_fec_rec, p_lost, p_bad, p_outgoing = list(int(i) for i in cols[2].split(':'))
+                p_all, b_all, p_dec_err, p_dec_ok, p_fec_rec, p_lost, p_bad, p_outgoing, b_outgoing = list(int(i) for i in cols[2].split(':'))
 
                 if not self.count_all:
-                    self.count_all = (p_all, p_dec_ok, p_fec_rec, p_lost, p_dec_err, p_bad, p_outgoing)
+                    self.count_all = (p_all, b_all, p_dec_ok, p_fec_rec, p_lost, p_dec_err, p_bad, p_outgoing, b_outgoing)
                 else:
-                    self.count_all = tuple((a + b) for a, b in zip((p_all, p_dec_ok, p_fec_rec, p_lost, p_dec_err, p_bad, p_outgoing),
+                    self.count_all = tuple((a + b) for a, b in zip((p_all, b_all, p_dec_ok, p_fec_rec, p_lost, p_dec_err, p_bad, p_outgoing, b_outgoing),
                                                                    self.count_all))
 
-                stats = dict(zip(('all', 'dec_ok', 'fec_rec', 'lost', 'dec_err', 'bad', 'out'),
-                                 zip((p_all, p_dec_ok, p_fec_rec, p_lost, p_dec_err, p_bad, p_outgoing),
+                stats = dict(zip(('all', 'all_bytes', 'dec_ok', 'fec_rec', 'lost', 'dec_err', 'bad', 'out', 'out_bytes'),
+                                 zip((p_all, b_all, p_dec_ok, p_fec_rec, p_lost, p_dec_err, p_bad, p_outgoing, b_outgoing),
                                      self.count_all)))
 
                 # Send stats to aggregators
                 if self.ant_stat_cb is not None:
-                    self.ant_stat_cb.update_rx_stats(self.rx_id, stats, dict(self.ant))
+                    self.ant_stat_cb.update_rx_stats(self.rx_id, stats, dict(self.ant), self.session)
 
                 self.ant.clear()
 
@@ -261,6 +269,7 @@ class RXAntennaProtocol(LineReceiver):
                     raise BadTelemetry()
 
                 epoch, fec_type, fec_k, fec_n = list(int(i) for i in cols[2].split(':'))
+                self.session = dict(fec_type=fec_types.get(fec_type, 'Unknown'), fec_k=fec_k, fec_n=fec_n)
                 log.msg('New session detected [%s]: FEC=%s K=%d, N=%d, epoch=%d' % (self.rx_id, fec_types.get(fec_type, 'Unknown'), fec_k, fec_n, epoch))
 
             else:
@@ -319,16 +328,16 @@ class TXAntennaProtocol(LineReceiver):
             if len(cols) != 3:
                 raise BadTelemetry()
 
-            p_fec_timeouts, p_incoming, p_injected, p_dropped, p_truncated = list(int(i) for i in cols[2].split(':'))
+            p_fec_timeouts, p_incoming, b_incoming, p_injected, b_injected, p_dropped, p_truncated = list(int(i) for i in cols[2].split(':'))
 
             if not self.count_all:
-                self.count_all = (p_fec_timeouts, p_incoming, p_injected, p_dropped, p_truncated)
+                self.count_all = (p_fec_timeouts, p_incoming, b_incoming, p_injected, b_injected, p_dropped, p_truncated)
             else:
-                self.count_all = tuple((a + b) for a, b in zip((p_fec_timeouts, p_incoming, p_injected, p_dropped, p_truncated),
+                self.count_all = tuple((a + b) for a, b in zip((p_fec_timeouts, p_incoming, b_incoming, p_injected, b_injected, p_dropped, p_truncated),
                                                                self.count_all))
 
-            stats = dict(zip(('fec_timeouts', 'incoming', 'injected', 'dropped', 'truncated'),
-                             zip((p_fec_timeouts, p_incoming, p_injected, p_dropped, p_truncated),
+            stats = dict(zip(('fec_timeouts', 'incoming', 'incoming_bytes', 'injected', 'injected_bytes', 'dropped', 'truncated'),
+                             zip((p_fec_timeouts, p_incoming, b_incoming, p_injected, b_injected, p_dropped, p_truncated),
                                  self.count_all)))
 
             # Send stats to aggregators
@@ -500,8 +509,8 @@ def init(profiles, wlans):
 
     for profile, service_list in services:
         # Domain wide antenna selector
-        ant_sel_f = StatsAndSelectorFactory()
         profile_cfg = getattr(settings, profile)
+        ant_sel_f = StatsAndSelectorFactory(profile, wlans, profile_cfg.link_domain)
         link_id = int.from_bytes(hashlib.sha1(profile_cfg.link_domain.encode('utf-8')).digest()[:3], 'big')
 
         if profile_cfg.stats_port:
@@ -897,7 +906,7 @@ def main():
         log.theLogPublisher._startLogging(obs.emit, False)
 
 
-    log.msg('WFB version %s-%s' % (settings.common.version, settings.common.commit[:8]))
+    log.msg('WFB-ng version %s-%s' % (settings.common.version, settings.common.commit[:8]))
     profiles, wlans = sys.argv[1], list(wlan for arg in sys.argv[2:] for wlan in arg.split())
     uname = os.uname()
     log.msg('Run on %s/%s @%s, profile(s) %s using %s' % (uname[4], uname[2], uname[1], profiles, ', '.join(wlans)))

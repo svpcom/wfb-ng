@@ -234,7 +234,7 @@ void RawSocketTransmitter::inject_packet(const uint8_t *buf, size_t size)
         }
 
         uint64_t key = (uint64_t)(current_output) << 8 | (uint64_t)0xff;
-        antenna_stat[key].log_latency(get_time_us() - start_us, rc >= 0);
+        antenna_stat[key].log_latency(get_time_us() - start_us, rc >= 0, size);
     }
     else
     {
@@ -252,25 +252,26 @@ void RawSocketTransmitter::inject_packet(const uint8_t *buf, size_t size)
             }
 
             uint64_t key = (uint64_t)(i) << 8 | (uint64_t)0xff;
-            antenna_stat[key].log_latency(get_time_us() - start_us, rc >= 0);
+            antenna_stat[key].log_latency(get_time_us() - start_us, rc >= 0, size);
         }
     }
 
 }
 
-void RawSocketTransmitter::dump_stats(FILE *fp, uint64_t ts, uint32_t &injected, uint32_t &dropped)
+void RawSocketTransmitter::dump_stats(FILE *fp, uint64_t ts, uint32_t &injected_packets, uint32_t &dropped_packets, uint32_t &injected_bytes)
 {
     for(tx_antenna_stat_t::iterator it = antenna_stat.begin(); it != antenna_stat.end(); it++)
     {
         fprintf(fp, "%" PRIu64 "\tTX_ANT\t%" PRIx64 "\t%u:%u:%" PRIu64 ":%" PRIu64 ":%" PRIu64 "\n",
                 ts, it->first,
-                it->second.count_injected, it->second.count_dropped,
+                it->second.count_p_injected, it->second.count_p_dropped,
                 it->second.latency_min,
-                it->second.latency_sum / (it->second.count_injected + it->second.count_dropped),
+                it->second.latency_sum / (it->second.count_p_injected + it->second.count_p_dropped),
                 it->second.latency_max);
 
-        injected += it->second.count_injected;
-        dropped += it->second.count_dropped;
+        injected_packets += it->second.count_p_injected;
+        dropped_packets += it->second.count_p_dropped;
+        injected_bytes += it->second.count_b_injected;
     }
     antenna_stat.clear();
 }
@@ -393,7 +394,9 @@ void data_source(shared_ptr<Transmitter> &t, vector<int> &rx_fd, int fec_timeout
     uint64_t fec_close_ts = fec_timeout > 0 ? get_time_ms() + fec_timeout : 0;
     uint32_t count_p_fec_timeouts = 0; // empty packets sent to close fec block due to timeout
     uint32_t count_p_incoming = 0;   // incoming udp packets (received + dropped due to rxq overflow)
-    uint32_t count_p_injected = 0;  // successfully injected (include additional fec packets)
+    uint32_t count_b_incoming = 0;   // incoming udp bytes (received + dropped due to rxq overflow)
+    uint32_t count_p_injected = 0;  // successfully injected packets (include additional fec packets)
+    uint32_t count_b_injected = 0;  // successfully injected bytes (include additional fec packets)
     uint32_t count_p_dropped = 0;   // dropped due to rxq overflows or injection timeout
     uint32_t count_p_truncated = 0; // injected large packets that were truncated
     int start_fd_idx = 0;
@@ -420,10 +423,10 @@ void data_source(shared_ptr<Transmitter> &t, vector<int> &rx_fd, int fec_timeout
 
         if (cur_ts >= log_send_ts)  // log timeout expired
         {
-            t->dump_stats(stdout, cur_ts, count_p_injected, count_p_dropped);
+            t->dump_stats(stdout, cur_ts, count_p_injected, count_p_dropped, count_b_injected);
 
-            fprintf(stdout, "%" PRIu64 "\tPKT\t%u:%u:%u:%u:%u\n",
-                    cur_ts, count_p_fec_timeouts, count_p_incoming, count_p_injected, count_p_dropped, count_p_truncated);
+            fprintf(stdout, "%" PRIu64 "\tPKT\t%u:%u:%u:%u:%u:%u:%u\n",
+                    cur_ts, count_p_fec_timeouts, count_p_incoming, count_b_incoming, count_p_injected, count_b_injected, count_p_dropped, count_p_truncated);
             fflush(stdout);
 
             if(count_p_dropped)
@@ -438,7 +441,9 @@ void data_source(shared_ptr<Transmitter> &t, vector<int> &rx_fd, int fec_timeout
 
             count_p_fec_timeouts = 0;
             count_p_incoming = 0;
+            count_b_incoming = 0;
             count_p_injected = 0;
+            count_b_injected = 0;
             count_p_dropped = 0;
             count_p_truncated = 0;
 
@@ -502,6 +507,7 @@ void data_source(shared_ptr<Transmitter> &t, vector<int> &rx_fd, int fec_timeout
                     }
 
                     count_p_incoming += 1;
+                    count_b_incoming += rsize;
 
                     if (rsize > (ssize_t)MAX_PAYLOAD_SIZE)
                     {

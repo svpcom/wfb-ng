@@ -35,6 +35,10 @@ from .server import parse_services
 from .common import abort_on_crash, exit_status
 from .conf import settings
 
+_orig_stdout = sys.stdout
+
+def set_window_title(s):
+    print("\033]2;%s\007" % (s,), file=_orig_stdout)
 
 # Workarond for ncurses bug that show error on output to the last position on the screen
 
@@ -43,6 +47,10 @@ def ignore_curses_err(f, *args, **kwargs):
         return f(*args, **kwargs)
     except curses.error:
         pass
+
+def addcstr(window, s, attrs=0):
+    h, w = window.getmaxyx()
+    addstr(window, h // 2, max((w - len(s)) // 2, 0), s, attrs)
 
 
 def rectangle(win, uly, ulx, lry, lrx):
@@ -67,6 +75,23 @@ def addstr(window, y, x, s, *attrs):
         pass
 
 
+
+def human_rate(r):
+    rate = r * 8
+
+    if rate > 1024 * 1024:
+        rate = rate / 1024 / 1024
+        mod = 'mbit/s'
+    else:
+        rate = rate / 1024
+        mod = 'kbit/s'
+
+    if rate < 10:
+        return '%0.1f %s' % (rate, mod)
+    else:
+        return '%3d %s' % (rate, mod)
+
+
 class AntennaStat(Int32StringReceiver):
     MAX_LENGTH = 1024 * 1024
 
@@ -77,9 +102,12 @@ class AntennaStat(Int32StringReceiver):
             self.draw_rx(attrs)
         elif attrs['type'] == 'tx':
             self.draw_tx(attrs)
+        elif attrs['type'] == 'cli_title':
+            set_window_title(attrs['cli_title'])
 
     def draw_rx(self, attrs):
         p = attrs['packets']
+        session_d = attrs['session']
         stats_d = attrs['rx_ant_stats']
         tx_ant = attrs.get('tx_ant')
         rx_id = attrs['id']
@@ -89,10 +117,12 @@ class AntennaStat(Int32StringReceiver):
             return
 
         window.erase()
-        addstr(window, 0, 0, '[RX] pkt/s pkt')
+        addstr(window, 0, 0, '     pkt/s pkt')
 
         msg_l = (('recv  %4d %d' % tuple(p['all']),     0),
+                 #('recvb %4d %d' % tuple(p['all_bytes']),     0),
                  ('udp   %4d %d' % tuple(p['out']),     0),
+                 #('udpb  %4d %d' % tuple(p['out_bytes']),     0),
                  ('fec_r %4d %d' % tuple(p['fec_rec']), curses.A_REVERSE if p['fec_rec'][0] else 0),
                  ('lost  %4d %d' % tuple(p['lost']),    curses.A_REVERSE if p['lost'][0] else 0),
                  ('d_err %4d %d' % tuple(p['dec_err']), curses.A_REVERSE if p['dec_err'][0] else 0),
@@ -103,18 +133,27 @@ class AntennaStat(Int32StringReceiver):
             if y < ymax:
                 addstr(window, y, 0, msg, attr)
 
+        session = ''
+        if session_d:
+            session = ', FEC: %(fec_k)d/%(fec_n)d' % (session_d)
+
+        addstr(window, 0, 20, 'Flow: %s -> %s%s' % \
+               (human_rate(p['all_bytes'][0]),
+                human_rate(p['out_bytes'][0]),
+                session))
+
         if stats_d:
-            addstr(window, 0, 24, 'Freq  [ANT] pkt/s     RSSI [dBm]        SNR [dB]')
-            for y, ((freq, ant_id), v) in enumerate(sorted(stats_d.items()), 1):
+            addstr(window, 2, 20, 'Freq MCS BW [ANT] pkt/s     RSSI [dBm]        SNR [dB]')
+            for y, (((freq, mcs_index, bandwith), ant_id), v) in enumerate(sorted(stats_d.items()), 3):
                 pkt_s, rssi_min, rssi_avg, rssi_max, snr_min, snr_avg, snr_max = v
                 if y < ymax:
                     active_tx = '*' if (ant_id >> 8) == tx_ant else ' '
-                    addstr(window, y, 24, '%04d  %s%04x  %4d  %3d < %3d < %3d  %3d < %3d < %3d' % \
-                           (freq, active_tx, ant_id, pkt_s,
+                    addstr(window, y, 20, '%04d %3d %2d %s%04x  %4d  %3d < %3d < %3d  %3d < %3d < %3d' % \
+                           (freq, mcs_index, bandwith, active_tx, ant_id, pkt_s,
                             rssi_min, rssi_avg, rssi_max,
                             snr_min, snr_avg, snr_max))
         else:
-            addstr(window, 0, 25, '[No data]', curses.A_REVERSE)
+            addstr(window, 2, 20, '[No data]', curses.A_REVERSE)
 
         window.refresh()
 
@@ -128,10 +167,12 @@ class AntennaStat(Int32StringReceiver):
             return
 
         window.erase()
-        addstr(window, 0, 0, '[TX] pkt/s pkt')
+        addstr(window, 0, 0, '     pkt/s pkt')
 
         msg_l = (('sent  %4d %d' % tuple(p['injected']),     0),
+                 #('sentb %4d %d' % tuple(p['injected_bytes']),     0),
                  ('udp   %4d %d' % tuple(p['incoming']),     0),
+                 #('udpb  %4d %d' % tuple(p['incoming_bytes']),     0),
                  ('fec_t %4d %d' % tuple(p['fec_timeouts']), 0),
                  ('drop  %4d %d' % tuple(p['dropped']),    curses.A_REVERSE if p['dropped'][0] else 0),
                  ('trunc %4d %d' % tuple(p['truncated']), curses.A_REVERSE if p['truncated'][0] else 0))
@@ -141,15 +182,19 @@ class AntennaStat(Int32StringReceiver):
             if y < ymax:
                 addstr(window, y, 0, msg, attr)
 
+        addstr(window, 0, 20, 'Flow: %s -> %s' % \
+               (human_rate(p['incoming_bytes'][0]),
+                human_rate(p['injected_bytes'][0])))
+
         if latency_d:
-            addstr(window, 0, 25, '[ANT] pkt/s     Injection [us]')
-            for y, (k, v) in enumerate(sorted(latency_d.items()), 1):
+            addstr(window, 2, 20, '[ANT] pkt/s     Injection [us]')
+            for y, (k, v) in enumerate(sorted(latency_d.items()), 3):
                 k = int(k) # json doesn't support int keys
                 injected, dropped, lat_min, lat_avg, lat_max = v
                 if y < ymax:
-                    addstr(window, y, 25, '%04x:  %4d  %4d < %4d < %4d' % (k, injected, lat_min, lat_avg, lat_max))
+                    addstr(window, y, 20, '%04x:  %4d  %4d < %4d < %4d' % (k, injected, lat_min, lat_avg, lat_max))
         else:
-            addstr(window, 0, 25, '[No data]', curses.A_REVERSE)
+            addstr(window, 2, 20, '[No data]', curses.A_REVERSE)
 
 
         window.refresh()
@@ -172,7 +217,7 @@ class AntennaStatClientFactory(ReconnectingClientFactory):
         curses.resize_term(height, width)
         self.stdscr.clear()
 
-        service_list = list((s_name, cfg.show_rx_stats, cfg.show_tx_stats) for s_name, _, cfg in  parse_services(self.profile))
+        service_list = list((s_name, cfg.stream_rx is not None, cfg.stream_tx is not None) for s_name, _, cfg in  parse_services(self.profile))
 
         if not service_list:
             rectangle(self.stdscr, 0, 0, height - 1, width - 1)
@@ -203,47 +248,44 @@ class AntennaStatClientFactory(ReconnectingClientFactory):
                 hoff_float += h_fixed
 
             whl = []
-            for ww, xoff, txrx, show_stats in [((width // 2 - 1), 0, 'rx', show_rx_stats),
-                                               ((width - width // 2 - 1), width // 2, 'tx', show_tx_stats)]:
-                if show_stats:
-                    err = round(hoff_float) - (hoff_int + int(h_exp))
-                    wh = int(h_exp) + err
-                    if wh < h_fixed:
-                        raise Exception('Terminal height is too small')
-                else:
-                    wh = h_fixed
+            for ww, xoff, txrx, show_stats in [((width * 4 // 7 - 1), 0, 'rx', show_rx_stats),
+                                               ((width - width * 4 // 7 - 1), width * 4 // 7, 'tx', show_tx_stats)]:
+                if not show_stats:
+                    whl.append(0)
+                    continue
+
+                err = round(hoff_float) - (hoff_int + int(h_exp))
+                wh = int(h_exp) + err
+                if wh < h_fixed:
+                    raise Exception('Terminal height is too small')
 
                 window = self.stdscr.subpad(wh - 2, ww - 2, hoff_int + 1, xoff + 1)
                 window.idlok(1)
                 window.scrollok(1)
 
                 rectangle(self.stdscr, hoff_int, xoff, hoff_int + wh - 1, xoff + ww)
-                addstr(self.stdscr, hoff_int, 3 + xoff, '[%s %s %s]' % (self.profile, name, txrx))
+                addstr(self.stdscr, hoff_int, 3 + xoff, '[%s: %s %s]' % (txrx.upper(), self.profile, name))
 
-                if show_stats:
-                    self.windows['%s %s' % (name, txrx)] = window
-                else:
-                    addstr(window, 0, 0, '[statistics disabled]', curses.A_REVERSE)
-                    window.refresh()
-
+                self.windows['%s %s' % (name, txrx)] = window
                 whl.append(wh)
+
             hoff_int += max(whl)
         self.stdscr.refresh()
 
     def startedConnecting(self, connector):
-        log.msg('Connecting to %s:%d ...' % (connector.host, connector.port))
+        set_window_title('Connecting to %s:%d ...' % (connector.host, connector.port))
 
         for window in self.windows.values():
             window.erase()
-            addstr(window, 0, 0, 'Connecting...')
+            addcstr(window, 'Connecting...')
             window.refresh()
 
     def buildProtocol(self, addr):
-        log.msg('Connected to %s' % (addr,))
+        set_window_title('Connected to %s' % (addr,))
 
         for window in self.windows.values():
             window.erase()
-            addstr(window, 0, 0, 'Waiting for data...')
+            addcstr(window, 'Waiting for data...')
             window.refresh()
 
         self.resetDelay()
@@ -252,21 +294,21 @@ class AntennaStatClientFactory(ReconnectingClientFactory):
         return p
 
     def clientConnectionLost(self, connector, reason):
-        log.msg('Connection lost: %s' % (reason.value,))
+        set_window_title('Connection lost: %s' % (reason.value,))
 
         for window in self.windows.values():
             window.erase()
-            addstr(window, 0, 0, 'Connection lost: %s' % (reason.value,))
+            addcstr(window, '[Connection lost]', curses.A_REVERSE)
             window.refresh()
 
         ReconnectingClientFactory.clientConnectionLost(self, connector, reason)
 
     def clientConnectionFailed(self, connector, reason):
-        log.msg('Connection failed: %s' % (reason.value,))
+        set_window_title('Connection failed: %s' % (reason.value,))
 
         for window in self.windows.values():
             window.erase()
-            addstr(window, 0, 0, 'Connection failed: %s' % (reason.value,))
+            addcstr(window, '[Connection failed]', curses.A_REVERSE)
             window.refresh()
 
         ReconnectingClientFactory.clientConnectionFailed(self, connector, reason)

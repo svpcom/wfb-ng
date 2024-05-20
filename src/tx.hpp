@@ -38,7 +38,7 @@ public:
     bool send_packet(const uint8_t *buf, size_t size, uint8_t flags);
     void send_session_key(void);
     virtual void select_output(int idx) = 0;
-    virtual void dump_stats(FILE *fp, uint64_t ts, uint32_t &injected, uint32_t &dropped) = 0;
+    virtual void dump_stats(FILE *fp, uint64_t ts, uint32_t &injected_packets, uint32_t &dropped_packets, uint32_t &injected_bytes) = 0;
 protected:
     virtual void inject_packet(const uint8_t *buf, size_t size) = 0;
 
@@ -66,26 +66,36 @@ private:
 class txAntennaItem
 {
 public:
-    txAntennaItem(void) : count_injected(0), count_dropped(0), latency_sum(0), latency_min(0), latency_max(0) {}
+    txAntennaItem(void) : count_p_injected(0), count_b_injected(0), count_p_dropped(0), latency_sum(0), latency_min(0), latency_max(0) {}
 
-    void log_latency(uint64_t latency, bool succeeded) {
-        if(count_injected + count_dropped == 0)
+    void log_latency(uint64_t latency, bool succeeded, uint32_t packet_size) {
+        if(count_p_injected + count_p_dropped == 0)
         {
             latency_min = latency;
             latency_max = latency;
-        } else {
+        }
+        else
+        {
             latency_min = std::min(latency, latency_min);
             latency_max = std::max(latency, latency_max);
         }
 
         latency_sum += latency;
 
-        if (succeeded) count_injected += 1;
-        else count_dropped += 1;
+        if (succeeded)
+        {
+            count_p_injected += 1;
+            count_b_injected += packet_size;
+        }
+        else
+        {
+            count_p_dropped += 1;
+        }
     }
 
-    uint32_t count_injected;
-    uint32_t count_dropped;
+    uint32_t count_p_injected;
+    uint32_t count_b_injected;
+    uint32_t count_p_dropped;
     uint64_t latency_sum;
     uint64_t latency_min;
     uint64_t latency_max;
@@ -99,7 +109,7 @@ public:
     RawSocketTransmitter(int k, int m, const std::string &keypair, uint64_t epoch, uint32_t channel_id, const std::vector<std::string> &wlans, shared_ptr<uint8_t[]> radiotap_header, size_t radiotap_header_len, uint8_t frame_type);
     virtual ~RawSocketTransmitter();
     virtual void select_output(int idx) { current_output = idx; }
-    virtual void dump_stats(FILE *fp, uint64_t ts, uint32_t &injected, uint32_t &dropped);
+    virtual void dump_stats(FILE *fp, uint64_t ts, uint32_t &injected_packets, uint32_t &dropped_packets, uint32_t &injected_bytes);
 private:
     virtual void inject_packet(const uint8_t *buf, size_t size);
     const uint32_t channel_id;
@@ -129,7 +139,7 @@ public:
         saddr.sin_port = htons((unsigned short)base_port);
     }
 
-    virtual void dump_stats(FILE *fp, uint64_t ts, uint32_t &injected, uint32_t &dropped) {}
+    virtual void dump_stats(FILE *fp, uint64_t ts, uint32_t &injected_packets, uint32_t &dropped_packets, uint32_t &injected_bytes) {}
 
     virtual ~UdpTransmitter()
     {
