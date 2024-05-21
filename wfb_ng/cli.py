@@ -37,22 +37,33 @@ from .conf import settings
 
 _orig_stdout = sys.stdout
 
+
 def set_window_title(s):
     print("\033]2;%s\007" % (s,), file=_orig_stdout)
 
-# Workarond for ncurses bug that show error on output to the last position on the screen
 
-def ignore_curses_err(f, *args, **kwargs):
-    try:
-        return f(*args, **kwargs)
-    except curses.error:
-        pass
+def ignore_curses_err(f):
+    def _f(*args, **kwargs):
+        try:
+            return f(*args, **kwargs)
+        except curses.error:
+            pass
+    return _f
 
-def addcstr(window, s, attrs=0):
+
+@ignore_curses_err
+def addstr_noerr(window, y, x, s, *attrs):
+    for i, c in enumerate(s, x):
+        window.addch(y, i, c, *attrs)
+
+
+def addstr_centered(window, s, attrs=0):
     h, w = window.getmaxyx()
-    addstr(window, h // 2, max((w - len(s)) // 2, 0), s, attrs)
+    addstr_noerr(window, h // 2, max((w - len(s)) // 2, 0), s, attrs)
 
-def addmcstr(window, y, x, s, attrs=0):
+
+@ignore_curses_err
+def addstr_markup(window, y, x, s, attrs=0):
     for c in s:
         if c == '{':
             attrs |= curses.A_BOLD
@@ -86,17 +97,14 @@ def rectangle(win, uly, ulx, lry, lrx):
     win.vline(uly+1, lrx, curses.ACS_VLINE, lry - uly - 1)
     win.addch(uly, ulx, curses.ACS_ULCORNER)
     win.addch(uly, lrx, curses.ACS_URCORNER)
-    ignore_curses_err(win.addch, lry, lrx, curses.ACS_LRCORNER)
-    win.addch(lry, ulx, curses.ACS_LLCORNER)
 
-
-def addstr(window, y, x, s, *attrs):
+    # Workarond for ncurses bug that show error on output to the last position on the screen
     try:
-        for i, c in enumerate(s, x):
-            window.addch(y, i, c, *attrs)
+        win.addch(lry, lrx, curses.ACS_LRCORNER)
     except curses.error:
         pass
 
+    win.addch(lry, ulx, curses.ACS_LLCORNER)
 
 
 def human_rate(r):
@@ -140,7 +148,7 @@ class AntennaStat(Int32StringReceiver):
             return
 
         window.erase()
-        addstr(window, 0, 0, '     pkt/s pkt', curses.A_BOLD)
+        addstr_markup(window, 0, 0, '     {pkt/s pkt}')
 
         msg_l = (('{recv}  %4d$ (%d)' % tuple(p['all']),     0),
                  ('{udp}   %4d$ (%d)' % tuple(p['out']),     0),
@@ -152,32 +160,32 @@ class AntennaStat(Int32StringReceiver):
         ymax = window.getmaxyx()[0]
         for y, (msg, attr) in enumerate(msg_l, 1):
             if y < ymax:
-                addmcstr(window, y, 0, msg, attr)
+                addstr_markup(window, y, 0, msg, attr)
 
-        window.addstr(0, 20, 'Flow: ', curses.A_BOLD)
-        window.addstr('%s -> %s  ' % \
-                      (human_rate(p['all_bytes'][0]),
-                       human_rate(p['out_bytes'][0])))
+
+        flow_str = '{Flow:} %s -> %s  ' % \
+             (human_rate(p['all_bytes'][0]),
+              human_rate(p['out_bytes'][0]))
 
         if session_d:
-            window.addstr('FEC: ', curses.A_BOLD)
-            window.addstr('%(fec_k)d/%(fec_n)d' % (session_d))
+            flow_str += '{FEC:} %(fec_k)d/%(fec_n)d' % (session_d)
 
+        addstr_markup(window, 0, 20, flow_str)
 
         if stats_d:
-            addmcstr(window, 2, 20, '{Freq MCS BW [ANT] pkt/s}     {RSSI} [dBm]        {SNR} [dB]')
+            addstr_markup(window, 2, 20, '{Freq MCS BW [ANT] pkt/s}     {RSSI} [dBm]        {SNR} [dB]')
             for y, (((freq, mcs_index, bandwith), ant_id), v) in enumerate(sorted(stats_d.items()), 3):
                 pkt_s, rssi_min, rssi_avg, rssi_max, snr_min, snr_avg, snr_max = v
                 if y < ymax:
                     active_tx = (ant_id >> 8) == tx_ant
-                    addmcstr(window, y, 20, '%04d %3d %2d  %s%04x%s  %4d  %3d < {%3d} < %3d  %3d < {%3d} < %3d' % \
+                    addstr_markup(window, y, 20, '%04d %3d %2d  %s%04x%s  %4d  %3d < {%3d} < %3d  %3d < {%3d} < %3d' % \
                            (freq, mcs_index, bandwith,
                             '{' if active_tx else '', ant_id, '}' if active_tx else '',
                             pkt_s,
                             rssi_min, rssi_avg, rssi_max,
                             snr_min, snr_avg, snr_max), 0 if active_tx else curses.A_DIM)
         else:
-            addstr(window, 2, 20, '[No data]', curses.A_REVERSE)
+            addstr_noerr(window, 2, 20, '[No data]', curses.A_REVERSE)
 
         window.refresh()
 
@@ -191,7 +199,7 @@ class AntennaStat(Int32StringReceiver):
             return
 
         window.erase()
-        addstr(window, 0, 0, '     pkt/s pkt', curses.A_BOLD)
+        addstr_noerr(window, 0, 0, '     pkt/s pkt', curses.A_BOLD)
 
         msg_l = (('{sent}  %4d$ (%d)' % tuple(p['injected']),     0),
                  ('{udp}   %4d$ (%d)' % tuple(p['incoming']),     0),
@@ -202,22 +210,22 @@ class AntennaStat(Int32StringReceiver):
         ymax = window.getmaxyx()[0]
         for y, (msg, attr) in enumerate(msg_l, 1):
             if y < ymax:
-                addmcstr(window, y, 0, msg, attr)
+                addstr_markup(window, y, 0, msg, attr)
 
-        window.addstr(0, 20, 'Flow: ', curses.A_BOLD)
-        window.addstr('%s -> %s' % \
-                      (human_rate(p['incoming_bytes'][0]),
-                       human_rate(p['injected_bytes'][0])))
+        addstr_markup(window, 0, 20,
+                 '{Flow:} %s -> %s' % \
+                 (human_rate(p['incoming_bytes'][0]),
+                  human_rate(p['injected_bytes'][0])))
 
         if latency_d:
-            addmcstr(window, 2, 20, '{[ANT] pkt/s}     {Injection} [us]')
+            addstr_markup(window, 2, 20, '{[ANT] pkt/s}     {Injection} [us]')
             for y, (k, v) in enumerate(sorted(latency_d.items()), 3):
                 k = int(k) # json doesn't support int keys
                 injected, dropped, lat_min, lat_avg, lat_max = v
                 if y < ymax:
-                    addmcstr(window, y, 21, '{%02x}(xx)  %4d  %4d < {%4d} < %4d' % (k >> 8, injected, lat_min, lat_avg, lat_max))
+                    addstr_markup(window, y, 21, '{%02x}(XX)  %4d  %4d < {%4d} < %4d' % (k >> 8, injected, lat_min, lat_avg, lat_max))
         else:
-            addstr(window, 2, 20, '[No data]', curses.A_REVERSE)
+            addstr_noerr(window, 2, 20, '[No data]', curses.A_REVERSE)
 
 
         window.refresh()
@@ -244,7 +252,7 @@ class AntennaStatClientFactory(ReconnectingClientFactory):
 
         if not service_list:
             rectangle(self.stdscr, 0, 0, height - 1, width - 1)
-            addstr(self.stdscr, 0, 3, '[%s not configured]' % (self.profile,), curses.A_REVERSE)
+            addstr_noerr(self.stdscr, 0, 3, '[%s not configured]' % (self.profile,), curses.A_REVERSE)
             self.stdscr.refresh()
             return
 
@@ -287,7 +295,7 @@ class AntennaStatClientFactory(ReconnectingClientFactory):
                 window.scrollok(1)
 
                 rectangle(self.stdscr, hoff_int, xoff, hoff_int + wh - 1, xoff + ww)
-                addstr(self.stdscr, hoff_int, 3 + xoff, '[%s: %s %s]' % (txrx.upper(), self.profile, name), curses.A_BOLD)
+                addstr_noerr(self.stdscr, hoff_int, 3 + xoff, '[%s: %s %s]' % (txrx.upper(), self.profile, name), curses.A_BOLD)
 
                 self.windows['%s %s' % (name, txrx)] = window
                 whl.append(wh)
@@ -300,7 +308,7 @@ class AntennaStatClientFactory(ReconnectingClientFactory):
 
         for window in self.windows.values():
             window.erase()
-            addcstr(window, 'Connecting...', curses.A_DIM)
+            addstr_centered(window, 'Connecting...', curses.A_DIM)
             window.refresh()
 
     def buildProtocol(self, addr):
@@ -308,7 +316,7 @@ class AntennaStatClientFactory(ReconnectingClientFactory):
 
         for window in self.windows.values():
             window.erase()
-            addcstr(window, 'Waiting for data...', curses.A_DIM)
+            addstr_centered(window, 'Waiting for data...', curses.A_DIM)
             window.refresh()
 
         self.resetDelay()
@@ -321,7 +329,7 @@ class AntennaStatClientFactory(ReconnectingClientFactory):
 
         for window in self.windows.values():
             window.erase()
-            addcstr(window, '[Connection lost]', curses.A_REVERSE)
+            addstr_centered(window, '[Connection lost]', curses.A_REVERSE)
             window.refresh()
 
         ReconnectingClientFactory.clientConnectionLost(self, connector, reason)
@@ -331,7 +339,7 @@ class AntennaStatClientFactory(ReconnectingClientFactory):
 
         for window in self.windows.values():
             window.erase()
-            addcstr(window, '[Connection failed]', curses.A_REVERSE)
+            addstr_centered(window, '[Connection failed]', curses.A_REVERSE)
             window.refresh()
 
         ReconnectingClientFactory.clientConnectionFailed(self, connector, reason)
