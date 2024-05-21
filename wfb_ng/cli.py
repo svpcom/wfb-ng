@@ -52,6 +52,29 @@ def addcstr(window, s, attrs=0):
     h, w = window.getmaxyx()
     addstr(window, h // 2, max((w - len(s)) // 2, 0), s, attrs)
 
+def addmcstr(window, y, x, s, attrs=0):
+    for c in s:
+        if c == '{':
+            attrs |= curses.A_BOLD
+            continue
+        if c == '}':
+            attrs &= ~curses.A_BOLD
+            continue
+        if c == '(':
+            attrs |= curses.A_DIM
+            continue
+        if c == ')':
+            attrs &= ~curses.A_DIM
+            continue
+        if c == '^':
+            attrs |= curses.A_REVERSE
+            continue
+        if c == '$':
+            attrs &= ~curses.A_REVERSE
+            continue
+
+        window.addch(y, x, c, attrs)
+        x += 1
 
 def rectangle(win, uly, ulx, lry, lrx):
     """Draw a rectangle with corners at the provided upper-left
@@ -79,7 +102,7 @@ def addstr(window, y, x, s, *attrs):
 def human_rate(r):
     rate = r * 8
 
-    if rate > 1024 * 1024:
+    if rate >= 1000 * 1000:
         rate = rate / 1024 / 1024
         mod = 'mbit/s'
     else:
@@ -117,41 +140,40 @@ class AntennaStat(Int32StringReceiver):
             return
 
         window.erase()
-        addstr(window, 0, 0, '     pkt/s pkt')
+        addstr(window, 0, 0, '     pkt/s pkt', curses.A_BOLD)
 
-        msg_l = (('recv  %4d %d' % tuple(p['all']),     0),
-                 #('recvb %4d %d' % tuple(p['all_bytes']),     0),
-                 ('udp   %4d %d' % tuple(p['out']),     0),
-                 #('udpb  %4d %d' % tuple(p['out_bytes']),     0),
-                 ('fec_r %4d %d' % tuple(p['fec_rec']), curses.A_REVERSE if p['fec_rec'][0] else 0),
-                 ('lost  %4d %d' % tuple(p['lost']),    curses.A_REVERSE if p['lost'][0] else 0),
-                 ('d_err %4d %d' % tuple(p['dec_err']), curses.A_REVERSE if p['dec_err'][0] else 0),
-                 ('bad   %4d %d' % tuple(p['bad']),     curses.A_REVERSE if p['bad'][0] else 0))
+        msg_l = (('{recv}  %4d$ (%d)' % tuple(p['all']),     0),
+                 ('{udp}   %4d$ (%d)' % tuple(p['out']),     0),
+                 ('fec_r %4d$ (%d)' % tuple(p['fec_rec']), curses.A_REVERSE if p['fec_rec'][0] else 0),
+                 ('lost  %4d$ (%d)' % tuple(p['lost']),    curses.A_REVERSE if p['lost'][0] else 0),
+                 ('d_err %4d$ (%d)' % tuple(p['dec_err']), curses.A_REVERSE if p['dec_err'][0] else 0),
+                 ('bad   %4d$ (%d)' % tuple(p['bad']),     curses.A_REVERSE if p['bad'][0] else 0))
 
         ymax = window.getmaxyx()[0]
         for y, (msg, attr) in enumerate(msg_l, 1):
             if y < ymax:
-                addstr(window, y, 0, msg, attr)
+                addmcstr(window, y, 0, msg, attr)
 
-        session = ''
+        window.addstr(0, 20, 'Flow: ', curses.A_BOLD)
+        window.addstr('%s -> %s  ' % \
+                      (human_rate(p['all_bytes'][0]),
+                       human_rate(p['out_bytes'][0])))
+
         if session_d:
-            session = ', FEC: %(fec_k)d/%(fec_n)d' % (session_d)
+            window.addstr('FEC: ', curses.A_BOLD)
+            window.addstr('%(fec_k)d/%(fec_n)d' % (session_d))
 
-        addstr(window, 0, 20, 'Flow: %s -> %s%s' % \
-               (human_rate(p['all_bytes'][0]),
-                human_rate(p['out_bytes'][0]),
-                session))
 
         if stats_d:
-            addstr(window, 2, 20, 'Freq MCS BW [ANT] pkt/s     RSSI [dBm]        SNR [dB]')
+            addmcstr(window, 2, 20, '{Freq MCS BW [ANT] pkt/s}     {RSSI} [dBm]        {SNR} [dB]')
             for y, (((freq, mcs_index, bandwith), ant_id), v) in enumerate(sorted(stats_d.items()), 3):
                 pkt_s, rssi_min, rssi_avg, rssi_max, snr_min, snr_avg, snr_max = v
                 if y < ymax:
-                    active_tx = '*' if (ant_id >> 8) == tx_ant else ' '
-                    addstr(window, y, 20, '%04d %3d %2d %s%04x  %4d  %3d < %3d < %3d  %3d < %3d < %3d' % \
-                           (freq, mcs_index, bandwith, active_tx, ant_id, pkt_s,
+                    active_tx = (ant_id >> 8) == tx_ant
+                    addmcstr(window, y, 20, '%04d %3d %2d  %04x  %4d  %3d < {%3d} < %3d  %3d < {%3d} < %3d' % \
+                           (freq, mcs_index, bandwith, ant_id, pkt_s,
                             rssi_min, rssi_avg, rssi_max,
-                            snr_min, snr_avg, snr_max))
+                            snr_min, snr_avg, snr_max), 0 if active_tx else curses.A_DIM)
         else:
             addstr(window, 2, 20, '[No data]', curses.A_REVERSE)
 
@@ -167,32 +189,31 @@ class AntennaStat(Int32StringReceiver):
             return
 
         window.erase()
-        addstr(window, 0, 0, '     pkt/s pkt')
+        addstr(window, 0, 0, '     pkt/s pkt', curses.A_BOLD)
 
-        msg_l = (('sent  %4d %d' % tuple(p['injected']),     0),
-                 #('sentb %4d %d' % tuple(p['injected_bytes']),     0),
-                 ('udp   %4d %d' % tuple(p['incoming']),     0),
-                 #('udpb  %4d %d' % tuple(p['incoming_bytes']),     0),
-                 ('fec_t %4d %d' % tuple(p['fec_timeouts']), 0),
-                 ('drop  %4d %d' % tuple(p['dropped']),    curses.A_REVERSE if p['dropped'][0] else 0),
-                 ('trunc %4d %d' % tuple(p['truncated']), curses.A_REVERSE if p['truncated'][0] else 0))
+        msg_l = (('{sent}  %4d$ (%d)' % tuple(p['injected']),     0),
+                 ('{udp}   %4d$ (%d)' % tuple(p['incoming']),     0),
+                 ('fec_t %4d$ (%d)' % tuple(p['fec_timeouts']), 0),
+                 ('drop  %4d$ (%d)' % tuple(p['dropped']),    curses.A_REVERSE if p['dropped'][0] else 0),
+                 ('trunc %4d$ (%d)' % tuple(p['truncated']), curses.A_REVERSE if p['truncated'][0] else 0))
 
         ymax = window.getmaxyx()[0]
         for y, (msg, attr) in enumerate(msg_l, 1):
             if y < ymax:
-                addstr(window, y, 0, msg, attr)
+                addmcstr(window, y, 0, msg, attr)
 
-        addstr(window, 0, 20, 'Flow: %s -> %s' % \
-               (human_rate(p['incoming_bytes'][0]),
-                human_rate(p['injected_bytes'][0])))
+        window.addstr(0, 20, 'Flow: ', curses.A_BOLD)
+        window.addstr('%s -> %s' % \
+                      (human_rate(p['incoming_bytes'][0]),
+                       human_rate(p['injected_bytes'][0])))
 
         if latency_d:
-            addstr(window, 2, 20, '[ANT] pkt/s     Injection [us]')
+            addmcstr(window, 2, 20, '{[ANT] pkt/s}     {Injection} [us]')
             for y, (k, v) in enumerate(sorted(latency_d.items()), 3):
                 k = int(k) # json doesn't support int keys
                 injected, dropped, lat_min, lat_avg, lat_max = v
                 if y < ymax:
-                    addstr(window, y, 20, '%04x:  %4d  %4d < %4d < %4d' % (k, injected, lat_min, lat_avg, lat_max))
+                    addmcstr(window, y, 20, '%04x:  %4d  %4d < {%4d} < %4d' % (k, injected, lat_min, lat_avg, lat_max))
         else:
             addstr(window, 2, 20, '[No data]', curses.A_REVERSE)
 
@@ -264,7 +285,7 @@ class AntennaStatClientFactory(ReconnectingClientFactory):
                 window.scrollok(1)
 
                 rectangle(self.stdscr, hoff_int, xoff, hoff_int + wh - 1, xoff + ww)
-                addstr(self.stdscr, hoff_int, 3 + xoff, '[%s: %s %s]' % (txrx.upper(), self.profile, name))
+                addstr(self.stdscr, hoff_int, 3 + xoff, '[%s: %s %s]' % (txrx.upper(), self.profile, name), curses.A_BOLD)
 
                 self.windows['%s %s' % (name, txrx)] = window
                 whl.append(wh)
@@ -277,7 +298,7 @@ class AntennaStatClientFactory(ReconnectingClientFactory):
 
         for window in self.windows.values():
             window.erase()
-            addcstr(window, 'Connecting...')
+            addcstr(window, 'Connecting...', curses.A_DIM)
             window.refresh()
 
     def buildProtocol(self, addr):
@@ -285,7 +306,7 @@ class AntennaStatClientFactory(ReconnectingClientFactory):
 
         for window in self.windows.values():
             window.erase()
-            addcstr(window, 'Waiting for data...')
+            addcstr(window, 'Waiting for data...', curses.A_DIM)
             window.refresh()
 
         self.resetDelay()
