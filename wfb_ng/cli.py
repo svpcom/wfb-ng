@@ -170,8 +170,10 @@ class AntennaStat(Int32StringReceiver):
                 pkt_s, rssi_min, rssi_avg, rssi_max, snr_min, snr_avg, snr_max = v
                 if y < ymax:
                     active_tx = (ant_id >> 8) == tx_ant
-                    addmcstr(window, y, 20, '%04d %3d %2d  %04x  %4d  %3d < {%3d} < %3d  %3d < {%3d} < %3d' % \
-                           (freq, mcs_index, bandwith, ant_id, pkt_s,
+                    addmcstr(window, y, 20, '%04d %3d %2d  %s%04x%s  %4d  %3d < {%3d} < %3d  %3d < {%3d} < %3d' % \
+                           (freq, mcs_index, bandwith,
+                            '{' if active_tx else '', ant_id, '}' if active_tx else '',
+                            pkt_s,
                             rssi_min, rssi_avg, rssi_max,
                             snr_min, snr_avg, snr_max), 0 if active_tx else curses.A_DIM)
         else:
@@ -213,7 +215,7 @@ class AntennaStat(Int32StringReceiver):
                 k = int(k) # json doesn't support int keys
                 injected, dropped, lat_min, lat_avg, lat_max = v
                 if y < ymax:
-                    addmcstr(window, y, 20, '%04x:  %4d  %4d < {%4d} < %4d' % (k, injected, lat_min, lat_avg, lat_max))
+                    addmcstr(window, y, 21, '{%02x}(xx)  %4d  %4d < {%4d} < %4d' % (k >> 8, injected, lat_min, lat_avg, lat_max))
         else:
             addstr(window, 2, 20, '[No data]', curses.A_REVERSE)
 
