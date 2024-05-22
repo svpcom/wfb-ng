@@ -41,6 +41,9 @@ and follow the [Setup HowTo](https://github.com/svpcom/wfb-ng/wiki/Setup-HOWTO)
 ```
 ssh pi@192.168.0.111
 ```
+
+For putty users don't forget to select: `Settings -> Window -> Translation -> Enable VT100 line drawing` checkbox before connect.
+
 - On the Pi used as ground station:
 ```
 sudo systemctl enable wifibroadcast@gs
