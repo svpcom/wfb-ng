@@ -46,7 +46,7 @@ setup(
                                       'wfb-test-latency=wfb_ng.latency_test:main',
                                       'wfb-server=wfb_ng.server:main']},
     package_data={'wfb_ng.conf': ['master.cfg', 'site.cfg']},
-    data_files = [('/usr/bin', ['wfb_tx', 'wfb_rx', 'wfb_keygen']),
+    data_files = [('/usr/bin', ['wfb_tx', 'wfb_rx', 'wfb_keygen', 'scripts/wfb-cli-x11']),
                   ('/lib/systemd/system', ['scripts/wifibroadcast.service',
                                            'scripts/wifibroadcast@.service']),
                   ('/etc/default', ['scripts/default/wifibroadcast']),
