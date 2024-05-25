@@ -532,8 +532,8 @@ def init_udp_direct_tx(service_name, cfg, wlans, link_id, ant_sel_f):
     log.msg('Listen for %s stream %d on %s:%d' % (service_name, cfg.stream_tx, listen[0], listen[1]))
 
     cmd = ('%(cmd)s -f %(frame_type)s -p %(stream)d -u %(port)d -K %(key)s '\
-           '-B %(bw)d -G %(gi)s -S %(stbc)d -L %(ldpc)d -M %(mcs)d '\
-           '%(mirror)s'\
+           '-B %(bw)d -G %(gi)s -S %(stbc)d -L %(ldpc)d -M %(mcs)d'\
+           '%(mirror)s%(force_vht)s '\
            '-k %(fec_k)d -n %(fec_n)d -T %(fec_timeout)d -i %(link_id)d -R %(rcv_buf_size)d' % \
            dict(cmd=os.path.join(settings.path.bin_dir, 'wfb_tx'),
                 frame_type=cfg.frame_type,
@@ -541,11 +541,12 @@ def init_udp_direct_tx(service_name, cfg, wlans, link_id, ant_sel_f):
                 port=listen[1],
                 key=os.path.join(settings.path.conf_dir, cfg.keypair),
                 bw=cfg.bandwidth,
+                force_vht=' -V' if cfg.force_vht else '',
                 gi="short" if cfg.short_gi else "long",
                 stbc=cfg.stbc,
                 ldpc=cfg.ldpc,
                 mcs=cfg.mcs_index,
-                mirror='-m ' if cfg.mirror else '',
+                mirror=' -m' if cfg.mirror else '',
                 fec_k=cfg.fec_k,
                 fec_n=cfg.fec_n,
                 fec_timeout=cfg.fec_timeout,
@@ -652,8 +653,8 @@ def init_mavlink(service_name, cfg, wlans, link_id, ant_sel_f):
                    link_id=link_id)).split() + wlans
 
     cmd_tx = ('%(cmd)s -f %(frame_type)s -p %(stream)d -u %(port)d -K %(key)s -B %(bw)d '\
-              '-G %(gi)s -S %(stbc)d -L %(ldpc)d -M %(mcs)d '\
-              '%(mirror)s'\
+              '-G %(gi)s -S %(stbc)d -L %(ldpc)d -M %(mcs)d'\
+              '%(mirror)s%(force_vht)s '\
               '-k %(fec_k)d -n %(fec_n)d -T %(fec_timeout)d -i %(link_id)d -R %(rcv_buf_size)d' % \
               dict(cmd=os.path.join(settings.path.bin_dir, 'wfb_tx'),
                    frame_type=cfg.frame_type,
@@ -661,11 +662,12 @@ def init_mavlink(service_name, cfg, wlans, link_id, ant_sel_f):
                    port=0,
                    key=os.path.join(settings.path.conf_dir, cfg.keypair),
                    bw=cfg.bandwidth,
+                   force_vht=' -V' if cfg.force_vht else '',
                    gi="short" if cfg.short_gi else "long",
                    stbc=cfg.stbc,
                    ldpc=cfg.ldpc,
                    mcs=cfg.mcs_index,
-                   mirror='-m ' if cfg.mirror else '',
+                   mirror=' -m' if cfg.mirror else '',
                    fec_k=cfg.fec_k,
                    fec_n=cfg.fec_n,
                    fec_timeout=cfg.fec_timeout,
@@ -743,8 +745,8 @@ def init_tunnel(service_name, cfg, wlans, link_id, ant_sel_f):
                    link_id=link_id)).split() + wlans
 
     cmd_tx = ('%(cmd)s -f %(frame_type)s -p %(stream)d -u %(port)d -K %(key)s -B %(bw)d -G %(gi)s '\
-              '-S %(stbc)d -L %(ldpc)d -M %(mcs)d '\
-              '%(mirror)s'\
+              '-S %(stbc)d -L %(ldpc)d -M %(mcs)d'\
+              '%(mirror)s%(force_vht)s '\
               '-k %(fec_k)d -n %(fec_n)d -T %(fec_timeout)d -i %(link_id)d -R %(rcv_buf_size)d' % \
               dict(cmd=os.path.join(settings.path.bin_dir, 'wfb_tx'),
                    frame_type=cfg.frame_type,
@@ -752,11 +754,12 @@ def init_tunnel(service_name, cfg, wlans, link_id, ant_sel_f):
                    port=0,
                    key=os.path.join(settings.path.conf_dir, cfg.keypair),
                    bw=cfg.bandwidth,
+                   force_vht=' -V' if cfg.force_vht else '',
                    gi="short" if cfg.short_gi else "long",
                    stbc=cfg.stbc,
                    ldpc=cfg.ldpc,
                    mcs=cfg.mcs_index,
-                   mirror='-m ' if cfg.mirror else '',
+                   mirror=' -m' if cfg.mirror else '',
                    fec_k=cfg.fec_k,
                    fec_n=cfg.fec_n,
                    fec_timeout=cfg.fec_timeout,
@@ -844,8 +847,8 @@ def init_udp_proxy(service_name, cfg, wlans, link_id, ant_sel_f):
 
     if cfg.stream_tx is not None:
         cmd_tx = ('%(cmd)s -f %(frame_type)s -p %(stream)d -u %(port)d -K %(key)s -B %(bw)d '\
-                  '-G %(gi)s -S %(stbc)d -L %(ldpc)d -M %(mcs)d '\
-                  '%(mirror)s'\
+                  '-G %(gi)s -S %(stbc)d -L %(ldpc)d -M %(mcs)d'\
+                  '%(mirror)s%(force_vht)s '\
                   '-k %(fec_k)d -n %(fec_n)d -T %(fec_timeout)d -i %(link_id)d -R %(rcv_buf_size)d' % \
                   dict(cmd=os.path.join(settings.path.bin_dir, 'wfb_tx'),
                        frame_type=cfg.frame_type,
@@ -853,11 +856,12 @@ def init_udp_proxy(service_name, cfg, wlans, link_id, ant_sel_f):
                        port=0,
                        key=os.path.join(settings.path.conf_dir, cfg.keypair),
                        bw=cfg.bandwidth,
+                       force_vht=' -V' if cfg.force_vht else '',
                        gi="short" if cfg.short_gi else "long",
                        stbc=cfg.stbc,
                        ldpc=cfg.ldpc,
                        mcs=cfg.mcs_index,
-                       mirror='-m ' if cfg.mirror else '',
+                       mirror=' -m' if cfg.mirror else '',
                        fec_k=cfg.fec_k,
                        fec_n=cfg.fec_n,
                        fec_timeout=cfg.fec_timeout,
