@@ -27,7 +27,7 @@ import hashlib
 from itertools import groupby
 from twisted.python import log, failure
 from twisted.python.logfile import LogFile
-from twisted.internet import reactor, defer, main as ti_main
+from twisted.internet import reactor, defer, main as ti_main, threads, task
 from twisted.internet.protocol import ProcessProtocol, Protocol, Factory
 from twisted.protocols.basic import LineReceiver, Int32StringReceiver
 from twisted.internet.serialport import SerialPort
@@ -83,6 +83,7 @@ class StatsAndSelectorFactory(Factory):
     """
 
     def __init__(self, profile, wlans, link_domain):
+        self.wlans = tuple(wlans)
         self.ant_sel_cb_list = []
         self.rssi_cb_l = []
 
@@ -95,6 +96,46 @@ class StatsAndSelectorFactory(Factory):
 
         # CLI title
         self.cli_title = 'WFB-ng_%s @%s %s [%s]' % (settings.common.version, profile, ', '.join(wlans), link_domain)
+
+        # RF module temperature by rf_path
+        self.rf_temperature = {}
+
+        self.lc = task.LoopingCall(self.read_temperature)
+        self.lc.start(settings.common.temp_measurement_interval, now=True)
+
+    def _cleanup(self):
+        self.lc.stop()
+
+    def read_temperature(self):
+        def _read_temperature():
+            res = {}
+            for idx, wlan in enumerate(self.wlans):
+                fname = '/proc/net/rtl88x2eu/%s/thermal_state' % (wlan,)
+                try:
+                    with open(fname) as fd:
+                        for line in fd:
+                            line = line.strip()
+                            if not line:
+                                continue
+
+                            d = {}
+                            for f in line.split(','):
+                                k, v = f.split(':', 1)
+                                d[k.strip()] = int(v.strip())
+
+                            ant_id = (idx << 8) + d['rf_path']
+                            res[ant_id] = d['temperature']
+                except FileNotFoundError:
+                    pass
+                except Exception as v:
+                    reactor.callFromThread(log.err, v, 'Unable to parse %s:' % (fname,))
+            return res
+
+        def _got_temp(temp_d):
+            self.rf_temperature = temp_d
+
+        return threads.deferToThread(_read_temperature).addCallback(_got_temp)
+
 
     def add_ant_sel_cb(self, ant_sel_cb):
         self.ant_sel_cb_list.append(ant_sel_cb)
@@ -208,7 +249,10 @@ class StatsAndSelectorFactory(Factory):
 
         # Send stats to CLI sessions
         for s in self.ui_sessions:
-            s.send_stats(dict(type='tx', id=tx_id, packets=packet_stats, latency=ant_latency))
+            s.send_stats(dict(type='tx', id=tx_id,
+                              packets=packet_stats,
+                              latency=ant_latency,
+                              rf_temperature=self.rf_temperature))
 
 
 
@@ -506,21 +550,33 @@ def init(profiles, wlans):
     yield init_wlans(max_bw, wlans)
 
     dl = []
+    sockets = []
+    ant_sel_l = []
+
+    def _cleanup(x):
+        for s in sockets:
+            s.stopListening()
+
+        for f in ant_sel_l:
+            f._cleanup()
+
+        return x
 
     for profile, service_list in services:
         # Domain wide antenna selector
         profile_cfg = getattr(settings, profile)
         ant_sel_f = StatsAndSelectorFactory(profile, wlans, profile_cfg.link_domain)
+        ant_sel_l.append(ant_sel_f)
         link_id = int.from_bytes(hashlib.sha1(profile_cfg.link_domain.encode('utf-8')).digest()[:3], 'big')
 
         if profile_cfg.stats_port:
-            reactor.listenTCP(profile_cfg.stats_port, ant_sel_f)
+            sockets.append(reactor.listenTCP(profile_cfg.stats_port, ant_sel_f))
 
         for service_name, service_type, srv_cfg in service_list:
             log.msg('Starting %s/%s@%s on %s' % (profile, service_name, profile_cfg.link_domain, ', '.join(wlans)))
             dl.append(defer.maybeDeferred(type_map[service_type], service_name, srv_cfg, wlans, link_id, ant_sel_f))
 
-    yield defer.gatherResults(dl, consumeErrors=True).addErrback(lambda f: f.trap(defer.FirstError) and f.value.subFailure)
+    yield defer.gatherResults(dl, consumeErrors=True).addBoth(_cleanup).addErrback(lambda f: f.trap(defer.FirstError) and f.value.subFailure)
 
 
 def init_udp_direct_tx(service_name, cfg, wlans, link_id, ant_sel_f):

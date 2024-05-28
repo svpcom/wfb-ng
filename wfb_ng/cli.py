@@ -193,6 +193,7 @@ class AntennaStat(Int32StringReceiver):
         p = attrs['packets']
         latency_d = attrs['latency']
         tx_id = attrs['id']
+        rf_temperature = attrs['rf_temperature']
 
         window = self.factory.windows.get(tx_id)
         if window is None:
@@ -218,12 +219,23 @@ class AntennaStat(Int32StringReceiver):
                   human_rate(p['injected_bytes'][0])))
 
         if latency_d:
-            addstr_markup(window, 2, 20, '{[ANT] pkt/s}     {Injection} [us]')
+            addstr_markup(window, 2, 20, '{[ANT] pkt/s}   {\u00b0C}    {Injection} [us]')
             for y, (k, v) in enumerate(sorted(latency_d.items()), 3):
                 k = int(k) # json doesn't support int keys
                 injected, dropped, lat_min, lat_avg, lat_max = v
+
+                # Show max temperature from all RF paths
+                temp = max((_v for _k, _v in rf_temperature.items() if (_k >> 8) == (k >> 8)), default=None)
+                if temp is not None:
+                    if temp >= settings.common.temp_overheat_warning:
+                        temp = '{%d}' % (temp,)
+                    else:
+                        temp = str(temp)
+                else:
+                    temp = ' (--)'
+
                 if y < ymax:
-                    addstr_markup(window, y, 21, '{%02x}(XX)  %4d  %4d < {%4d} < %4d' % (k >> 8, injected, lat_min, lat_avg, lat_max))
+                    addstr_markup(window, y, 21, '{%02x}(XX)  %4d  %3s %4d < {%4d} < %4d' % (k >> 8, injected, temp, lat_min, lat_avg, lat_max))
         else:
             addstr_noerr(window, 2, 20, '[No data]', curses.A_REVERSE)
 
