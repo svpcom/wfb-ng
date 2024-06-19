@@ -5,6 +5,7 @@ VERSION ?= $(shell $(PYTHON) ./version.py $(shell git show -s --format="%ct" $(s
 SOURCE_DATE_EPOCH ?= $(shell git show -s --format="%ct" $(shell git rev-parse HEAD))
 ENV ?= $(PWD)/env
 DOCKER_SRC_IMAGE ?= "p2ptech/cross-build:2023-02-21-raspios-bullseye-armhf-lite"
+STDEB ?= "git+https://github.com/svpcom/stdeb"
 
 export VERSION COMMIT SOURCE_DATE_EPOCH
 
@@ -15,8 +16,8 @@ all: all_bin gs.key test
 
 $(ENV):
 	virtualenv --python=$(PYTHON) $(ENV)
-	[ -f $(ENV)/local/bin/pip ] && $(ENV)/local/bin/pip install --upgrade pip setuptools stdeb \
-                                || $(ENV)/bin/pip install --upgrade pip setuptools stdeb
+	[ -f $(ENV)/local/bin/pip ] && $(ENV)/local/bin/pip install --upgrade pip setuptools $(STDEB) \
+                                || $(ENV)/bin/pip install --upgrade pip setuptools $(STDEB)
 
 all_bin: wfb_rx wfb_tx wfb_keygen
 
