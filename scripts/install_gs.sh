@@ -15,7 +15,7 @@ apt update
 apt upgrade
 
 apt install python3-all python3-all-dev libpcap-dev libsodium-dev python3-pip python3-pyroute2 python3-msgpack \
-  python3-future python3-twisted python3-serial iw virtualenv debhelper dh-python build-essential -y
+  python3-future python3-twisted python3-serial iw virtualenv debhelper dh-python fakeroot build-essential -y
 
 # Build
 make deb
@@ -46,9 +46,16 @@ EOF
 
 echo "WFB_NICS=\"${IFNAME}\"" > /etc/default/wifibroadcast
 
-cat <<EOF >> /etc/NetworkManager/NetworkManager.conf
-[keyfile]
-unmanaged-devices=interface-name:${IFNAME}
+cat > /etc/modprobe.d/wfb.conf << EOF
+# blacklist stock module
+blacklist 88XXau
+blacklist 8812au
+options cfg80211 ieee80211_regdom=RU
+# maximize output power by default
+#options 88XXau_wfb rtw_tx_pwr_idx_override=30
+# minimize output power by default
+options 88XXau_wfb rtw_tx_pwr_idx_override=1
+options 8812eu rtw_tx_pwr_by_rate=0 rtw_tx_pwr_lmt_enable=0
 EOF
 
 if [ -f /etc/dhcpcd.conf ]; then
