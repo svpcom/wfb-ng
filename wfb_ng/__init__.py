@@ -1,8 +1,13 @@
 import sys
 import os
-from twisted.internet import utils
+import queue
+import threading
+import atexit
+
+from twisted.internet import utils, reactor
 from logging import currentframe
 from twisted.python import log
+from twisted.python.logfile import LogFile
 
 __orig_msg = log.msg
 _srcfile = os.path.splitext(os.path.normcase(__file__))[0] + '.py'
@@ -164,3 +169,90 @@ def call_and_check_rc(cmd, *args, **kwargs):
         raise err
 
     return utils.getProcessOutputAndValue(cmd, args, env=os.environ).addCallbacks(_check_rc, _got_signal)
+
+
+class ErrorSafeLogFile(object):
+    stderr = sys.stderr
+    log_cls = LogFile
+    log_max = 1000
+    binary = False
+    twisted_logger = True
+    always_flush = True
+
+    def __init__(self, *args, **kwargs):
+        cleanup_at_exit = kwargs.pop('cleanup_at_exit', True)
+        self.logfile = None
+        self.args = args
+        self.kwargs = kwargs
+
+        try:
+            self.logfile = self.log_cls(*self.args, **self.kwargs)
+        except Exception as v:
+            if self.twisted_logger:
+                print('Unable to open log file: %s' % (v,), file=self.stderr)
+            else:
+                log.err(v, 'Unable to open log file: %s(%s, %s)' % (self.log_cls, self.args, self.kwargs), isError=True)
+
+        self.need_stop = threading.Event()
+        self.lock = threading.RLock()
+        self.log_queue_overflow = 0
+        self.log_queue = queue.Queue(self.log_max)
+        self.thread = threading.Thread(target=self._log_thread_loop, name='logging thread')
+        self.thread.daemon = True
+        self.thread.start()
+
+        if cleanup_at_exit:
+            atexit.register(self._cleanup)
+
+    def _cleanup(self):
+        self.log_queue.join()
+        self.need_stop.set()
+        self.thread.join()
+
+    def _log_thread_loop(self):
+        while not self.need_stop.is_set():
+            try:
+                data = self.log_queue.get(timeout=1)
+            except queue.Empty:
+                continue
+
+            overflow = 0
+            with self.lock:
+                if self.log_queue_overflow:
+                    overflow = self.log_queue_overflow
+                    self.log_queue_overflow = 0
+
+            if overflow and not self.binary:
+                self._write_and_flush('--- Dropped %d log items due to log queue overflow\n' % (overflow,))
+
+            self._write_and_flush(data)
+            self.log_queue.task_done()
+
+    def _write_and_flush(self, data):
+        try:
+            if self.logfile is None:
+                self.logfile = self.log_cls(*self.args, **self.kwargs)
+
+            self.logfile.write(data)
+            if self.always_flush:
+                self.logfile.flush()
+        except Exception as v:
+            if self.twisted_logger:
+                # Don't use logger due to infinite loop
+                print('Unable to write to log file: %s' % (v,), file=self.stderr)
+            else:
+                reactor.callFromThread(log.err, v, 'Unable to write to: %s(%s, %s)' % (self.log_cls, self.args, self.kwargs), isError=True)
+
+            if self.logfile is not None:
+                self.logfile.close()
+                self.logfile = None
+
+    def write(self, data):
+        try:
+            self.log_queue.put_nowait(data)
+        except queue.Full:
+            with self.lock:
+                self.log_queue_overflow += 1
+
+    def flush(self):
+        pass

@@ -23,20 +23,22 @@ import msgpack
 import os
 import re
 import hashlib
+import time
 
+from base64 import b85encode
 from itertools import groupby
 from twisted.python import log, failure
 from twisted.python.logfile import LogFile
 from twisted.internet import reactor, defer, main as ti_main, threads, task
 from twisted.internet.protocol import ProcessProtocol, Protocol, Factory
-from twisted.protocols.basic import LineReceiver, Int32StringReceiver
+from twisted.protocols.basic import LineReceiver, Int32StringReceiver, _formatNetstring
 from twisted.internet.serialport import SerialPort
 
-from . import _log_msg, ConsoleObserver, call_and_check_rc, ExecError
+from . import _log_msg, ConsoleObserver, ErrorSafeLogFile, call_and_check_rc, ExecError
 from .common import abort_on_crash, exit_status, df_sleep
 from .config_parser import Section
 from .proxy import UDPProxyProtocol, MavlinkSerialProxyProtocol, MavlinkUDPProxyProtocol
-from .mavlink_protocol import MavlinkARMProtocol, MavlinkTCPFactory
+from .mavlink_protocol import MavlinkARMProtocol, MavlinkTCPFactory, MavlinkLoggerProtocol
 from .tuntap import TUNTAPProtocol, TUNTAPTransport
 from .conf import settings, cfg_files
 
@@ -55,6 +57,19 @@ class WFBFlags(object):
 
 
 fec_types = {1: 'VDM_RS'}
+
+
+# Log format is msgpack -> base85 -> netstring + newline
+# See http://cr.yp.to/proto/netstrings.txt for the specification of netstrings.
+
+class NetstringLogger(ErrorSafeLogFile):
+    binary = True
+    twisted_logger = False
+    always_flush = False
+
+    def send_stats(self, data):
+        msg = b85encode(msgpack.packb(data))
+        self.write(_formatNetstring(msg) + b'\n')
 
 
 class StatisticsProtocol(Int32StringReceiver):
@@ -82,7 +97,7 @@ class StatsAndSelectorFactory(Factory):
     Aggregate RX stats and select TX antenna
     """
 
-    def __init__(self, profile, wlans, link_domain):
+    def __init__(self, profile, wlans, link_domain, logger):
         self.wlans = tuple(wlans)
         self.ant_sel_cb_list = []
         self.rssi_cb_l = []
@@ -93,6 +108,19 @@ class StatsAndSelectorFactory(Factory):
 
         # tcp sockets for UI
         self.ui_sessions = []
+
+        # machine-readable logger
+        self.logger = logger
+
+        if logger is not None:
+            logger.send_stats(dict(type='init',
+                                   timestamp = time.time(),
+                                   version=settings.common.version,
+                                   profile=profile,
+                                   wlans=wlans,
+                                   link_domain=link_domain))
+
+            self.ui_sessions.append(logger)
 
         # CLI title
         self.cli_title = 'WFB-ng_%s @%s %s [%s]' % (settings.common.version, profile, ', '.join(wlans), link_domain)
@@ -203,6 +231,13 @@ class StatsAndSelectorFactory(Factory):
 
         self.tx_sel = max_rssi_ant
 
+    def process_new_session(self, rx_id, session):
+        if self.logger is not None:
+            self.logger.send_stats(dict(type='new_session',
+                                        timestamp = time.time(),
+                                        id=rx_id,
+                                        **session))
+
     def update_rx_stats(self, rx_id, packet_stats, ant_stats, session):
         stats_agg = self._stats_agg_by_freq(ant_stats)
         card_rssi_l = list(rssi_avg
@@ -237,9 +272,11 @@ class StatsAndSelectorFactory(Factory):
         if settings.common.debug:
             log.msg('%s rssi %s tx#%d %s %s' % (rx_id, max(card_rssi_l) if card_rssi_l else 'N/A', self.tx_sel, packet_stats, ant_stats))
 
-        # Send stats to CLI sessions
+        # Send stats to CLI sessions and logger
         for s in self.ui_sessions:
-            s.send_stats(dict(type='rx', id=rx_id, tx_ant=self.tx_sel,
+            s.send_stats(dict(type='rx',
+                              timestamp = time.time(),
+                              id=rx_id, tx_ant=self.tx_sel,
                               packets=packet_stats, rx_ant_stats=ant_stats,
                               session=session))
 
@@ -247,9 +284,11 @@ class StatsAndSelectorFactory(Factory):
         if settings.common.debug:
             log.msg("%s %r %r" % (tx_id, packet_stats, ant_latency))
 
-        # Send stats to CLI sessions
+        # Send stats to CLI sessions and logger
         for s in self.ui_sessions:
-            s.send_stats(dict(type='tx', id=tx_id,
+            s.send_stats(dict(type='tx',
+                              timestamp = time.time(),
+                              id=tx_id,
                               packets=packet_stats,
                               latency=ant_latency,
                               rf_temperature=self.rf_temperature))
@@ -313,9 +352,11 @@ class RXAntennaProtocol(LineReceiver):
                     raise BadTelemetry()
 
                 epoch, fec_type, fec_k, fec_n = list(int(i) for i in cols[2].split(':'))
-                self.session = dict(fec_type=fec_types.get(fec_type, 'Unknown'), fec_k=fec_k, fec_n=fec_n)
+                self.session = dict(fec_type=fec_types.get(fec_type, 'Unknown'), fec_k=fec_k, fec_n=fec_n, epoch=epoch)
                 log.msg('New session detected [%s]: FEC=%s K=%d, N=%d, epoch=%d' % (self.rx_id, fec_types.get(fec_type, 'Unknown'), fec_k, fec_n, epoch))
 
+                if self.ant_stat_cb is not None:
+                    self.ant_stat_cb.process_new_session(self.rx_id, self.session)
             else:
                 raise BadTelemetry()
         except BadTelemetry:
@@ -565,7 +606,16 @@ def init(profiles, wlans):
     for profile, service_list in services:
         # Domain wide antenna selector
         profile_cfg = getattr(settings, profile)
-        ant_sel_f = StatsAndSelectorFactory(profile, wlans, profile_cfg.link_domain)
+
+        if settings.common.binary_log_file is not None:
+            logger = NetstringLogger(settings.common.binary_log_file % (profile,),
+                                     settings.path.log_dir,
+                                     rotateLength=10 * 1024 * 1024,
+                                     maxRotatedFiles=10)
+        else:
+            logger = None
+
+        ant_sel_f = StatsAndSelectorFactory(profile, wlans, profile_cfg.link_domain, logger)
         ant_sel_l.append(ant_sel_f)
         link_id = int.from_bytes(hashlib.sha1(profile_cfg.link_domain.encode('utf-8')).digest()[:3], 'big')
 
@@ -677,6 +727,11 @@ def init_mavlink(service_name, cfg, wlans, link_id, ant_sel_f):
         arm_proto = MavlinkARMProtocol(cfg.call_on_arm, cfg.call_on_disarm)
         rx_hooks.append(arm_proto.dataReceived)
         tx_hooks.append(arm_proto.dataReceived)
+
+    if cfg.log_messages and ant_sel_f.logger is not None:
+        mav_log_proto = MavlinkLoggerProtocol(ant_sel_f.logger)
+        rx_hooks.append(mav_log_proto.dataReceived)
+        tx_hooks.append(mav_log_proto.dataReceived)
 
     if serial:
         p_in = MavlinkSerialProxyProtocol(agg_max_size=settings.common.radio_mtu,
@@ -953,10 +1008,10 @@ def main():
     log.msg = _log_msg
 
     if settings.common.log_file:
-        log.startLogging(LogFile(settings.common.log_file,
-                                 settings.path.log_dir,
-                                 rotateLength=1024*1024,
-                                 maxRotatedFiles=10))
+        log.startLogging(ErrorSafeLogFile(settings.common.log_file,
+                                          settings.path.log_dir,
+                                          rotateLength=1024 * 1024,
+                                          maxRotatedFiles=10))
 
     elif sys.stdout.isatty():
         log.startLogging(sys.stdout)

@@ -19,14 +19,56 @@
 #
 
 import struct
+import time
 
 from . import call_and_check_rc, ExecError
-from .mavlink import MAV_MODE_FLAG_SAFETY_ARMED, MAVLINK_MSG_ID_HEARTBEAT
+from .mavlink import MAV_MODE_FLAG_SAFETY_ARMED, MAVLINK_MSG_ID_HEARTBEAT, mavlink_map
 
 from zope.interface import implementer
 from twisted.python import log
 from twisted.internet import reactor, defer, utils, interfaces
 from twisted.internet.protocol import Protocol, DatagramProtocol, Factory
+
+from typing import Any, Callable, Dict, Iterable, List, Mapping, Optional, Sequence, Tuple, Type, Union, cast
+
+def unpack_mavlink(msg_id, mbuf):
+    msgtype = mavlink_map[msg_id]
+    order_map = msgtype.orders
+    len_map = msgtype.lengths
+    csize = msgtype.unpacker.size
+
+    if len(mbuf) < csize:
+        # zero pad to give right size
+        mbuf += (b'0' * (csize - len(mbuf)))
+
+    t = cast(Tuple[Union[bytes, int, float], ...],
+             msgtype.unpacker.unpack(mbuf[:csize]))
+
+    tlist = list(t)
+
+    if sum(len_map) == len(len_map):
+        # message has no arrays in it
+        for i in range(0, len(tlist)):
+            tlist[i] = t[order_map[i]]
+    else:
+        # message has some arrays
+        tlist = []
+        for i in range(0, len(order_map)):
+            order = order_map[i]
+            L = len_map[order]
+            tip = sum(len_map[:order])
+            field = t[tip]
+            if L == 1 or isinstance(field, bytes):
+                tlist.append(field)
+            else:
+                tlist.append(cast(Union[Sequence[int], Sequence[float]], list(t[tip : (tip + L)])))
+
+    # terminate any strings
+    for i, elem in enumerate(tlist):
+        if isinstance(elem, bytes):
+            tlist[i] = elem.rstrip(b"\x00")
+
+    return msgtype.msgname, dict(zip(msgtype.fieldnames, tlist))
 
 
 def parse_mavlink_l2_v1(msg):
@@ -210,3 +252,22 @@ class MavlinkTCPFactory(Factory):
                 s.send(data)
             except Exception as v:
                 log.err(v)
+
+
+class MavlinkLoggerProtocol(object):
+    def __init__(self, logger):
+        self.logger = logger
+        self.mavlink_fsm = mavlink_parser_gen(parse_l2=True)
+        self.mavlink_fsm.send(None)
+
+    def dataReceived(self, data):
+        for l2_headers, m in self.mavlink_fsm.send(data):
+            self.messageReceived(l2_headers, m)
+
+    def messageReceived(self, l2_headers, message):
+        # seq, sys_id, comp_id, msg_id = l2_headers
+        self.logger.send_stats(dict(type='mavlink',
+                                    timestamp=time.time(),
+                                    hdr=l2_headers,
+                                    msg=message))
+
