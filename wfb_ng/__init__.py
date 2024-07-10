@@ -3,6 +3,7 @@ import os
 import queue
 import threading
 import atexit
+import time
 
 from twisted.internet import utils, reactor
 from logging import currentframe
@@ -171,28 +172,37 @@ def call_and_check_rc(cmd, *args, **kwargs):
     return utils.getProcessOutputAndValue(cmd, args, env=os.environ).addCallbacks(_check_rc, _got_signal)
 
 
+
+def close_if_failed(f):
+    def _f(self, *args, **kwargs):
+        try:
+            return f(self, *args, **kwargs)
+        except Exception as v:
+            if self.twisted_logger:
+                # Don't use logger due to infinite loop
+                print('Unable to write to log file: %s' % (v,), file=self.stderr)
+            else:
+                reactor.callFromThread(log.err, v, 'Unable to write to: %s(%s, %s)' % (self.log_cls, self.args, self.kwargs))
+
+            if self.logfile is not None:
+                self.logfile.close()
+                self.logfile = None
+    return _f
+
+
 class ErrorSafeLogFile(object):
     stderr = sys.stderr
     log_cls = LogFile
     log_max = 1000
     binary = False
     twisted_logger = True
-    always_flush = True
+    flush_delay = 0
 
     def __init__(self, *args, **kwargs):
         cleanup_at_exit = kwargs.pop('cleanup_at_exit', True)
         self.logfile = None
         self.args = args
         self.kwargs = kwargs
-
-        try:
-            self.logfile = self.log_cls(*self.args, **self.kwargs)
-        except Exception as v:
-            if self.twisted_logger:
-                print('Unable to open log file: %s' % (v,), file=self.stderr)
-            else:
-                log.err(v, 'Unable to open log file: %s(%s, %s)' % (self.log_cls, self.args, self.kwargs), isError=True)
-
         self.need_stop = threading.Event()
         self.lock = threading.RLock()
         self.log_queue_overflow = 0
@@ -209,8 +219,20 @@ class ErrorSafeLogFile(object):
         self.need_stop.set()
         self.thread.join()
 
+        if self.logfile is not None:
+            self.logfile.close()
+            self.logfile = None
+
     def _log_thread_loop(self):
+        flush_ts = 0
+
         while not self.need_stop.is_set():
+            now = time.time()
+
+            if self.flush_delay > 0 and now > flush_ts:
+                flush_ts = now + self.flush_delay
+                self._flush()
+
             try:
                 data = self.log_queue.get(timeout=1)
             except queue.Empty:
@@ -223,29 +245,25 @@ class ErrorSafeLogFile(object):
                     self.log_queue_overflow = 0
 
             if overflow and not self.binary:
-                self._write_and_flush('--- Dropped %d log items due to log queue overflow\n' % (overflow,))
+                self._write('--- Dropped %d log items due to log queue overflow\n' % (overflow,))
 
-            self._write_and_flush(data)
+            self._write(data)
             self.log_queue.task_done()
 
-    def _write_and_flush(self, data):
-        try:
-            if self.logfile is None:
-                self.logfile = self.log_cls(*self.args, **self.kwargs)
+    @close_if_failed
+    def _write(self, data):
+        if self.logfile is None:
+            self.logfile = self.log_cls(*self.args, **self.kwargs)
 
-            self.logfile.write(data)
-            if self.always_flush:
-                self.logfile.flush()
-        except Exception as v:
-            if self.twisted_logger:
-                # Don't use logger due to infinite loop
-                print('Unable to write to log file: %s' % (v,), file=self.stderr)
-            else:
-                reactor.callFromThread(log.err, v, 'Unable to write to: %s(%s, %s)' % (self.log_cls, self.args, self.kwargs), isError=True)
+        self.logfile.write(data)
 
-            if self.logfile is not None:
-                self.logfile.close()
-                self.logfile = None
+        if self.flush_delay == 0:
+            self.logfile.flush()
+
+    @close_if_failed
+    def _flush(self):
+        if self.logfile is not None:
+            self.logfile.flush()
 
     def write(self, data):
         try:

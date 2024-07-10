@@ -45,7 +45,7 @@ setup(
     entry_points={'console_scripts': ['wfb-cli=wfb_ng.cli:main',
                                       'wfb-test-latency=wfb_ng.latency_test:main',
                                       'wfb-server=wfb_ng.server:main',
-                                      'wfb-log-parser=wfb_ng.log_parser']},
+                                      'wfb-log-parser=wfb_ng.log_parser:main']},
     package_data={'wfb_ng.conf': ['master.cfg', 'site.cfg']},
     data_files = [('/usr/bin', ['wfb_tx', 'wfb_rx', 'wfb_keygen', 'scripts/wfb-cli-x11']),
                   ('/lib/systemd/system', ['scripts/wifibroadcast.service',

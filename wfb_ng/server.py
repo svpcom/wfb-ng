@@ -24,6 +24,8 @@ import os
 import re
 import hashlib
 import time
+import struct
+import gzip
 
 from base64 import b85encode
 from itertools import groupby
@@ -31,7 +33,7 @@ from twisted.python import log, failure
 from twisted.python.logfile import LogFile
 from twisted.internet import reactor, defer, main as ti_main, threads, task
 from twisted.internet.protocol import ProcessProtocol, Protocol, Factory
-from twisted.protocols.basic import LineReceiver, Int32StringReceiver, _formatNetstring
+from twisted.protocols.basic import LineReceiver, Int32StringReceiver
 from twisted.internet.serialport import SerialPort
 
 from . import _log_msg, ConsoleObserver, ErrorSafeLogFile, call_and_check_rc, ExecError
@@ -59,17 +61,25 @@ class WFBFlags(object):
 fec_types = {1: 'VDM_RS'}
 
 
-# Log format is msgpack -> base85 -> netstring + newline
-# See http://cr.yp.to/proto/netstrings.txt for the specification of netstrings.
+# Log format is gzipped sequence of int32 strings
+# For every run new file will be open to avoid framing errors
 
-class NetstringLogger(ErrorSafeLogFile):
+def BinLogFile(self, fname, directory):
+    filename = '%s.%s' % (fname, time.strftime('%Y%m%d-%H%M%S', time.localtime()))
+    filename = os.path.join(directory, filename)
+    reactor.callFromThread(log.msg, 'Open binary log %s' % (filename,))
+    return gzip.GzipFile(filename, 'wb')
+
+
+class BinLogger(ErrorSafeLogFile):
     binary = True
     twisted_logger = False
-    always_flush = False
+    flush_delay = 10
+    log_cls = BinLogFile
 
     def send_stats(self, data):
-        msg = b85encode(msgpack.packb(data))
-        self.write(_formatNetstring(msg) + b'\n')
+        data = msgpack.packb(data)
+        self.write(b''.join((struct.pack('!I', len(data)), data)))
 
 
 class StatisticsProtocol(Int32StringReceiver):
@@ -608,10 +618,8 @@ def init(profiles, wlans):
         profile_cfg = getattr(settings, profile)
 
         if settings.common.binary_log_file is not None:
-            logger = NetstringLogger(settings.common.binary_log_file % (profile,),
-                                     settings.path.log_dir,
-                                     rotateLength=10 * 1024 * 1024,
-                                     maxRotatedFiles=10)
+            logger = BinLogger(settings.common.binary_log_file % (profile,),
+                               settings.path.log_dir)
         else:
             logger = None
 
