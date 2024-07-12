@@ -29,7 +29,6 @@ from twisted.python import log
 from twisted.internet import reactor, defer, utils, interfaces
 from twisted.internet.protocol import Protocol, DatagramProtocol, Factory
 
-from typing import Any, Callable, Dict, Iterable, List, Mapping, Optional, Sequence, Tuple, Type, Union, cast
 
 def unpack_mavlink(msg_id, mbuf):
     msgtype = mavlink_map[msg_id]
@@ -39,36 +38,34 @@ def unpack_mavlink(msg_id, mbuf):
 
     if len(mbuf) < csize:
         # zero pad to give right size
-        mbuf += (b'0' * (csize - len(mbuf)))
+        if not isinstance(mbuf, bytearray):
+            mbuf = bytearray(mbuf)
 
-    t = cast(Tuple[Union[bytes, int, float], ...],
-             msgtype.unpacker.unpack(mbuf[:csize]))
+        mbuf.extend([0] * (csize - len(mbuf)))
 
-    tlist = list(t)
+    fields = msgtype.unpacker.unpack(mbuf)
 
-    if sum(len_map) == len(len_map):
-        # message has no arrays in it
-        for i in range(0, len(tlist)):
-            tlist[i] = t[order_map[i]]
-    else:
-        # message has some arrays
-        tlist = []
-        for i in range(0, len(order_map)):
-            order = order_map[i]
-            L = len_map[order]
-            tip = sum(len_map[:order])
-            field = t[tip]
-            if L == 1 or isinstance(field, bytes):
-                tlist.append(field)
+    if sum(len_map) != len(len_map):
+        # We have arrays
+        flist = []
+        offset = 0
+        for f_len in len_map:
+            if f_len == 1:
+                field = fields[offset]
+                flist.append(field.rstrip(b'\0') if isinstance(field, bytes) else field)
+                offset += 1
             else:
-                tlist.append(cast(Union[Sequence[int], Sequence[float]], list(t[tip : (tip + L)])))
+                flist.append(fields[offset: offset + f_len])
+                offset += f_len
+    else:
+        flist = list(field.rstrip(b'\0') if isinstance(field, bytes) else field \
+                     for field in fields)
 
-    # terminate any strings
-    for i, elem in enumerate(tlist):
-        if isinstance(elem, bytes):
-            tlist[i] = elem.rstrip(b"\x00")
+    # Construct dict in right field order
+    fmap = dict(zip(msgtype.fieldnames,
+                    (flist[order_map[i]] for i in range(len(flist)))))
 
-    return msgtype.msgname, dict(zip(msgtype.fieldnames, tlist))
+    return msgtype.msgname, fmap
 
 
 def parse_mavlink_l2_v1(msg):
