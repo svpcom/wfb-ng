@@ -41,7 +41,7 @@ class TXRXTestCase(unittest.TestCase):
         epoch = int(time.time())
         cmd_rx = [os.path.join(bindir, 'wfb_rx'), '-K', 'drone.key', '-a', '10001', '-u', '10002',
                   '-i', str(link_id), '-e', str(epoch), '-R', str(512 * 1024), 'wlan0']
-        cmd_tx = [os.path.join(bindir, 'wfb_tx'), '-K', 'gs.key', '-u', '10003', '-D', '10004', '-T', '30',
+        cmd_tx = [os.path.join(bindir, 'wfb_tx'), '-K', 'gs.key', '-u', '10003', '-D', '10004', '-T', '30', '-F', '3000',
                   '-i', str(link_id), '-e', str(epoch), '-R', str(512 * 1024), 'wlan0']
 
         self.rx_pp = RXProtocol(None, cmd_rx, 'debug rx')

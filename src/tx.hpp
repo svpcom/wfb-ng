@@ -33,7 +33,7 @@
 class Transmitter
 {
 public:
-    Transmitter(int k, int m, const std::string &keypair, uint64_t epoch, uint32_t channel_id);
+    Transmitter(int k, int m, const std::string &keypair, uint64_t epoch, uint32_t channel_id, uint32_t fec_delay);
     virtual ~Transmitter();
     bool send_packet(const uint8_t *buf, size_t size, uint8_t flags);
     void send_session_key(void);
@@ -55,6 +55,7 @@ private:
     size_t max_packet_size;
     const uint64_t epoch; // Packets from old epoch will be discarded
     const uint32_t channel_id; // (link_id << 8) + port_number
+    const uint32_t fec_delay; // fec packet delay [us]
 
     // tx->rx keypair
     uint8_t tx_secretkey[crypto_box_SECRETKEYBYTES];
@@ -106,7 +107,7 @@ typedef std::unordered_map<uint64_t, txAntennaItem> tx_antenna_stat_t;
 class RawSocketTransmitter : public Transmitter
 {
 public:
-    RawSocketTransmitter(int k, int m, const std::string &keypair, uint64_t epoch, uint32_t channel_id, const std::vector<std::string> &wlans, shared_ptr<uint8_t[]> radiotap_header, size_t radiotap_header_len, uint8_t frame_type);
+    RawSocketTransmitter(int k, int m, const std::string &keypair, uint64_t epoch, uint32_t channel_id, uint32_t fec_delay, const std::vector<std::string> &wlans, shared_ptr<uint8_t[]> radiotap_header, size_t radiotap_header_len, uint8_t frame_type);
     virtual ~RawSocketTransmitter();
     virtual void select_output(int idx) { current_output = idx; }
     virtual void dump_stats(FILE *fp, uint64_t ts, uint32_t &injected_packets, uint32_t &dropped_packets, uint32_t &injected_bytes);
@@ -126,9 +127,8 @@ private:
 class UdpTransmitter : public Transmitter
 {
 public:
-    UdpTransmitter(int k, int m, const std::string &keypair, const std::string &client_addr, int base_port, uint64_t epoch, uint32_t channel_id): \
-        Transmitter(k, m, keypair, epoch, channel_id),                  \
-        base_port(base_port)
+    UdpTransmitter(int k, int m, const std::string &keypair, const std::string &client_addr, int base_port, uint64_t epoch, uint32_t channel_id, uint32_t fec_delay): \
+        Transmitter(k, m, keypair, epoch, channel_id, fec_delay), base_port(base_port)
     {
         sockfd = socket(AF_INET, SOCK_DGRAM, 0);
         if (sockfd < 0) throw std::runtime_error(string_format("Error opening socket: %s", strerror(errno)));

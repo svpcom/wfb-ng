@@ -648,7 +648,7 @@ def init_udp_direct_tx(service_name, cfg, wlans, link_id, ant_sel_f):
     cmd = ('%(cmd)s -f %(frame_type)s -p %(stream)d -u %(port)d -K %(key)s '\
            '-B %(bw)d -G %(gi)s -S %(stbc)d -L %(ldpc)d -M %(mcs)d'\
            '%(mirror)s%(force_vht)s '\
-           '-k %(fec_k)d -n %(fec_n)d -T %(fec_timeout)d -i %(link_id)d -R %(rcv_buf_size)d' % \
+           '-k %(fec_k)d -n %(fec_n)d -T %(fec_timeout)d -F %(fec_delay)d -i %(link_id)d -R %(rcv_buf_size)d' % \
            dict(cmd=os.path.join(settings.path.bin_dir, 'wfb_tx'),
                 frame_type=cfg.frame_type,
                 stream=cfg.stream_tx,
@@ -664,6 +664,7 @@ def init_udp_direct_tx(service_name, cfg, wlans, link_id, ant_sel_f):
                 fec_k=cfg.fec_k,
                 fec_n=cfg.fec_n,
                 fec_timeout=cfg.fec_timeout,
+                fec_delay=cfg.fec_delay,
                 link_id=link_id,
                 rcv_buf_size=settings.common.tx_rcv_buf_size)
            ).split() + wlans[0:(None if cfg.mirror else 1)]
@@ -774,7 +775,7 @@ def init_mavlink(service_name, cfg, wlans, link_id, ant_sel_f):
     cmd_tx = ('%(cmd)s -f %(frame_type)s -p %(stream)d -u %(port)d -K %(key)s -B %(bw)d '\
               '-G %(gi)s -S %(stbc)d -L %(ldpc)d -M %(mcs)d'\
               '%(mirror)s%(force_vht)s '\
-              '-k %(fec_k)d -n %(fec_n)d -T %(fec_timeout)d -i %(link_id)d -R %(rcv_buf_size)d' % \
+              '-k %(fec_k)d -n %(fec_n)d -T %(fec_timeout)d -F %(fec_delay)d -i %(link_id)d -R %(rcv_buf_size)d' % \
               dict(cmd=os.path.join(settings.path.bin_dir, 'wfb_tx'),
                    frame_type=cfg.frame_type,
                    stream=cfg.stream_tx,
@@ -790,6 +791,7 @@ def init_mavlink(service_name, cfg, wlans, link_id, ant_sel_f):
                    fec_k=cfg.fec_k,
                    fec_n=cfg.fec_n,
                    fec_timeout=cfg.fec_timeout,
+                   fec_delay=cfg.fec_delay,
                    link_id=link_id,
                    rcv_buf_size=settings.common.tx_rcv_buf_size)).split() + wlans
 
@@ -866,7 +868,7 @@ def init_tunnel(service_name, cfg, wlans, link_id, ant_sel_f):
     cmd_tx = ('%(cmd)s -f %(frame_type)s -p %(stream)d -u %(port)d -K %(key)s -B %(bw)d -G %(gi)s '\
               '-S %(stbc)d -L %(ldpc)d -M %(mcs)d'\
               '%(mirror)s%(force_vht)s '\
-              '-k %(fec_k)d -n %(fec_n)d -T %(fec_timeout)d -i %(link_id)d -R %(rcv_buf_size)d' % \
+              '-k %(fec_k)d -n %(fec_n)d -T %(fec_timeout)d -F %(fec_delay)d -i %(link_id)d -R %(rcv_buf_size)d' % \
               dict(cmd=os.path.join(settings.path.bin_dir, 'wfb_tx'),
                    frame_type=cfg.frame_type,
                    stream=cfg.stream_tx,
@@ -882,6 +884,7 @@ def init_tunnel(service_name, cfg, wlans, link_id, ant_sel_f):
                    fec_k=cfg.fec_k,
                    fec_n=cfg.fec_n,
                    fec_timeout=cfg.fec_timeout,
+                   fec_delay=cfg.fec_delay,
                    link_id=link_id,
                    rcv_buf_size=settings.common.tx_rcv_buf_size)).split() + wlans
 
@@ -968,7 +971,7 @@ def init_udp_proxy(service_name, cfg, wlans, link_id, ant_sel_f):
         cmd_tx = ('%(cmd)s -f %(frame_type)s -p %(stream)d -u %(port)d -K %(key)s -B %(bw)d '\
                   '-G %(gi)s -S %(stbc)d -L %(ldpc)d -M %(mcs)d'\
                   '%(mirror)s%(force_vht)s '\
-                  '-k %(fec_k)d -n %(fec_n)d -T %(fec_timeout)d -i %(link_id)d -R %(rcv_buf_size)d' % \
+                  '-k %(fec_k)d -n %(fec_n)d -T %(fec_timeout)d -F %(fec_delay)d -i %(link_id)d -R %(rcv_buf_size)d' % \
                   dict(cmd=os.path.join(settings.path.bin_dir, 'wfb_tx'),
                        frame_type=cfg.frame_type,
                        stream=cfg.stream_tx,
@@ -984,6 +987,7 @@ def init_udp_proxy(service_name, cfg, wlans, link_id, ant_sel_f):
                        fec_k=cfg.fec_k,
                        fec_n=cfg.fec_n,
                        fec_timeout=cfg.fec_timeout,
+                       fec_delay=cfg.fec_delay,
                        link_id=link_id,
                        rcv_buf_size=settings.common.tx_rcv_buf_size)).split() + wlans
         log.msg('%s TX: %s' % (service_name, ' '.join(cmd_tx)))

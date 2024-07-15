@@ -49,12 +49,13 @@ using namespace std;
 #include "tx.hpp"
 
 
-Transmitter::Transmitter(int k, int n, const string &keypair, uint64_t epoch, uint32_t channel_id) : \
+Transmitter::Transmitter(int k, int n, const string &keypair, uint64_t epoch, uint32_t channel_id, uint32_t fec_delay) : \
     fec_k(k), fec_n(n), block_idx(0),
     fragment_idx(0),
     max_packet_size(0),
     epoch(epoch),
-    channel_id(channel_id)
+    channel_id(channel_id),
+    fec_delay(fec_delay)
 {
     fec_p = fec_new(fec_k, fec_n);
 
@@ -125,9 +126,9 @@ void Transmitter::make_session_key(void)
     }
 }
 
-RawSocketTransmitter::RawSocketTransmitter(int k, int n, const string &keypair, uint64_t epoch, uint32_t channel_id, const vector<string> &wlans,
-                                           shared_ptr<uint8_t[]> radiotap_header, size_t radiotap_header_len, uint8_t frame_type) : \
-    Transmitter(k, n, keypair, epoch, channel_id),
+RawSocketTransmitter::RawSocketTransmitter(int k, int n, const string &keypair, uint64_t epoch, uint32_t channel_id, uint32_t fec_delay,
+                                           const vector<string> &wlans, shared_ptr<uint8_t[]> radiotap_header, size_t radiotap_header_len, uint8_t frame_type) : \
+    Transmitter(k, n, keypair, epoch, channel_id, fec_delay),
     channel_id(channel_id),
     current_output(0),
     ieee80211_seq(0),
@@ -341,6 +342,15 @@ bool Transmitter::send_packet(const uint8_t *buf, size_t size, uint8_t flags)
     fec_encode(fec_p, (const uint8_t**)block, block + fec_k, max_packet_size);
     while (fragment_idx < fec_n)
     {
+        if(fec_delay > 0)
+        {
+            int rc = usleep((useconds_t)fec_delay);
+            if(rc != 0 && errno != EINTR)
+            {
+                throw runtime_error(string_format("usleep: %s", strerror(errno)));
+            }
+        }
+
         send_block_fragment(max_packet_size);
         fragment_idx += 1;
     }
@@ -558,6 +568,7 @@ int main(int argc, char * const *argv)
 {
     int opt;
     uint8_t k=8, n=12, radio_port=0;
+    uint32_t fec_delay = 0;
     uint32_t link_id = 0x0;
     uint64_t epoch = 0;
     int udp_port=5600;
@@ -579,7 +590,7 @@ int main(int argc, char * const *argv)
     size_t radiotap_header_len = 0;
     uint8_t frame_type = FRAME_TYPE_DATA;
 
-    while ((opt = getopt(argc, argv, "K:k:n:u:p:l:B:G:S:L:M:N:D:T:i:e:R:f:mV")) != -1) {
+    while ((opt = getopt(argc, argv, "K:k:n:u:p:F:l:B:G:S:L:M:N:D:T:i:e:R:f:mV")) != -1) {
         switch (opt) {
         case 'K':
             keypair = optarg;
@@ -595,6 +606,9 @@ int main(int argc, char * const *argv)
             break;
         case 'p':
             radio_port = atoi(optarg);
+            break;
+        case 'F':
+            fec_delay = atoi(optarg);
             break;
         case 'R':
             rcv_buf = atoi(optarg);
@@ -661,10 +675,10 @@ int main(int argc, char * const *argv)
             break;
         default: /* '?' */
         show_usage:
-            fprintf(stderr, "Usage: %s [-K tx_key] [-k RS_K] [-n RS_N] [-u udp_port] [-R rcv_buf] [-p radio_port] [-B bandwidth] [-G guard_interval] [-S stbc] [-L ldpc] [-M mcs_index] [-N VHT_NSS] [-T fec_timeout] [-l log_interval] [-e epoch] [-i link_id] [-f { data | rts }] [ -m ] [ -V ] interface1 [interface2] ...\n",
+            fprintf(stderr, "Usage: %s [-K tx_key] [-k RS_K] [-n RS_N] [-u udp_port] [-R rcv_buf] [-p radio_port] [ -F fec_delay ] [-B bandwidth] [-G guard_interval] [-S stbc] [-L ldpc] [-M mcs_index] [-N VHT_NSS] [-T fec_timeout] [-l log_interval] [-e epoch] [-i link_id] [-f { data | rts }] [ -m ] [ -V ] interface1 [interface2] ...\n",
                     argv[0]);
-            fprintf(stderr, "Default: K='%s', k=%d, n=%d, udp_port=%d, link_id=0x%06x, radio_port=%u, epoch=%" PRIu64 ", bandwidth=%d guard_interval=%s stbc=%d ldpc=%d mcs_index=%d vht_nss=%d, vht_mode=%d, fec_timeout=%d, log_interval=%d, rcv_buf=system_default, frame_type=data, mirror=false\n",
-                    keypair.c_str(), k, n, udp_port, link_id, radio_port, epoch, bandwidth, short_gi ? "short" : "long", stbc, ldpc, mcs_index, vht_nss, vht_mode, fec_timeout, log_interval);
+            fprintf(stderr, "Default: K='%s', k=%d, n=%d, fec_delay=%u [us], udp_port=%d, link_id=0x%06x, radio_port=%u, epoch=%" PRIu64 ", bandwidth=%d guard_interval=%s stbc=%d ldpc=%d mcs_index=%d vht_nss=%d, vht_mode=%d, fec_timeout=%d, log_interval=%d, rcv_buf=system_default, frame_type=data, mirror=false\n",
+                    keypair.c_str(), k, n, fec_delay, udp_port, link_id, radio_port, epoch, bandwidth, short_gi ? "short" : "long", stbc, ldpc, mcs_index, vht_nss, vht_mode, fec_timeout, log_interval);
             fprintf(stderr, "Radio MTU: %lu\n", (unsigned long)MAX_PAYLOAD_SIZE);
             fprintf(stderr, "WFB-ng version " WFB_VERSION "\n");
             fprintf(stderr, "WFB-ng home page: <http://wfb-ng.org>\n");
@@ -842,10 +856,10 @@ int main(int argc, char * const *argv)
         if (debug_port)
         {
             fprintf(stderr, "Using %zu ports from %d for wlan emulation\n", wlans.size(), debug_port);
-            t = shared_ptr<UdpTransmitter>(new UdpTransmitter(k, n, keypair, "127.0.0.1", debug_port, epoch, channel_id));
+            t = shared_ptr<UdpTransmitter>(new UdpTransmitter(k, n, keypair, "127.0.0.1", debug_port, epoch, channel_id, fec_delay));
         } else {
-            t = shared_ptr<RawSocketTransmitter>(new RawSocketTransmitter(k, n, keypair, epoch, channel_id, wlans,
-                                                                          radiotap_header, radiotap_header_len, frame_type));
+            t = shared_ptr<RawSocketTransmitter>(new RawSocketTransmitter(k, n, keypair, epoch, channel_id, fec_delay,
+                                                                          wlans, radiotap_header, radiotap_header_len, frame_type));
         }
 
         data_source(t, rx_fd, fec_timeout, mirror, log_interval);
