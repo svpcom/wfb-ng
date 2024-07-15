@@ -647,7 +647,7 @@ def init_udp_direct_tx(service_name, cfg, wlans, link_id, ant_sel_f):
 
     cmd = ('%(cmd)s -f %(frame_type)s -p %(stream)d -u %(port)d -K %(key)s '\
            '-B %(bw)d -G %(gi)s -S %(stbc)d -L %(ldpc)d -M %(mcs)d'\
-           '%(mirror)s%(force_vht)s '\
+           '%(mirror)s%(force_vht)s%(qdisc)s '\
            '-k %(fec_k)d -n %(fec_n)d -T %(fec_timeout)d -F %(fec_delay)d -i %(link_id)d -R %(rcv_buf_size)d' % \
            dict(cmd=os.path.join(settings.path.bin_dir, 'wfb_tx'),
                 frame_type=cfg.frame_type,
@@ -656,6 +656,7 @@ def init_udp_direct_tx(service_name, cfg, wlans, link_id, ant_sel_f):
                 key=os.path.join(settings.path.conf_dir, cfg.keypair),
                 bw=cfg.bandwidth,
                 force_vht=' -V' if cfg.force_vht else '',
+                qdisc=' -Q -P %d' % (cfg.priority,) if cfg.use_qdisc else '',
                 gi="short" if cfg.short_gi else "long",
                 stbc=cfg.stbc,
                 ldpc=cfg.ldpc,
@@ -774,7 +775,7 @@ def init_mavlink(service_name, cfg, wlans, link_id, ant_sel_f):
 
     cmd_tx = ('%(cmd)s -f %(frame_type)s -p %(stream)d -u %(port)d -K %(key)s -B %(bw)d '\
               '-G %(gi)s -S %(stbc)d -L %(ldpc)d -M %(mcs)d'\
-              '%(mirror)s%(force_vht)s '\
+              '%(mirror)s%(force_vht)s%(qdisc)s '\
               '-k %(fec_k)d -n %(fec_n)d -T %(fec_timeout)d -F %(fec_delay)d -i %(link_id)d -R %(rcv_buf_size)d' % \
               dict(cmd=os.path.join(settings.path.bin_dir, 'wfb_tx'),
                    frame_type=cfg.frame_type,
@@ -783,6 +784,7 @@ def init_mavlink(service_name, cfg, wlans, link_id, ant_sel_f):
                    key=os.path.join(settings.path.conf_dir, cfg.keypair),
                    bw=cfg.bandwidth,
                    force_vht=' -V' if cfg.force_vht else '',
+                   qdisc=' -Q -P %d' % (cfg.priority,) if cfg.use_qdisc else '',
                    gi="short" if cfg.short_gi else "long",
                    stbc=cfg.stbc,
                    ldpc=cfg.ldpc,
@@ -867,7 +869,7 @@ def init_tunnel(service_name, cfg, wlans, link_id, ant_sel_f):
 
     cmd_tx = ('%(cmd)s -f %(frame_type)s -p %(stream)d -u %(port)d -K %(key)s -B %(bw)d -G %(gi)s '\
               '-S %(stbc)d -L %(ldpc)d -M %(mcs)d'\
-              '%(mirror)s%(force_vht)s '\
+              '%(mirror)s%(force_vht)s%(qdisc)s '\
               '-k %(fec_k)d -n %(fec_n)d -T %(fec_timeout)d -F %(fec_delay)d -i %(link_id)d -R %(rcv_buf_size)d' % \
               dict(cmd=os.path.join(settings.path.bin_dir, 'wfb_tx'),
                    frame_type=cfg.frame_type,
@@ -876,6 +878,7 @@ def init_tunnel(service_name, cfg, wlans, link_id, ant_sel_f):
                    key=os.path.join(settings.path.conf_dir, cfg.keypair),
                    bw=cfg.bandwidth,
                    force_vht=' -V' if cfg.force_vht else '',
+                   qdisc=' -Q -P %d' % (cfg.priority,) if cfg.use_qdisc else '',
                    gi="short" if cfg.short_gi else "long",
                    stbc=cfg.stbc,
                    ldpc=cfg.ldpc,
@@ -970,7 +973,7 @@ def init_udp_proxy(service_name, cfg, wlans, link_id, ant_sel_f):
     if cfg.stream_tx is not None:
         cmd_tx = ('%(cmd)s -f %(frame_type)s -p %(stream)d -u %(port)d -K %(key)s -B %(bw)d '\
                   '-G %(gi)s -S %(stbc)d -L %(ldpc)d -M %(mcs)d'\
-                  '%(mirror)s%(force_vht)s '\
+                  '%(mirror)s%(force_vht)s%(qdisc)s '\
                   '-k %(fec_k)d -n %(fec_n)d -T %(fec_timeout)d -F %(fec_delay)d -i %(link_id)d -R %(rcv_buf_size)d' % \
                   dict(cmd=os.path.join(settings.path.bin_dir, 'wfb_tx'),
                        frame_type=cfg.frame_type,
@@ -979,6 +982,7 @@ def init_udp_proxy(service_name, cfg, wlans, link_id, ant_sel_f):
                        key=os.path.join(settings.path.conf_dir, cfg.keypair),
                        bw=cfg.bandwidth,
                        force_vht=' -V' if cfg.force_vht else '',
+                       qdisc=' -Q -P %d' % (cfg.priority,) if cfg.use_qdisc else '',
                        gi="short" if cfg.short_gi else "long",
                        stbc=cfg.stbc,
                        ldpc=cfg.ldpc,

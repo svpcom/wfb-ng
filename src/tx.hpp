@@ -107,7 +107,8 @@ typedef std::unordered_map<uint64_t, txAntennaItem> tx_antenna_stat_t;
 class RawSocketTransmitter : public Transmitter
 {
 public:
-    RawSocketTransmitter(int k, int m, const std::string &keypair, uint64_t epoch, uint32_t channel_id, uint32_t fec_delay, const std::vector<std::string> &wlans, shared_ptr<uint8_t[]> radiotap_header, size_t radiotap_header_len, uint8_t frame_type);
+    RawSocketTransmitter(int k, int m, const std::string &keypair, uint64_t epoch, uint32_t channel_id, uint32_t fec_delay, const std::vector<std::string> &wlans,
+                         shared_ptr<uint8_t[]> radiotap_header, size_t radiotap_header_len, uint8_t frame_type, bool use_qdisc, uint32_t priority);
     virtual ~RawSocketTransmitter();
     virtual void select_output(int idx) { current_output = idx; }
     virtual void dump_stats(FILE *fp, uint64_t ts, uint32_t &injected_packets, uint32_t &dropped_packets, uint32_t &injected_bytes);
@@ -119,8 +120,10 @@ private:
     std::vector<int> sockfds;
     tx_antenna_stat_t antenna_stat;
     shared_ptr<uint8_t[]> radiotap_header;
-    size_t radiotap_header_len;
-    uint8_t frame_type;
+    const size_t radiotap_header_len;
+    const uint8_t frame_type;
+    const bool use_qdisc;
+    const uint32_t priority;
 };
 
 

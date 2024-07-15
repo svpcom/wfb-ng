@@ -127,14 +127,17 @@ void Transmitter::make_session_key(void)
 }
 
 RawSocketTransmitter::RawSocketTransmitter(int k, int n, const string &keypair, uint64_t epoch, uint32_t channel_id, uint32_t fec_delay,
-                                           const vector<string> &wlans, shared_ptr<uint8_t[]> radiotap_header, size_t radiotap_header_len, uint8_t frame_type) : \
+                                           const vector<string> &wlans, shared_ptr<uint8_t[]> radiotap_header, size_t radiotap_header_len,
+                                           uint8_t frame_type, bool use_qdisc, uint32_t priority) : \
     Transmitter(k, n, keypair, epoch, channel_id, fec_delay),
     channel_id(channel_id),
     current_output(0),
     ieee80211_seq(0),
     radiotap_header(radiotap_header),
     radiotap_header_len(radiotap_header_len),
-    frame_type(frame_type)
+    frame_type(frame_type),
+    use_qdisc(use_qdisc),
+    priority(priority)
 {
     for(auto it=wlans.begin(); it!=wlans.end(); it++)
     {
@@ -144,11 +147,22 @@ RawSocketTransmitter::RawSocketTransmitter(int k, int n, const string &keypair, 
             throw runtime_error(string_format("Unable to open PF_PACKET socket: %s", strerror(errno)));
         }
 
-        const int optval = 1;
-        if(setsockopt(fd, SOL_PACKET, PACKET_QDISC_BYPASS, (const void *)&optval , sizeof(optval)) !=0)
+        if(use_qdisc)
         {
-            close(fd);
-            throw runtime_error(string_format("Unable to set PACKET_QDISC_BYPASS: %s", strerror(errno)));
+            if(setsockopt(fd, SOL_PACKET, SO_PRIORITY, (const void *)&priority , sizeof(priority)) !=0)
+            {
+                close(fd);
+                throw runtime_error(string_format("Unable to set SO_PRIORITY: %s", strerror(errno)));
+            }
+        }
+        else
+        {
+            const int optval = 1;
+            if(setsockopt(fd, SOL_PACKET, PACKET_QDISC_BYPASS, (const void *)&optval , sizeof(optval)) !=0)
+            {
+                close(fd);
+                throw runtime_error(string_format("Unable to set PACKET_QDISC_BYPASS: %s", strerror(errno)));
+            }
         }
 
         struct ifreq ifr;
@@ -589,8 +603,10 @@ int main(int argc, char * const *argv)
     shared_ptr<uint8_t[]> radiotap_header = NULL;
     size_t radiotap_header_len = 0;
     uint8_t frame_type = FRAME_TYPE_DATA;
+    bool use_qdisc = false;
+    uint32_t priority = 0;
 
-    while ((opt = getopt(argc, argv, "K:k:n:u:p:F:l:B:G:S:L:M:N:D:T:i:e:R:f:mV")) != -1) {
+    while ((opt = getopt(argc, argv, "K:k:n:u:p:F:l:B:G:S:L:M:N:D:T:i:e:R:f:mVQP:")) != -1) {
         switch (opt) {
         case 'K':
             keypair = optarg;
@@ -673,12 +689,18 @@ int main(int argc, char * const *argv)
                 exit(1);
             }
             break;
+        case 'Q':
+            use_qdisc = true;
+            break;
+        case 'P':
+            priority = (uint32_t)atoi(optarg);
+            break;
         default: /* '?' */
         show_usage:
-            fprintf(stderr, "Usage: %s [-K tx_key] [-k RS_K] [-n RS_N] [-u udp_port] [-R rcv_buf] [-p radio_port] [ -F fec_delay ] [-B bandwidth] [-G guard_interval] [-S stbc] [-L ldpc] [-M mcs_index] [-N VHT_NSS] [-T fec_timeout] [-l log_interval] [-e epoch] [-i link_id] [-f { data | rts }] [ -m ] [ -V ] interface1 [interface2] ...\n",
+            fprintf(stderr, "Usage: %s [-K tx_key] [-k RS_K] [-n RS_N] [-u udp_port] [-R rcv_buf] [-p radio_port] [-F fec_delay] [-B bandwidth] [-G guard_interval] [-S stbc] [-L ldpc] [-M mcs_index] [-N VHT_NSS] [-T fec_timeout] [-l log_interval] [-e epoch] [-i link_id] [-f { data | rts }] [-m] [-V] [-Q] [-P priority] interface1 [interface2] ...\n",
                     argv[0]);
-            fprintf(stderr, "Default: K='%s', k=%d, n=%d, fec_delay=%u [us], udp_port=%d, link_id=0x%06x, radio_port=%u, epoch=%" PRIu64 ", bandwidth=%d guard_interval=%s stbc=%d ldpc=%d mcs_index=%d vht_nss=%d, vht_mode=%d, fec_timeout=%d, log_interval=%d, rcv_buf=system_default, frame_type=data, mirror=false\n",
-                    keypair.c_str(), k, n, fec_delay, udp_port, link_id, radio_port, epoch, bandwidth, short_gi ? "short" : "long", stbc, ldpc, mcs_index, vht_nss, vht_mode, fec_timeout, log_interval);
+            fprintf(stderr, "Default: K='%s', k=%d, n=%d, fec_delay=%u [us], udp_port=%d, link_id=0x%06x, radio_port=%u, epoch=%" PRIu64 ", bandwidth=%d guard_interval=%s stbc=%d ldpc=%d mcs_index=%d vht_nss=%d, vht_mode=%d, fec_timeout=%d, log_interval=%d, rcv_buf=system_default, frame_type=data, mirror=false, use_qdisc=false, priority=%u\n",
+                    keypair.c_str(), k, n, fec_delay, udp_port, link_id, radio_port, epoch, bandwidth, short_gi ? "short" : "long", stbc, ldpc, mcs_index, vht_nss, vht_mode, fec_timeout, log_interval, priority);
             fprintf(stderr, "Radio MTU: %lu\n", (unsigned long)MAX_PAYLOAD_SIZE);
             fprintf(stderr, "WFB-ng version " WFB_VERSION "\n");
             fprintf(stderr, "WFB-ng home page: <http://wfb-ng.org>\n");
@@ -859,7 +881,8 @@ int main(int argc, char * const *argv)
             t = shared_ptr<UdpTransmitter>(new UdpTransmitter(k, n, keypair, "127.0.0.1", debug_port, epoch, channel_id, fec_delay));
         } else {
             t = shared_ptr<RawSocketTransmitter>(new RawSocketTransmitter(k, n, keypair, epoch, channel_id, fec_delay,
-                                                                          wlans, radiotap_header, radiotap_header_len, frame_type));
+                                                                          wlans, radiotap_header, radiotap_header_len,
+                                                                          frame_type, use_qdisc, priority));
         }
 
         data_source(t, rx_fd, fec_timeout, mirror, log_interval);
