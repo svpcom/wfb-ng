@@ -5,9 +5,10 @@ ReloadPropagatedFrom=wifibroadcast.service
 
 [Service]
 Type=simple
+# common environment
 EnvironmentFile=/etc/default/wifibroadcast
-# Use for multi-link setup
-# Environment="WIFIBROADCAST_CFG=/etc/wifibroadcast_linkXXX.cfg"
+# per-profile environment
+EnvironmentFile=-/etc/default/wifibroadcast.%i
 ExecStart=/usr/bin/wfb-server %i ${WFB_NICS}
 TimeoutStopSec=5s
 Restart=on-failure

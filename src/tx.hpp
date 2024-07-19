@@ -41,6 +41,7 @@ public:
     virtual void dump_stats(FILE *fp, uint64_t ts, uint32_t &injected_packets, uint32_t &dropped_packets, uint32_t &injected_bytes) = 0;
 protected:
     virtual void inject_packet(const uint8_t *buf, size_t size) = 0;
+    virtual void set_mark(uint32_t idx) = 0;
 
 private:
     void send_block_fragment(size_t packet_size);
@@ -108,12 +109,23 @@ class RawSocketTransmitter : public Transmitter
 {
 public:
     RawSocketTransmitter(int k, int m, const std::string &keypair, uint64_t epoch, uint32_t channel_id, uint32_t fec_delay, const std::vector<std::string> &wlans,
-                         shared_ptr<uint8_t[]> radiotap_header, size_t radiotap_header_len, uint8_t frame_type, bool use_qdisc, uint32_t priority);
+                         shared_ptr<uint8_t[]> radiotap_header, size_t radiotap_header_len, uint8_t frame_type, bool use_qdisc, uint32_t fwmark);
     virtual ~RawSocketTransmitter();
-    virtual void select_output(int idx) { current_output = idx; }
+    virtual void select_output(int idx)
+    {
+        bool sw = current_output != idx;
+        current_output = idx;
+        if (sw)
+        {
+            // select_output call should happend only between data packets
+            // All FEC packets issued after last data packet in block and will have set_mark(1)
+            set_mark(0);
+        }
+    }
     virtual void dump_stats(FILE *fp, uint64_t ts, uint32_t &injected_packets, uint32_t &dropped_packets, uint32_t &injected_bytes);
 private:
     virtual void inject_packet(const uint8_t *buf, size_t size);
+    virtual void set_mark(uint32_t mark);
     const uint32_t channel_id;
     int current_output;
     uint16_t ieee80211_seq;
@@ -123,15 +135,16 @@ private:
     const size_t radiotap_header_len;
     const uint8_t frame_type;
     const bool use_qdisc;
-    const uint32_t priority;
+    const uint32_t fwmark;
 };
 
 
 class UdpTransmitter : public Transmitter
 {
 public:
-    UdpTransmitter(int k, int m, const std::string &keypair, const std::string &client_addr, int base_port, uint64_t epoch, uint32_t channel_id, uint32_t fec_delay): \
-        Transmitter(k, m, keypair, epoch, channel_id, fec_delay), base_port(base_port)
+    UdpTransmitter(int k, int m, const std::string &keypair, const std::string &client_addr, int base_port, uint64_t epoch, uint32_t channel_id,
+                   uint32_t fec_delay, bool use_qdisc, uint32_t fwmark):                                \
+        Transmitter(k, m, keypair, epoch, channel_id, fec_delay), base_port(base_port), use_qdisc(use_qdisc), fwmark(fwmark)
     {
         sockfd = socket(AF_INET, SOCK_DGRAM, 0);
         if (sockfd < 0) throw std::runtime_error(string_format("Error opening socket: %s", strerror(errno)));
@@ -153,6 +166,20 @@ public:
     {
         assert(idx >= 0);
         saddr.sin_port = htons((unsigned short)(base_port + idx));
+    }
+
+    virtual void set_mark(uint32_t idx)
+    {
+        if (!use_qdisc)
+        {
+            return;
+        }
+
+        uint32_t sockopt = this->fwmark + idx;
+        if(setsockopt(sockfd, SOL_SOCKET, SO_MARK, (const void *)&sockopt , sizeof(sockopt)) !=0)
+        {
+            throw runtime_error(string_format("Unable to set SO_MARK fd(%d)=%u: %s", sockfd, sockopt, strerror(errno)));
+        }
     }
 
 private:
@@ -186,4 +213,6 @@ private:
     int sockfd;
     int base_port;
     struct sockaddr_in saddr;
+    const bool use_qdisc;
+    const uint32_t fwmark;
 };

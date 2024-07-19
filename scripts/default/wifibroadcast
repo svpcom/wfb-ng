@@ -1,3 +1,6 @@
 #WFB_NICS="wlx00c0caa578a9"
 #WFB_NICS="wlan1 wlan2"
+# For multi-link setup you can specify path to custom config
+# and/or list of cards in /etc/default/wifibroadcast.<profile_name>
+# WIFIBROADCAST_CFG=/etc/wifibroadcast_linkXXX.cfg
 WFB_NICS="wlan0"
