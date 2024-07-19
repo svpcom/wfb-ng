@@ -26,6 +26,7 @@ import signal
 import termios
 import struct
 import fcntl
+import argparse
 
 from twisted.python import log
 from twisted.internet import reactor, defer
@@ -34,6 +35,7 @@ from twisted.protocols.basic import Int32StringReceiver
 from .server import parse_services
 from .common import abort_on_crash, exit_status
 from .conf import settings
+from . import version_msg
 
 _orig_stdout = sys.stdout
 
@@ -357,7 +359,7 @@ class AntennaStatClientFactory(ReconnectingClientFactory):
         ReconnectingClientFactory.clientConnectionFailed(self, connector, reason)
 
 
-def init(stdscr, profile):
+def init(stdscr, profile, host):
     stats_port = getattr(settings, profile).stats_port
     f = AntennaStatClientFactory(stdscr, profile)
 
@@ -366,16 +368,19 @@ def init(stdscr, profile):
         reactor.callFromThread(lambda: defer.maybeDeferred(f.init_windows).addErrback(abort_on_crash))
 
     signal.signal(signal.SIGWINCH, sigwinch_handler)
-    reactor.connectTCP('127.0.0.1', stats_port, f)
+    reactor.connectTCP(host, stats_port, f)
 
 
 
 def main():
     stderr = sys.stderr
 
-    if len(sys.argv) != 2:
-        print("Usage: %s <profile>" % (sys.argv[0],), file=stderr)
-        sys.exit(1)
+    parser = argparse.ArgumentParser(description='WFB-ng CLI',
+                                     formatter_class=argparse.RawTextHelpFormatter)
+    parser.add_argument('--version', action='version', version=version_msg % settings)
+    parser.add_argument('--host', type=str, default='127.0.0.1', help='WFB-ng host')
+    parser.add_argument('profile', type=str, help='WFB-ng profile')
+    args = parser.parse_args()
 
     fd = tempfile.TemporaryFile(mode='w+', encoding='utf-8')
     log.startLogging(fd)
@@ -386,7 +391,7 @@ def main():
         curses.cbreak()
         curses.curs_set(0)
         stdscr.keypad(True)
-        reactor.callWhenRunning(lambda: defer.maybeDeferred(init, stdscr, sys.argv[1])\
+        reactor.callWhenRunning(lambda: defer.maybeDeferred(init, stdscr, args.profile, args.host)\
                             .addErrback(abort_on_crash))
         reactor.run()
     finally:

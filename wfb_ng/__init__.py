@@ -1,3 +1,23 @@
+#!/usr/bin/env python
+# -*- coding: utf-8 -*-
+
+# Copyright (C) 2018-2024 Vasily Evseenko <svpcom@p2ptech.org>
+
+#
+#   This program is free software; you can redistribute it and/or modify
+#   it under the terms of the GNU General Public License as published by
+#   the Free Software Foundation; version 3.
+#
+#   This program is distributed in the hope that it will be useful,
+#   but WITHOUT ANY WARRANTY; without even the implied warranty of
+#   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+#   GNU General Public License for more details.
+#
+#   You should have received a copy of the GNU General Public License along
+#   with this program; if not, write to the Free Software Foundation, Inc.,
+#   51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
+#
+
 import sys
 import os
 import queue
@@ -9,6 +29,15 @@ from twisted.internet import utils, reactor
 from logging import currentframe
 from twisted.python import log
 from twisted.python.logfile import LogFile
+
+version_msg = """\
+WFB-ng version %(common.version)s
+Copyright (C) 2018-2024 Vasily Evseenko <svpcom@p2ptech.org>
+License GPLv3: GNU GPL version 3 <http://gnu.org/licenses/gpl.html>
+
+This is free software; you are free to change and redistribute it.
+There is NO warranty; not even for MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
+"""
 
 __orig_msg = log.msg
 _srcfile = os.path.splitext(os.path.normcase(__file__))[0] + '.py'
