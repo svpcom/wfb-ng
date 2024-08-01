@@ -33,7 +33,7 @@
 class Transmitter
 {
 public:
-    Transmitter(int k, int m, const std::string &keypair, uint64_t epoch, uint32_t channel_id, uint32_t fec_delay);
+    Transmitter(int k, int m, const std::string &keypair, uint64_t epoch, uint32_t channel_id, uint32_t fec_delay, std::vector<tags_item_t> &tags);
     virtual ~Transmitter();
     bool send_packet(const uint8_t *buf, size_t size, uint8_t flags);
     void send_session_key(void);
@@ -62,7 +62,9 @@ private:
     uint8_t tx_secretkey[crypto_box_SECRETKEYBYTES];
     uint8_t rx_publickey[crypto_box_PUBLICKEYBYTES];
     uint8_t session_key[crypto_aead_chacha20poly1305_KEYBYTES];
-    uint8_t session_key_packet[sizeof(wsession_hdr_t) + sizeof(wsession_data_t) + crypto_box_MACBYTES];
+    uint8_t session_packet[MAX_SESSION_PACKET_SIZE];
+    uint16_t session_packet_size;
+    std::vector<tags_item_t> &tags;
 };
 
 class txAntennaItem
@@ -108,8 +110,9 @@ typedef std::unordered_map<uint64_t, txAntennaItem> tx_antenna_stat_t;
 class RawSocketTransmitter : public Transmitter
 {
 public:
-    RawSocketTransmitter(int k, int m, const std::string &keypair, uint64_t epoch, uint32_t channel_id, uint32_t fec_delay, const std::vector<std::string> &wlans,
-                         shared_ptr<uint8_t[]> radiotap_header, size_t radiotap_header_len, uint8_t frame_type, bool use_qdisc, uint32_t fwmark);
+    RawSocketTransmitter(int k, int m, const std::string &keypair, uint64_t epoch, uint32_t channel_id, uint32_t fec_delay, std::vector<tags_item_t> &tags,
+                         const std::vector<std::string> &wlans, shared_ptr<uint8_t[]> radiotap_header, size_t radiotap_header_len,
+                         uint8_t frame_type, bool use_qdisc, uint32_t fwmark);
     virtual ~RawSocketTransmitter();
     virtual void select_output(int idx)
     {
@@ -143,8 +146,8 @@ class UdpTransmitter : public Transmitter
 {
 public:
     UdpTransmitter(int k, int m, const std::string &keypair, const std::string &client_addr, int base_port, uint64_t epoch, uint32_t channel_id,
-                   uint32_t fec_delay, bool use_qdisc, uint32_t fwmark):                                \
-        Transmitter(k, m, keypair, epoch, channel_id, fec_delay), base_port(base_port), use_qdisc(use_qdisc), fwmark(fwmark)
+                   uint32_t fec_delay, std::vector<tags_item_t> &tags, bool use_qdisc, uint32_t fwmark): \
+        Transmitter(k, m, keypair, epoch, channel_id, fec_delay, tags), base_port(base_port), use_qdisc(use_qdisc), fwmark(fwmark)
     {
         sockfd = socket(AF_INET, SOCK_DGRAM, 0);
         if (sockfd < 0) throw std::runtime_error(string_format("Error opening socket: %s", strerror(errno)));

@@ -508,12 +508,35 @@ void Aggregator::log_rssi(const sockaddr_in *sockaddr, uint8_t wlan_idx, const u
     }
 }
 
+int Aggregator::get_tag(const void *buf, size_t size, uint8_t tag_id, void *value, size_t value_size)
+{
+    tlv_hdr_t *p = (tlv_hdr_t*)buf;
+    void *end = (uint8_t*)buf + size;
+
+    while((void*)(p + 1) <= end)
+    {
+        if(p->id != tag_id)
+        {
+            p = (tlv_hdr_t*)((uint8_t*)(p + 1) + p->len);
+            continue;
+        }
+        if(p->len > value_size) return -1;
+        if(p->value + p->len > end) return -1;
+        memcpy(value, p->value, p->len);
+        return p->len;
+    }
+
+    return -1;
+}
 
 void Aggregator::process_packet(const uint8_t *buf, size_t size, uint8_t wlan_idx, const uint8_t *antenna,
                                 const int8_t *rssi, const int8_t *noise, uint16_t freq, uint8_t mcs_index,
                                 uint8_t bandwidth, sockaddr_in *sockaddr)
 {
-    wsession_data_t new_session_data;
+    uint8_t session_tmp[MAX_SESSION_PACKET_SIZE - crypto_box_MACBYTES - sizeof(wsession_hdr_t)];
+    wsession_data_t* new_session_data = NULL;
+    //size_t new_session_tags_size = 0;
+
     count_p_all += 1;
     count_b_all += size;
 
@@ -537,17 +560,20 @@ void Aggregator::process_packet(const uint8_t *buf, size_t size, uint8_t wlan_id
         }
         break;
 
-    case WFB_PACKET_KEY:
-        if(size != sizeof(wsession_hdr_t) + sizeof(wsession_data_t) + crypto_box_MACBYTES)
+    case WFB_PACKET_SESSION:
+        new_session_data = (wsession_data_t*)session_tmp;
+
+        if(size < sizeof(wsession_hdr_t) + sizeof(wsession_data_t) + crypto_box_MACBYTES || \
+           size > MAX_SESSION_PACKET_SIZE)
         {
             fprintf(stderr, "Invalid session key packet\n");
             count_p_bad += 1;
             return;
         }
 
-        if(crypto_box_open_easy((uint8_t*)&new_session_data,
+        if(crypto_box_open_easy((uint8_t*)session_tmp,
                                 buf + sizeof(wsession_hdr_t),
-                                sizeof(wsession_data_t) + crypto_box_MACBYTES,
+                                size - sizeof(wsession_hdr_t),
                                 ((wsession_hdr_t*)buf)->session_nonce,
                                 tx_publickey, rx_secretkey) != 0)
         {
@@ -556,37 +582,39 @@ void Aggregator::process_packet(const uint8_t *buf, size_t size, uint8_t wlan_id
             return;
         }
 
-        if (be64toh(new_session_data.epoch) < epoch)
+        //new_session_tags_size = size - (sizeof(wsession_hdr_t) + sizeof(wsession_data_t) + crypto_box_MACBYTES);
+
+        if (be64toh(new_session_data->epoch) < epoch)
         {
-            fprintf(stderr, "Session epoch doesn't match: %" PRIu64 " < %" PRIu64 "\n", be64toh(new_session_data.epoch), epoch);
+            fprintf(stderr, "Session epoch doesn't match: %" PRIu64 " < %" PRIu64 "\n", be64toh(new_session_data->epoch), epoch);
             count_p_dec_err += 1;
             return;
         }
 
-        if (be32toh(new_session_data.channel_id) != channel_id)
+        if (be32toh(new_session_data->channel_id) != channel_id)
         {
-            fprintf(stderr, "Session channel_id doesn't match: %u != %u\n", be32toh(new_session_data.channel_id), channel_id);
+            fprintf(stderr, "Session channel_id doesn't match: %u != %u\n", be32toh(new_session_data->channel_id), channel_id);
             count_p_dec_err += 1;
             return;
         }
 
-        if (new_session_data.fec_type != WFB_FEC_VDM_RS)
+        if (new_session_data->fec_type != WFB_FEC_VDM_RS)
         {
-            fprintf(stderr, "Unsupported FEC codec type: %d\n", new_session_data.fec_type);
+            fprintf(stderr, "Unsupported FEC codec type: %d\n", new_session_data->fec_type);
             count_p_dec_err += 1;
             return;
         }
 
-        if (new_session_data.n < 1)
+        if (new_session_data->n < 1)
         {
-            fprintf(stderr, "Invalid FEC N: %d\n", new_session_data.n);
+            fprintf(stderr, "Invalid FEC N: %d\n", new_session_data->n);
             count_p_dec_err += 1;
             return;
         }
 
-        if (new_session_data.k < 1 || new_session_data.k > new_session_data.n)
+        if (new_session_data->k < 1 || new_session_data->k > new_session_data->n)
         {
-            fprintf(stderr, "Invalid FEC K: %d\n", new_session_data.k);
+            fprintf(stderr, "Invalid FEC K: %d\n", new_session_data->k);
             count_p_dec_err += 1;
             return;
         }
@@ -594,22 +622,23 @@ void Aggregator::process_packet(const uint8_t *buf, size_t size, uint8_t wlan_id
         count_p_dec_ok += 1;
         log_rssi(sockaddr, wlan_idx, antenna, rssi, noise, freq, mcs_index, bandwidth);
 
-        if (memcmp(session_key, new_session_data.session_key, sizeof(session_key)) != 0)
+        if (memcmp(session_key, new_session_data->session_key, sizeof(session_key)) != 0)
         {
-            epoch = be64toh(new_session_data.epoch);
-            memcpy(session_key, new_session_data.session_key, sizeof(session_key));
+            epoch = be64toh(new_session_data->epoch);
+            memcpy(session_key, new_session_data->session_key, sizeof(session_key));
 
             if (fec_p != NULL)
             {
                 deinit_fec();
             }
 
-            init_fec(new_session_data.k, new_session_data.n);
+            init_fec(new_session_data->k, new_session_data->n);
 
             fprintf(stdout, "%" PRIu64 "\tSESSION\t%" PRIu64 ":%u:%d:%d\n", get_time_ms(), epoch, WFB_FEC_VDM_RS, fec_k, fec_n);
             fflush(stdout);
 
         }
+
         return;
 
     default:

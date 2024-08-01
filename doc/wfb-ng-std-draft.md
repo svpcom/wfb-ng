@@ -1,6 +1,6 @@
 % WFB-NG Data Transport Standard [Draft]
 % Vasily Evseenko <<svpcom@p2ptech.org>>
-% Sep 13, 2022
+% Aug 1, 2024
 
 ## Introduction
 
@@ -15,7 +15,7 @@ using ordinary wifi adapters that support the transmission of "raw" packets. At 
 ## Areas of use:
 
 - Communication between robots and ground station
-- Communication of amateur satellites (CUBESAT) with the earth
+- Communication of amateur satellites (CUBESAT) with the Earth
 - Digital radio communication on the ground
 - ...
 
@@ -76,6 +76,7 @@ There are two packet types
 2. Session packet (`packet_type = 2`, has encrypted and authenticated session parameters and session key, see note below)
 
 Currently only supported FEC type is Reed-Solomon on Vandermonde matrix, but new FEC algorithms can be added in future.
+Session packet can have any amount of optional tags. Receiver should ignore all unknown or unused tags.
 
   ``` .c
   // FEC types
@@ -105,7 +106,13 @@ Currently only supported FEC type is Reed-Solomon on Vandermonde matrix, but new
                                                      +-- encrypted and authenticated by session key
          2. Session packet:
             wsession_hdr_t { packet_type = 2, nonce = random() }
-              wsession_data_t { epoch, channel_id, fec_type, fec_k, fec_n, session_key } # -- encrypted and authenticated using crypto_box_easy(rx_publickey, tx_secretkey)
+                wsession_data_t { epoch, channel_id,       #
+                                  fec_type, fec_k, fec_n,  #
+                                  session_key,             #
+                                  optional TLV list }      # -- encrypted and authenticated using crypto_box_easy(rx_publickey, tx_secretkey)
+
+    Where TLV list is a list of optional tags with the following format:
+         [{tag_id : tag_size : <tag_size bytes of value>}, ... ]
 
     data nonce:  56bit block_idx + 8bit fragment_idx
     session nonce: crypto_box_NONCEBYTES of random bytes
@@ -129,7 +136,15 @@ Currently only supported FEC type is Reed-Solomon on Vandermonde matrix, but new
         uint8_t k;            // FEC k
         uint8_t n;            // FEC n
         uint8_t session_key[crypto_aead_chacha20poly1305_KEYBYTES];
+        uint8_t tags[];       // Optional TLV attributes
     } __attribute__ ((packed)) wsession_data_t;
+
+    // TLV item header
+    typedef struct {
+        uint8_t id;
+        uint16_t len;
+        uint8_t value[];
+    } __attribute__ ((packed)) tlv_hdr_t;
 
     // Data packet. Embed FEC-encoded data
 

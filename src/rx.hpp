@@ -217,6 +217,8 @@ private:
                   const int8_t *noise, uint16_t freq, uint8_t mcs_index, uint8_t bandwidth);
     int get_block_ring_idx(uint64_t block_idx);
     int rx_ring_push(void);
+    int get_tag(const void *buf, size_t size, uint8_t tag_id, void *value, size_t value_size);
+
     fec_t* fec_p;
     int fec_k;  // RS number of primary fragments in block
     int fec_n;  // RS total number of fragments in block

@@ -170,7 +170,10 @@ static const uint8_t ieee80211_header[] __attribute__((unused)) = {
                                                  +-- encrypted and authenticated by session key
      2. Session packet:
         wsession_hdr_t { packet_type = 2, nonce = random() }
-          wsession_data_t { epoch, channel_id, fec_type, fec_k, fec_n, session_key } # -- encrypted and signed using rx and tx keys
+          wsession_data_t { epoch, channel_id,       #
+                            fec_type, fec_k, fec_n,  #
+                            session_key,             #
+                            optional TLV list }      # -- encrypted and signed using rx and tx keys
  */
 
 // data nonce:  56bit block_idx + 8bit fragment_idx
@@ -180,8 +183,8 @@ static const uint8_t ieee80211_header[] __attribute__((unused)) = {
 #define MAX_BLOCK_IDX ((1LLU << 55) - 1)
 
 // packet types
-#define WFB_PACKET_DATA 0x1
-#define WFB_PACKET_KEY 0x2
+#define WFB_PACKET_DATA    0x1
+#define WFB_PACKET_SESSION 0x2
 
 // FEC types
 #define WFB_FEC_VDM_RS  0x1  //Reed-Solomon on Vandermonde matrix
@@ -213,14 +216,31 @@ typedef struct {
     uint8_t session_nonce[crypto_box_NONCEBYTES];  // random data
 }  __attribute__ ((packed)) wsession_hdr_t;
 
-typedef struct{
+typedef struct {
     uint64_t epoch; // Drop session packets from old epoch
     uint32_t channel_id; // (link_id << 8) + port_number
     uint8_t fec_type; // Now only supported type is WFB_FEC_VDM_RS
     uint8_t k;   // FEC k
     uint8_t n;   // FEC n
     uint8_t session_key[crypto_aead_chacha20poly1305_KEYBYTES];
+    uint8_t tags[];  // Optional TLV attributes
 } __attribute__ ((packed)) wsession_data_t;
+
+
+// TLV attr header (in packet)
+typedef struct {
+    uint8_t id;
+    uint16_t len;
+    uint8_t value[];
+} __attribute__ ((packed)) tlv_hdr_t;
+
+
+// TLV item
+typedef struct {
+    uint8_t id;
+    uint16_t len;
+    void* value;
+} tags_item_t;
 
 // Data packet. Embed FEC-encoded data
 
@@ -239,6 +259,7 @@ typedef struct {
 #define MAX_PAYLOAD_SIZE (WIFI_MTU - sizeof(ieee80211_header) - sizeof(wblock_hdr_t) - crypto_aead_chacha20poly1305_ABYTES - sizeof(wpacket_hdr_t))
 #define MAX_FEC_PAYLOAD  (WIFI_MTU - sizeof(ieee80211_header) - sizeof(wblock_hdr_t) - crypto_aead_chacha20poly1305_ABYTES)
 #define MAX_FORWARDER_PACKET_SIZE (WIFI_MTU - sizeof(ieee80211_header))
+#define MAX_SESSION_PACKET_SIZE (WIFI_MTU - sizeof(ieee80211_header))
 
 int open_udp_socket_for_rx(int port, int rcv_buf_size);
 uint64_t get_time_ms(void);

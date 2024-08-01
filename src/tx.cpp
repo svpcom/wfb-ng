@@ -49,13 +49,19 @@ using namespace std;
 #include "tx.hpp"
 
 
-Transmitter::Transmitter(int k, int n, const string &keypair, uint64_t epoch, uint32_t channel_id, uint32_t fec_delay) : \
+Transmitter::Transmitter(int k, int n, const string &keypair, uint64_t epoch, uint32_t channel_id, uint32_t fec_delay, std::vector<tags_item_t> &tags) : \
     fec_k(k), fec_n(n), block_idx(0),
     fragment_idx(0),
     max_packet_size(0),
     epoch(epoch),
     channel_id(channel_id),
-    fec_delay(fec_delay)
+    fec_delay(fec_delay),
+    tx_secretkey{},
+    rx_publickey{},
+    session_key{},
+    session_packet{},
+    session_packet_size(0),
+    tags(tags)
 {
     fec_p = fec_new(fec_k, fec_n);
 
@@ -97,33 +103,59 @@ Transmitter::~Transmitter()
 }
 
 
-void Transmitter::make_session_key(void)
+void Transmitter::make_session_key()
 {
     // init session key
     randombytes_buf(session_key, sizeof(session_key));
 
     // fill packet header
-    wsession_hdr_t *session_hdr = (wsession_hdr_t *)session_key_packet;
-    session_hdr->packet_type = WFB_PACKET_KEY;
+    wsession_hdr_t *session_hdr = (wsession_hdr_t *)session_packet;
+    session_hdr->packet_type = WFB_PACKET_SESSION;
 
     randombytes_buf(session_hdr->session_nonce, sizeof(session_hdr->session_nonce));
 
     // fill packet contents
-    wsession_data_t session_data = { .epoch = htobe64(epoch),
-                                     .channel_id = htobe32(channel_id),
-                                     .fec_type = WFB_FEC_VDM_RS,
-                                     .k = (uint8_t)fec_k,
-                                     .n = (uint8_t)fec_n,
-                                   };
 
-    memcpy(session_data.session_key, session_key, sizeof(session_key));
+    uint8_t tmp[MAX_SESSION_PACKET_SIZE - crypto_box_MACBYTES - sizeof(wsession_hdr_t)];
 
-    if (crypto_box_easy(session_key_packet + sizeof(wsession_hdr_t),
-                        (uint8_t*)&session_data, sizeof(session_data),
+    // Fill fixed headers
+    {
+        wsession_data_t* session_data = (wsession_data_t*)tmp;
+        assert(sizeof(*session_data) <= sizeof(tmp));
+
+        session_data->epoch = htobe64(epoch);
+        session_data->channel_id = htobe32(channel_id);
+        session_data->fec_type = WFB_FEC_VDM_RS;
+        session_data->k = (uint8_t)fec_k;
+        session_data->n = (uint8_t)fec_n;
+
+        assert(sizeof(session_data->session_key) == sizeof(session_key));
+        memcpy(session_data->session_key, session_key, sizeof(session_key));
+    }
+
+    // Fill optional Tags
+
+    uint32_t session_data_size = sizeof(wsession_data_t);
+    for(auto it=tags.begin(); it != tags.end(); it++)
+    {
+        tlv_hdr_t* tlv = (tlv_hdr_t*)((uint8_t*)tmp + session_data_size);
+        session_data_size += sizeof(tlv_hdr_t) + it->len;
+        assert(session_data_size <= sizeof(tmp));
+
+        tlv->id = it->id;
+        tlv->len = it->len;
+        memcpy(tlv->value, it->value, it->len);
+    }
+
+    if (crypto_box_easy(session_packet + sizeof(wsession_hdr_t),
+                        (uint8_t*)tmp, session_data_size,
                         session_hdr->session_nonce, rx_publickey, tx_secretkey) != 0)
     {
         throw runtime_error("Unable to make session key!");
     }
+
+    session_packet_size = sizeof(wsession_hdr_t) + session_data_size + crypto_box_MACBYTES;
+    assert(session_packet_size <= MAX_SESSION_PACKET_SIZE);
 }
 
 void RawSocketTransmitter::set_mark(uint32_t idx)
@@ -144,9 +176,9 @@ void RawSocketTransmitter::set_mark(uint32_t idx)
 
 
 RawSocketTransmitter::RawSocketTransmitter(int k, int n, const string &keypair, uint64_t epoch, uint32_t channel_id, uint32_t fec_delay,
-                                           const vector<string> &wlans, shared_ptr<uint8_t[]> radiotap_header, size_t radiotap_header_len,
+                                           std::vector<tags_item_t> &tags, const vector<string> &wlans, shared_ptr<uint8_t[]> radiotap_header, size_t radiotap_header_len,
                                            uint8_t frame_type, bool use_qdisc, uint32_t fwmark) : \
-    Transmitter(k, n, keypair, epoch, channel_id, fec_delay),
+    Transmitter(k, n, keypair, epoch, channel_id, fec_delay, tags),
     channel_id(channel_id),
     current_output(0),
     ieee80211_seq(0),
@@ -335,7 +367,7 @@ void Transmitter::send_block_fragment(size_t packet_size)
 void Transmitter::send_session_key(void)
 {
     //fprintf(stderr, "Announce session key\n");
-    inject_packet((uint8_t*)session_key_packet, sizeof(session_key_packet));
+    inject_packet((uint8_t*)session_packet, session_packet_size);
 }
 
 bool Transmitter::send_packet(const uint8_t *buf, size_t size, uint8_t flags)
@@ -890,6 +922,7 @@ int main(int argc, char * const *argv)
             fflush(stdout);
         }
 
+        std::vector<tags_item_t> tags;
         shared_ptr<Transmitter> t;
 
         uint32_t channel_id = (link_id << 8) + radio_port;
@@ -898,9 +931,9 @@ int main(int argc, char * const *argv)
         {
             fprintf(stderr, "Using %zu ports from %d for wlan emulation\n", wlans.size(), debug_port);
             t = shared_ptr<UdpTransmitter>(new UdpTransmitter(k, n, keypair, "127.0.0.1", debug_port, epoch, channel_id,
-                                                              fec_delay, use_qdisc, fwmark));
+                                                              fec_delay, tags, use_qdisc, fwmark));
         } else {
-            t = shared_ptr<RawSocketTransmitter>(new RawSocketTransmitter(k, n, keypair, epoch, channel_id, fec_delay,
+            t = shared_ptr<RawSocketTransmitter>(new RawSocketTransmitter(k, n, keypair, epoch, channel_id, fec_delay, tags,
                                                                           wlans, radiotap_header, radiotap_header_len,
                                                                           frame_type, use_qdisc, fwmark));
         }
