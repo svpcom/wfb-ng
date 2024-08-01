@@ -74,7 +74,7 @@ def parse_config(basedir, cfg_patterns, interpolate=True):
                 config = configparser.RawConfigParser(strict=False)
 
                 try:
-                    config.readfp(fd, filename=filename)
+                    config.read_file(fd, source=filename)
                 except Exception as v:
                     raise ConfigError(v)
 
