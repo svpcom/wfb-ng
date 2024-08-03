@@ -33,7 +33,7 @@
 class Transmitter
 {
 public:
-    Transmitter(int k, int m, const std::string &keypair, uint64_t epoch, uint32_t channel_id, uint32_t fec_delay, std::vector<tags_item_t> &tags);
+    Transmitter(int k, int n, const std::string &keypair, uint64_t epoch, uint32_t channel_id, uint32_t fec_delay, std::vector<tags_item_t> &tags);
     virtual ~Transmitter();
     bool send_packet(const uint8_t *buf, size_t size, uint8_t flags);
     void send_session_key(void);
@@ -44,6 +44,8 @@ protected:
     virtual void set_mark(uint32_t idx) = 0;
 
 private:
+    Transmitter(const Transmitter&);
+    Transmitter& operator=(const Transmitter&);
     void send_block_fragment(size_t packet_size);
     void make_session_key(void);
 
@@ -110,7 +112,7 @@ typedef std::unordered_map<uint64_t, txAntennaItem> tx_antenna_stat_t;
 class RawSocketTransmitter : public Transmitter
 {
 public:
-    RawSocketTransmitter(int k, int m, const std::string &keypair, uint64_t epoch, uint32_t channel_id, uint32_t fec_delay, std::vector<tags_item_t> &tags,
+    RawSocketTransmitter(int k, int n, const std::string &keypair, uint64_t epoch, uint32_t channel_id, uint32_t fec_delay, std::vector<tags_item_t> &tags,
                          const std::vector<std::string> &wlans, shared_ptr<uint8_t[]> radiotap_header, size_t radiotap_header_len,
                          uint8_t frame_type, bool use_qdisc, uint32_t fwmark);
     virtual ~RawSocketTransmitter();
@@ -128,7 +130,7 @@ public:
     virtual void dump_stats(FILE *fp, uint64_t ts, uint32_t &injected_packets, uint32_t &dropped_packets, uint32_t &injected_bytes);
 private:
     virtual void inject_packet(const uint8_t *buf, size_t size);
-    virtual void set_mark(uint32_t mark);
+    virtual void set_mark(uint32_t idx);
     const uint32_t channel_id;
     int current_output;
     uint16_t ieee80211_seq;
@@ -145,14 +147,14 @@ private:
 class UdpTransmitter : public Transmitter
 {
 public:
-    UdpTransmitter(int k, int m, const std::string &keypair, const std::string &client_addr, int base_port, uint64_t epoch, uint32_t channel_id,
+    UdpTransmitter(int k, int n, const std::string &keypair, const std::string &client_addr, int base_port, uint64_t epoch, uint32_t channel_id,
                    uint32_t fec_delay, std::vector<tags_item_t> &tags, bool use_qdisc, uint32_t fwmark): \
-        Transmitter(k, m, keypair, epoch, channel_id, fec_delay, tags), base_port(base_port), use_qdisc(use_qdisc), fwmark(fwmark)
+        Transmitter(k, n, keypair, epoch, channel_id, fec_delay, tags), base_port(base_port), use_qdisc(use_qdisc), fwmark(fwmark)
     {
         sockfd = socket(AF_INET, SOCK_DGRAM, 0);
         if (sockfd < 0) throw std::runtime_error(string_format("Error opening socket: %s", strerror(errno)));
 
-        bzero((char *) &saddr, sizeof(saddr));
+        memset(&saddr, '\0', sizeof(saddr));
         saddr.sin_family = AF_INET;
         saddr.sin_addr.s_addr = inet_addr(client_addr.c_str());
         saddr.sin_port = htons((unsigned short)base_port);

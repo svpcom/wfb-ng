@@ -9,12 +9,13 @@
 */
 
 #include <stddef.h>
+#include <stdint.h>
 
 typedef unsigned char gf;
 
 typedef struct {
   unsigned long magic;
-  unsigned short k, n;                     /* parameters of the code */
+  uint16_t k, n;                     /* parameters of the code */
   gf* enc_matrix;
 } fec_t;
 
@@ -26,9 +27,9 @@ typedef struct {
 
 /**
  * param k the number of blocks required to reconstruct
- * param m the total number of blocks created
+ * param n the total number of blocks created
  */
-fec_t* fec_new(unsigned short k, unsigned short m);
+fec_t* fec_new(uint16_t k, uint16_t n);
 void fec_free(fec_t* p);
 
 /**

@@ -66,11 +66,13 @@ int open_udp_socket_for_rx(int port, int rcv_buf_size)
     const int optval = 1;
     if(setsockopt(fd, SOL_SOCKET, SO_REUSEADDR, (const void *)&optval , sizeof(optval)) !=0)
     {
+        close(fd);
         throw runtime_error(string_format("Unable to set SO_REUSEADDR: %s", strerror(errno)));
     }
 
     if(setsockopt(fd, SOL_SOCKET, SO_RXQ_OVFL, (const void *)&optval , sizeof(optval)) != 0)
     {
+        close(fd);
         throw runtime_error(string_format("Unable to set SO_RXQ_OVFL: %s", strerror(errno)));
     }
 
@@ -78,17 +80,19 @@ int open_udp_socket_for_rx(int port, int rcv_buf_size)
     {
         if(setsockopt(fd, SOL_SOCKET, SO_RCVBUF, (const void *)&rcv_buf_size , sizeof(rcv_buf_size)) !=0)
         {
+            close(fd);
             throw runtime_error(string_format("Unable to set SO_RCVBUF: %s", strerror(errno)));
         }
     }
 
-    bzero((char *) &saddr, sizeof(saddr));
+    memset(&saddr, '\0', sizeof(saddr));
     saddr.sin_family = AF_INET;
     saddr.sin_addr.s_addr = htonl(INADDR_ANY);
     saddr.sin_port = htons((unsigned short)port);
 
     if (::bind(fd, (struct sockaddr *) &saddr, sizeof(saddr)) < 0)
     {
+        close(fd);
         throw runtime_error(string_format("Bind error: %s", strerror(errno)));
     }
     return fd;

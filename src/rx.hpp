@@ -52,7 +52,7 @@ protected:
         int fd = socket(AF_INET, SOCK_DGRAM, 0);
         if (fd < 0) throw std::runtime_error(string_format("Error opening socket: %s", strerror(errno)));
 
-        bzero((char *) &saddr, sizeof(saddr));
+        memset(&saddr, '\0', sizeof(saddr));
         saddr.sin_family = AF_INET;
         saddr.sin_addr.s_addr = inet_addr(client_addr.c_str());
         saddr.sin_port = htons((unsigned short)client_port);
@@ -210,6 +210,9 @@ public:
     uint32_t count_b_outgoing;
 
 private:
+    Aggregator(const Aggregator&);
+    Aggregator& operator=(const Aggregator&);
+
     void init_fec(int k, int n);
     void deinit_fec(void);
     void send_packet(int ring_idx, int fragment_idx);
@@ -218,7 +221,7 @@ private:
                   const int8_t *noise, uint16_t freq, uint8_t mcs_index, uint8_t bandwidth);
     int get_block_ring_idx(uint64_t block_idx);
     int rx_ring_push(void);
-    int get_tag(const void *buf, size_t size, uint8_t tag_id, void *value, size_t value_size);
+    static int get_tag(const void *buf, size_t size, uint8_t tag_id, void *value, size_t value_size);
 
     fec_t* fec_p;
     int fec_k;  // RS number of primary fragments in block

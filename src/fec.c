@@ -12,6 +12,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <assert.h>
+#include <stdint.h>
 
 /*
  * Primitive polynomials - see Lin & Costello, Appendix A,
@@ -345,7 +346,6 @@ void
 _invert_vdm (gf* src, unsigned k) {
     unsigned i, j, row, col;
     gf *b, *c, *p;
-    gf t, xx;
 
     if (k == 1)                   /* degenerate case, matrix must be p^0 = 1 */
         return;
@@ -380,8 +380,8 @@ _invert_vdm (gf* src, unsigned k) {
         /*
          * synthetic division etc.
          */
-        xx = p[row];
-        t = 1;
+        gf xx = p[row];
+        gf t = 1;
         b[k - 1] = 1;             /* this is in fact c[k] */
         for (i = k - 1; i > 0; i--) {
             b[i-1] = c[i] ^ gf_mul (xx, b[i]);
@@ -420,7 +420,7 @@ fec_free (fec_t *p) {
 }
 
 fec_t *
-fec_new(unsigned short k, unsigned short n) {
+fec_new(uint16_t k, uint16_t n) {
     unsigned row, col;
     gf *p, *tmp_m;
 
@@ -477,19 +477,21 @@ fec_new(unsigned short k, unsigned short n) {
 
 void
 fec_encode(const fec_t* code, const gf** src, gf** fecs, size_t sz) {
-    unsigned char i, j;
     size_t k;
     unsigned fecnum;
     const gf* p;
 
     for (k = 0; k < sz; k += STRIDE) {
         size_t stride = ((sz-k) < STRIDE)?(sz-k):STRIDE;
-        for (i=0; i < (code->n - code->k); i++) {
+        for (uint16_t i=0; i < (code->n - code->k); i++)
+        {
             fecnum = i + code->k;
             memset(fecs[i] + k, 0, stride);
             p = &(code->enc_matrix[fecnum * code->k]);
-            for (j = 0; j < code->k; j++)
+            for (uint16_t j = 0; j < code->k; j++)
+            {
                 addmul(fecs[i]+k, src[j]+k, p[j], stride);
+            }
         }
     }
 }
@@ -501,9 +503,8 @@ fec_encode(const fec_t* code, const gf** src, gf** fecs, size_t sz) {
  */
 void
 build_decode_matrix_into_space(const fec_t*restrict const code, const unsigned*const restrict index, const unsigned k, gf*restrict const matrix) {
-    unsigned char i;
-    gf* p;
-    for (i=0, p=matrix; i < k; i++, p += k) {
+    gf* p = matrix;
+    for (uint16_t i=0; i < k; i++, p += k) {
         if (index[i] < k) {
             memset(p, 0, k);
             p[i] = 1;
@@ -516,18 +517,18 @@ build_decode_matrix_into_space(const fec_t*restrict const code, const unsigned*c
 
 void
 fec_decode(const fec_t* code, const gf** inpkts, gf** outpkts, const unsigned* index, size_t sz) {
-    gf* m_dec = (gf*)alloca(code->k * code->k);
-    unsigned char outix=0;
-    unsigned char row=0;
-    unsigned char col=0;
+    gf m_dec[code->k * code->k];
+    uint16_t outix=0;
     build_decode_matrix_into_space(code, index, code->k, m_dec);
 
-    for (row=0; row<code->k; row++) {
+    for (uint16_t row=0; row<code->k; row++) {
         assert ((index[row] >= code->k) || (index[row] == row)); /* If the block whose number is i is present, then it is required to be in the i'th element. */
         if (index[row] >= code->k) {
             memset(outpkts[outix], 0, sz);
-            for (col=0; col < code->k; col++)
+            for (uint16_t col=0; col < code->k; col++)
+            {
                 addmul(outpkts[outix], inpkts[col], m_dec[row * code->k + col], sz);
+            }
             outix++;
         }
     }

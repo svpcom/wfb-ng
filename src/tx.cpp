@@ -599,7 +599,7 @@ void data_source(shared_ptr<Transmitter> &t, vector<int> &rx_fd, int fec_timeout
                         rxq_overflow = cur_rxq_overflow;
                     }
 
-                    uint64_t cur_ts = get_time_ms();
+                    cur_ts = get_time_ms();
 
                     if (cur_ts >= session_key_announce_ts)
                     {
