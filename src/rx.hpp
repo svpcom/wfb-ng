@@ -39,6 +39,7 @@ typedef enum {
 class BaseAggregator
 {
 public:
+    virtual ~BaseAggregator(){}
     virtual void process_packet(const uint8_t *buf, size_t size, uint8_t wlan_idx, const uint8_t *antenna,
                                 const int8_t *rssi, const int8_t *noise, uint16_t freq, uint8_t mcs_index,
                                 uint8_t bandwidth, sockaddr_in *sockaddr) = 0;
@@ -69,7 +70,7 @@ class Forwarder : public BaseAggregator
 {
 public:
     Forwarder(const std::string &client_addr, int client_port);
-    ~Forwarder();
+    virtual ~Forwarder();
     virtual void process_packet(const uint8_t *buf, size_t size, uint8_t wlan_idx, const uint8_t *antenna,
                                 const int8_t *rssi, const int8_t *noise, uint16_t freq, uint8_t mcs_index,
                                 uint8_t bandwidth,sockaddr_in *sockaddr);
@@ -174,7 +175,7 @@ class Aggregator : public BaseAggregator
 {
 public:
     Aggregator(const std::string &client_addr, int client_port, const std::string &keypair, uint64_t epoch, uint32_t channel_id);
-    ~Aggregator();
+    virtual ~Aggregator();
     virtual void process_packet(const uint8_t *buf, size_t size, uint8_t wlan_idx, const uint8_t *antenna,
                                 const int8_t *rssi, const int8_t *noise, uint16_t freq, uint8_t mcs_index,
                                 uint8_t bandwidth, sockaddr_in *sockaddr);
