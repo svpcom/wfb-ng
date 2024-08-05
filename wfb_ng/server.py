@@ -391,11 +391,13 @@ class DbgProtocol(LineReceiver):
 class TXAntennaProtocol(LineReceiver):
     delimiter = b'\n'
 
-    def __init__(self, ant_stat_cb, tx_id, df):
+    def __init__(self, ant_stat_cb, tx_id, ports_df, control_port_df):
         self.ant_stat_cb = ant_stat_cb
         self.tx_id = tx_id
-        self.df = df
+        self.ports_df = ports_df
+        self.control_port_df = control_port_df
         self.ports = {}
+        self.control_port = None
         self.ant = {}
         self.count_all = None
 
@@ -411,8 +413,13 @@ class TXAntennaProtocol(LineReceiver):
             port, wlan = cols[2].split(':', 1)
             self.ports[wlan] = int(port)
 
-        elif cmd == 'LISTEN_UDP_END' and self.df is not None:
-            self.df.callback(self.ports)
+        elif cmd == 'LISTEN_UDP_END' and self.ports_df is not None:
+            self.ports_df.callback(self.ports)
+
+        elif cmd == 'LISTEN_UDP_CONTROL' and len(cols) == 3 and self.control_port_df is not None:
+            port = cols[2]
+            self.control_port = int(port)
+            self.control_port_df.callback(self.control_port)
 
         elif cmd == 'TX_ANT':
             if len(cols) != 4:
@@ -483,12 +490,13 @@ class TXProtocol(ProcessProtocol):
     manager for wfb_tx process
     """
 
-    def __init__(self, ant_stat_cb, cmd, tx_id, ports_df=None):
+    def __init__(self, ant_stat_cb, cmd, tx_id, ports_df=None, control_port_df=None):
         self.cmd = cmd
         self.tx_id = tx_id
         self.dbg = DbgProtocol(tx_id)
         self.ports_df = ports_df
-        self.port_parser = TXAntennaProtocol(ant_stat_cb, tx_id, ports_df)
+        self.control_port_df = control_port_df
+        self.port_parser = TXAntennaProtocol(ant_stat_cb, tx_id, ports_df, control_port_df)
         self.df = defer.Deferred()
 
     def connectionMade(self):
@@ -506,6 +514,9 @@ class TXProtocol(ProcessProtocol):
 
         if self.ports_df is not None:
             self.ports_df.cancel()
+
+        if self.control_port_df is not None:
+            self.control_port_df.cancel()
 
         if rc == 0:
             self.df.callback(str(status.value))
@@ -637,6 +648,7 @@ def init(profiles, wlans):
     yield defer.gatherResults(dl, consumeErrors=True).addBoth(_cleanup).addErrback(lambda f: f.trap(defer.FirstError) and f.value.subFailure)
 
 
+@defer.inlineCallbacks
 def init_udp_direct_tx(service_name, cfg, wlans, link_id, ant_sel_f):
     if not listen_re.match(cfg.peer):
         raise Exception('%s: unsupported peer address: %s' % (service_name, cfg.peer))
@@ -673,9 +685,14 @@ def init_udp_direct_tx(service_name, cfg, wlans, link_id, ant_sel_f):
     # Direct udp doesn't support TX diversity - only first card will be used.
     # But if mirror mode is enabled it will use all cards.
 
-    df = TXProtocol(ant_sel_f, cmd, 'video tx').start()
+    control_port_df = defer.Deferred()
+    df = TXProtocol(ant_sel_f, cmd, 'video tx', control_port_df=control_port_df).start()
     log.msg('%s: %s' % (service_name, ' '.join(cmd),))
-    return df
+
+    control_port = yield control_port_df
+    log.msg('%s use wfb_tx control_port %d' % (service_name, control_port))
+
+    yield df
 
 
 def init_udp_direct_rx(service_name, cfg, wlans, link_id, ant_sel_f):
@@ -807,11 +824,13 @@ def init_mavlink(service_name, cfg, wlans, link_id, ant_sel_f):
         reactor.listenTCP(cfg.mavlink_tcp_port, mav_tcp_f)
 
     tx_ports_df = defer.Deferred()
-    dl = [TXProtocol(ant_sel_f, cmd_tx, '%s tx' % (service_name,), tx_ports_df).start()]
+    control_port_df = defer.Deferred()
+    dl = [TXProtocol(ant_sel_f, cmd_tx, '%s tx' % (service_name,), tx_ports_df, control_port_df).start()]
 
     # Wait while wfb_tx allocates ephemeral udp ports and reports them back
     tx_ports = yield tx_ports_df
-    log.msg('%s use wfb_tx ports %s' % (service_name, tx_ports))
+    control_port = yield control_port_df
+    log.msg('%s use wfb_tx ports %s, control_port %d' % (service_name, tx_ports, control_port))
 
     p_tx_l = [UDPProxyProtocol(('127.0.0.1', tx_ports[wlan])) for wlan in wlans]
 
@@ -895,11 +914,14 @@ def init_tunnel(service_name, cfg, wlans, link_id, ant_sel_f):
     log.msg('%s TX: %s' % (service_name, ' '.join(cmd_tx),))
 
     tx_ports_df = defer.Deferred()
-    dl = [TXProtocol(ant_sel_f, cmd_tx, '%s tx' % (service_name,), tx_ports_df).start()]
+    control_port_df = defer.Deferred()
+    dl = [TXProtocol(ant_sel_f, cmd_tx, '%s tx' % (service_name,), tx_ports_df, control_port_df).start()]
 
     # Wait while wfb_tx allocates ephemeral udp ports and reports them back
     tx_ports = yield tx_ports_df
-    log.msg('%s use wfb_tx ports %s' % (service_name, tx_ports))
+    control_port = yield control_port_df
+
+    log.msg('%s use wfb_tx ports %s, control_port %d' % (service_name, tx_ports, control_port))
 
     p_tx_l = [UDPProxyProtocol(('127.0.0.1', tx_ports[wlan])) for wlan in wlans]
 
@@ -997,11 +1019,13 @@ def init_udp_proxy(service_name, cfg, wlans, link_id, ant_sel_f):
         log.msg('%s TX: %s' % (service_name, ' '.join(cmd_tx)))
 
         tx_ports_df = defer.Deferred()
-        dl += [TXProtocol(ant_sel_f, cmd_tx, '%s tx' % (service_name,), tx_ports_df).start()]
+        control_port_df = defer.Deferred()
+        dl += [TXProtocol(ant_sel_f, cmd_tx, '%s tx' % (service_name,), tx_ports_df, control_port_df).start()]
 
         # Wait while wfb_tx allocates ephemeral udp ports and reports them back
         tx_ports = yield tx_ports_df
-        log.msg('%s use wfb_tx ports %s' % (service_name, tx_ports))
+        control_port = yield control_port_df
+        log.msg('%s use wfb_tx ports %s, control_port %d' % (service_name, tx_ports, control_port))
 
         p_tx_l = [UDPProxyProtocol(('127.0.0.1', tx_ports[wlan])) for wlan in wlans]
         sockets += [reactor.listenUDP(0, p_tx) for p_tx in p_tx_l ]

@@ -50,8 +50,8 @@ using namespace std;
 
 
 Transmitter::Transmitter(int k, int n, const string &keypair, uint64_t epoch, uint32_t channel_id, uint32_t fec_delay, std::vector<tags_item_t> &tags) : \
-    fec_k(k), fec_n(n), block_idx(0),
-    fragment_idx(0),
+    fec_p(NULL), fec_k(-1), fec_n(-1),
+    block_idx(0), fragment_idx(0),
     max_packet_size(0),
     epoch(epoch),
     channel_id(channel_id),
@@ -63,13 +63,6 @@ Transmitter::Transmitter(int k, int n, const string &keypair, uint64_t epoch, ui
     session_packet_size(0),
     tags(tags)
 {
-    fec_p = fec_new(fec_k, fec_n);
-
-    block = new uint8_t*[fec_n];
-    for(int i=0; i < fec_n; i++)
-    {
-        block[i] = new uint8_t[MAX_FEC_PAYLOAD];
-    }
 
     FILE *fp;
     if ((fp = fopen(keypair.c_str(), "r")) == NULL)
@@ -88,23 +81,60 @@ Transmitter::Transmitter(int k, int n, const string &keypair, uint64_t epoch, ui
     }
     fclose(fp);
 
-    make_session_key();
+    init_session(k, n);
 }
 
 Transmitter::~Transmitter()
+{
+    if (fec_p != NULL)
+    {
+        deinit_session();
+    }
+}
+
+
+void Transmitter::deinit_session(void)
 {
     for(int i=0; i < fec_n; i++)
     {
         delete block[i];
     }
-    delete block;
 
+    delete block;
     fec_free(fec_p);
+
+    block = NULL;
+    fec_p = NULL;
+    fec_k = -1;
+    fec_n = -1;
 }
 
-
-void Transmitter::make_session_key()
+void Transmitter::init_session(int k, int n)
 {
+    if (fec_p != NULL)
+    {
+        deinit_session();
+    }
+
+    assert(fec_p == NULL);
+    assert(k >= 1);
+    assert(n >= 1);
+    assert(n < 256);
+    assert(k <= n);
+
+    fec_k = k;
+    fec_n = n;
+    fec_p = fec_new(fec_k, fec_n);
+
+    block = new uint8_t*[fec_n];
+    for(int i=0; i < fec_n; i++)
+    {
+        block[i] = new uint8_t[MAX_FEC_PAYLOAD];
+    }
+
+    block_idx = 0;
+    fragment_idx = 0;
+
     // init session key
     randombytes_buf(session_key, sizeof(session_key));
 
@@ -426,9 +456,11 @@ bool Transmitter::send_packet(const uint8_t *buf, size_t size, uint8_t flags)
     // Generate new session key after MAX_BLOCK_IDX blocks
     if (block_idx > MAX_BLOCK_IDX)
     {
-        make_session_key();
-        send_session_key();
-        block_idx = 0;
+        init_session(fec_k, fec_n);
+        for(int i = 0; i < fec_n - fec_k + 1; i++)
+        {
+            send_session_key();
+        }
     }
 
     return true;
@@ -449,12 +481,12 @@ uint32_t extract_rxq_overflow(struct msghdr *msg)
     return 0;
 }
 
-void data_source(shared_ptr<Transmitter> &t, vector<int> &rx_fd, int fec_timeout, bool mirror, int log_interval)
+void data_source(shared_ptr<Transmitter> &t, vector<int> &rx_fd, int control_fd, int fec_timeout, bool mirror, int log_interval)
 {
     int nfds = rx_fd.size();
     assert(nfds > 0);
 
-    struct pollfd fds[nfds];
+    struct pollfd fds[nfds + 1];
     memset(fds, '\0', sizeof(fds));
 
     for(size_t i=0; i < rx_fd.size(); i++)
@@ -462,6 +494,9 @@ void data_source(shared_ptr<Transmitter> &t, vector<int> &rx_fd, int fec_timeout
         fds[i].fd = rx_fd[i];
         fds[i].events = POLLIN;
     }
+
+    fds[nfds].fd = control_fd;
+    fds[nfds].events = POLLIN;
 
     uint64_t session_key_announce_ts = 0;
     uint32_t rxq_overflow = 0;
@@ -486,7 +521,7 @@ void data_source(shared_ptr<Transmitter> &t, vector<int> &rx_fd, int fec_timeout
             poll_timeout = std::min(poll_timeout, (int)(fec_close_ts > cur_ts ? fec_close_ts - cur_ts : 0));
         }
 
-        int rc = poll(fds, nfds, poll_timeout);
+        int rc = poll(fds, nfds + 1, poll_timeout);
 
         if (rc < 0)
         {
@@ -525,12 +560,134 @@ void data_source(shared_ptr<Transmitter> &t, vector<int> &rx_fd, int fec_timeout
             log_send_ts = cur_ts + log_interval;
         }
 
+        // Check control socket first
+        if (rc > 0 && fds[nfds].revents & (POLLERR | POLLNVAL))
+        {
+            throw runtime_error(string_format("socket error: %s", strerror(errno)));
+        }
+
+        if (rc > 0 && fds[nfds].revents & POLLIN)
+        {
+            rc -= 1;
+            int fd = fds[nfds].fd;
+
+            for(;;)
+            {
+                cmd_req_t req;
+                cmd_resp_t resp;
+                ssize_t rsize;
+                struct sockaddr_in from_addr;
+                socklen_t addr_size = sizeof(from_addr);
+
+                if ((rsize = recvfrom(fd, &req, sizeof(req), MSG_DONTWAIT, (sockaddr*)&from_addr, &addr_size )) < 0 || addr_size > sizeof(from_addr))
+                {
+                    if (errno != EWOULDBLOCK) throw runtime_error(string_format("Error receiving packet: %s", strerror(errno)));
+                    break;
+                }
+
+                if(rsize < (ssize_t)offsetof(cmd_req_t, u)) continue;
+
+                resp.req_id = req.req_id;
+                resp.rc = 0;
+
+                switch(req.cmd_id)
+                {
+                case CMD_SET_FEC:
+                {
+                    if (rsize != offsetof(cmd_req_t, u) + sizeof(req.u.cmd_set_fec))
+                    {
+                        resp.rc = htonl(EINVAL);
+                        sendto(fd, &resp, sizeof(resp), MSG_DONTWAIT, (sockaddr*)&from_addr, addr_size);
+                        continue;
+                    }
+
+                    int fec_k = req.u.cmd_set_fec.k;
+                    int fec_n = req.u.cmd_set_fec.n;
+
+                    if(!(fec_k <= fec_n && fec_k >=1 && fec_n >= 1 && fec_n < 256))
+                    {
+                        resp.rc = htonl(EINVAL);
+                        sendto(fd, &resp, sizeof(resp), MSG_DONTWAIT, (sockaddr*)&from_addr, addr_size);
+                        fprintf(stderr, "Rejecting new FEC settings");
+                        continue;
+                    }
+
+                    // Close open FEC block if any
+                    while(t->send_packet(NULL, 0, WFB_PACKET_FEC_ONLY));
+
+                    t->init_session(fec_k, fec_n);
+
+                    // Emulate FEC for initial session key distribution
+                    for(int i = 0; i < fec_n - fec_k + 1; i++)
+                    {
+                        t->send_session_key();
+                    }
+
+                    sendto(fd, &resp, sizeof(resp), MSG_DONTWAIT, (sockaddr*)&from_addr, addr_size);
+                    fprintf(stderr, "Session restarted with FEC %u/%u\n", fec_k, fec_n);
+                }
+                break;
+
+                case CMD_SET_RADIO:
+                {
+                    if (rsize != offsetof(cmd_req_t, u) + sizeof(req.u.cmd_set_radio))
+                    {
+                        resp.rc = htonl(EINVAL);
+                        sendto(fd, &resp, sizeof(resp), MSG_DONTWAIT, (sockaddr*)&from_addr, addr_size);
+                        continue;
+                    }
+
+                    try
+                    {
+                        size_t radiotap_header_len = 0;
+                        auto radiotap_header = init_radiotap_header(req.u.cmd_set_radio.stbc,
+                                                                    req.u.cmd_set_radio.ldpc,
+                                                                    req.u.cmd_set_radio.short_gi,
+                                                                    req.u.cmd_set_radio.bandwidth,
+                                                                    req.u.cmd_set_radio.mcs_index,
+                                                                    req.u.cmd_set_radio.vht_mode,
+                                                                    req.u.cmd_set_radio.vht_nss,
+                                                                    radiotap_header_len);
+                        t->update_radiotap_header(radiotap_header, radiotap_header_len);
+                    }
+                    catch(runtime_error &e)
+                    {
+                        resp.rc = htonl(EINVAL);
+                        sendto(fd, &resp, sizeof(resp), MSG_DONTWAIT, (sockaddr*)&from_addr, addr_size);
+                        fprintf(stderr, "Rejecting new radiotap header: %s\n", e.what());
+                        continue;
+                    }
+
+                    sendto(fd, &resp, sizeof(resp), MSG_DONTWAIT, (sockaddr*)&from_addr, addr_size);
+                    fprintf(stderr,
+                            "Radiotap updated with stbc=%d, ldpc=%d, short_gi=%d, bandwidth=%d, mcs_index=%d, vht_mode=%d, vht_nss=%d\n",
+                            req.u.cmd_set_radio.stbc,
+                            req.u.cmd_set_radio.ldpc,
+                            req.u.cmd_set_radio.short_gi,
+                            req.u.cmd_set_radio.bandwidth,
+                            req.u.cmd_set_radio.mcs_index,
+                            req.u.cmd_set_radio.vht_mode,
+                            req.u.cmd_set_radio.vht_nss);
+                }
+                break;
+
+                default:
+                {
+                    resp.rc = htonl(ENOTSUP);
+                    sendto(fd, &resp, sizeof(resp), MSG_DONTWAIT, (sockaddr*)&from_addr, addr_size);
+                    continue;
+                }
+                break;
+                }
+            }
+        }
+
         if (rc == 0) // poll timeout
         {
             // close fec only if no data packets and fec timeout expired
             if (fec_timeout > 0 && cur_ts >= fec_close_ts)
             {
-                if(!t->send_packet(NULL, 0, WFB_PACKET_FEC_ONLY))
+                if(t->send_packet(NULL, 0, WFB_PACKET_FEC_ONLY))
                 {
                     count_p_fec_timeouts += 1;
                 }
@@ -540,7 +697,6 @@ void data_source(shared_ptr<Transmitter> &t, vector<int> &rx_fd, int fec_timeout
         }
 
         // rc > 0: events detected
-
         // start from last fd index and reset it to zero
         int i = start_fd_idx;
         for(start_fd_idx = 0; rc > 0; i++)
@@ -629,6 +785,125 @@ void data_source(shared_ptr<Transmitter> &t, vector<int> &rx_fd, int fec_timeout
 }
 
 
+shared_ptr<uint8_t[]> init_radiotap_header(\
+    uint8_t stbc,
+    bool ldpc,
+    bool short_gi,
+    uint8_t bandwidth,
+    uint8_t mcs_index,
+    bool vht_mode,
+    uint8_t vht_nss,
+    size_t &radiotap_header_len)
+{
+    shared_ptr<uint8_t[]> radiotap_header = NULL;
+
+    if (!vht_mode)
+    {
+        // Set flags in HT radiotap header
+        uint8_t flags = 0;
+
+        switch(bandwidth)
+        {
+        case 10:
+            flags |= IEEE80211_RADIOTAP_MCS_BW_20;
+            break;
+        case 20:
+            flags |= IEEE80211_RADIOTAP_MCS_BW_20;
+            break;
+        case 40:
+            flags |= IEEE80211_RADIOTAP_MCS_BW_40;
+            break;
+        default:
+            throw runtime_error(string_format("Unsupported HT bandwidth: %d", bandwidth));
+        }
+
+        if (short_gi)
+        {
+            flags |= IEEE80211_RADIOTAP_MCS_SGI;
+        }
+
+        switch(stbc)
+        {
+        case 0:
+            break;
+        case 1:
+            flags |= (IEEE80211_RADIOTAP_MCS_STBC_1 << IEEE80211_RADIOTAP_MCS_STBC_SHIFT);
+            break;
+        case 2:
+            flags |= (IEEE80211_RADIOTAP_MCS_STBC_2 << IEEE80211_RADIOTAP_MCS_STBC_SHIFT);
+            break;
+        case 3:
+            flags |= (IEEE80211_RADIOTAP_MCS_STBC_3 << IEEE80211_RADIOTAP_MCS_STBC_SHIFT);
+            break;
+        default:
+            throw runtime_error(string_format("Unsupported HT STBC type: %d", stbc));
+        }
+
+        if (ldpc)
+        {
+            flags |= IEEE80211_RADIOTAP_MCS_FEC_LDPC;
+        }
+
+        radiotap_header_len = sizeof(radiotap_header_ht);
+        radiotap_header = shared_ptr<uint8_t[]>(new uint8_t[radiotap_header_len]);
+        memcpy(radiotap_header.get(), radiotap_header_ht, radiotap_header_len);
+
+        radiotap_header[MCS_FLAGS_OFF] = flags;
+        radiotap_header[MCS_IDX_OFF] = mcs_index;
+    }
+    else
+    {
+        // Set flags in VHT radiotap header
+        uint8_t flags = 0;
+        radiotap_header_len = sizeof(radiotap_header_vht);
+        radiotap_header = shared_ptr<uint8_t[]>(new uint8_t[radiotap_header_len]);
+        memcpy(radiotap_header.get(), radiotap_header_vht, radiotap_header_len);
+
+        if (short_gi)
+        {
+            flags |= IEEE80211_RADIOTAP_VHT_FLAG_SGI;
+        }
+
+        if (stbc)
+        {
+            flags |= IEEE80211_RADIOTAP_VHT_FLAG_STBC;
+        }
+
+        switch(bandwidth)
+        {
+        case 10:
+            radiotap_header[VHT_BW_OFF] = IEEE80211_RADIOTAP_VHT_BW_20M;
+            break;
+        case 20:
+            radiotap_header[VHT_BW_OFF] = IEEE80211_RADIOTAP_VHT_BW_20M;
+            break;
+        case 40:
+            radiotap_header[VHT_BW_OFF] = IEEE80211_RADIOTAP_VHT_BW_40M;
+            break;
+        case 80:
+            radiotap_header[VHT_BW_OFF] = IEEE80211_RADIOTAP_VHT_BW_80M;
+            break;
+        case 160:
+            radiotap_header[VHT_BW_OFF] = IEEE80211_RADIOTAP_VHT_BW_160M;
+            break;
+        default:
+            throw runtime_error(string_format("Unsupported VHT bandwidth: %d", bandwidth));
+        }
+
+        if (ldpc)
+        {
+            radiotap_header[VHT_CODING_OFF] = IEEE80211_RADIOTAP_VHT_CODING_LDPC_USER0;
+        }
+
+        radiotap_header[VHT_FLAGS_OFF] = flags;
+        radiotap_header[VHT_MCSNSS0_OFF] |= ((mcs_index << IEEE80211_RADIOTAP_VHT_MCS_SHIFT) & IEEE80211_RADIOTAP_VHT_MCS_MASK);
+        radiotap_header[VHT_MCSNSS0_OFF] |= ((vht_nss << IEEE80211_RADIOTAP_VHT_NSS_SHIFT) & IEEE80211_RADIOTAP_VHT_NSS_MASK);
+    }
+
+    return radiotap_header;
+}
+
+
 int main(int argc, char * const *argv)
 {
     int opt;
@@ -637,6 +912,7 @@ int main(int argc, char * const *argv)
     uint32_t link_id = 0x0;
     uint64_t epoch = 0;
     int udp_port=5600;
+    int control_port=0;
     int log_interval = 1000;
 
     int bandwidth = 20;
@@ -651,13 +927,11 @@ int main(int argc, char * const *argv)
     bool mirror = false;
     bool vht_mode = false;
     string keypair = "tx.key";
-    shared_ptr<uint8_t[]> radiotap_header = NULL;
-    size_t radiotap_header_len = 0;
     uint8_t frame_type = FRAME_TYPE_DATA;
     bool use_qdisc = false;
     uint32_t fwmark = 0;
 
-    while ((opt = getopt(argc, argv, "K:k:n:u:p:F:l:B:G:S:L:M:N:D:T:i:e:R:f:mVQP:")) != -1) {
+    while ((opt = getopt(argc, argv, "K:k:n:u:p:F:l:B:G:S:L:M:N:D:T:i:e:R:f:mVQP:C:")) != -1) {
         switch (opt) {
         case 'K':
             keypair = optarg;
@@ -746,12 +1020,15 @@ int main(int argc, char * const *argv)
         case 'P':
             fwmark = (uint32_t)atoi(optarg);
             break;
+        case 'C':
+            control_port = atoi(optarg);
+            break;
         default: /* '?' */
         show_usage:
-            fprintf(stderr, "Usage: %s [-K tx_key] [-k RS_K] [-n RS_N] [-u udp_port] [-R rcv_buf] [-p radio_port] [-F fec_delay] [-B bandwidth] [-G guard_interval] [-S stbc] [-L ldpc] [-M mcs_index] [-N VHT_NSS] [-T fec_timeout] [-l log_interval] [-e epoch] [-i link_id] [-f { data | rts }] [-m] [-V] [-Q] [-P fwmark] interface1 [interface2] ...\n",
+            fprintf(stderr, "Usage: %s [-K tx_key] [-k RS_K] [-n RS_N] [-u udp_port] [-R rcv_buf] [-p radio_port] [-F fec_delay] [-B bandwidth] [-G guard_interval] [-S stbc] [-L ldpc] [-M mcs_index] [-N VHT_NSS] [-T fec_timeout] [-l log_interval] [-e epoch] [-i link_id] [-f { data | rts }] [-m] [-V] [-Q] [-P fwmark] [-C control_port] interface1 [interface2] ...\n",
                     argv[0]);
-            fprintf(stderr, "Default: K='%s', k=%d, n=%d, fec_delay=%u [us], udp_port=%d, link_id=0x%06x, radio_port=%u, epoch=%" PRIu64 ", bandwidth=%d guard_interval=%s stbc=%d ldpc=%d mcs_index=%d vht_nss=%d, vht_mode=%d, fec_timeout=%d, log_interval=%d, rcv_buf=system_default, frame_type=data, mirror=false, use_qdisc=false, fwmark=%u\n",
-                    keypair.c_str(), k, n, fec_delay, udp_port, link_id, radio_port, epoch, bandwidth, short_gi ? "short" : "long", stbc, ldpc, mcs_index, vht_nss, vht_mode, fec_timeout, log_interval, fwmark);
+            fprintf(stderr, "Default: K='%s', k=%d, n=%d, fec_delay=%u [us], udp_port=%d, link_id=0x%06x, radio_port=%u, epoch=%" PRIu64 ", bandwidth=%d guard_interval=%s stbc=%d ldpc=%d mcs_index=%d vht_nss=%d, vht_mode=%d, fec_timeout=%d, log_interval=%d, rcv_buf=system_default, frame_type=data, mirror=false, use_qdisc=false, fwmark=%u, control_port=%d\n",
+                    keypair.c_str(), k, n, fec_delay, udp_port, link_id, radio_port, epoch, bandwidth, short_gi ? "short" : "long", stbc, ldpc, mcs_index, vht_nss, vht_mode, fec_timeout, log_interval, fwmark, control_port);
             fprintf(stderr, "Radio MTU: %lu\n", (unsigned long)MAX_PAYLOAD_SIZE);
             fprintf(stderr, "WFB-ng version " WFB_VERSION "\n");
             fprintf(stderr, "WFB-ng home page: <http://wfb-ng.org>\n");
@@ -761,112 +1038,6 @@ int main(int argc, char * const *argv)
 
     if (optind >= argc) {
         goto show_usage;
-    }
-
-    if (!vht_mode)
-    {
-        // Set flags in HT radiotap header
-        uint8_t flags = 0;
-
-        switch(bandwidth)
-        {
-        case 10:
-            flags |= IEEE80211_RADIOTAP_MCS_BW_20;
-            break;
-        case 20:
-            flags |= IEEE80211_RADIOTAP_MCS_BW_20;
-            break;
-        case 40:
-            flags |= IEEE80211_RADIOTAP_MCS_BW_40;
-            break;
-        default:
-            fprintf(stderr, "Unsupported HT bandwidth: %d\n", bandwidth);
-            exit(1);
-        }
-
-        if (short_gi)
-        {
-            flags |= IEEE80211_RADIOTAP_MCS_SGI;
-        }
-
-        switch(stbc)
-        {
-        case 0:
-            break;
-        case 1:
-            flags |= (IEEE80211_RADIOTAP_MCS_STBC_1 << IEEE80211_RADIOTAP_MCS_STBC_SHIFT);
-            break;
-        case 2:
-            flags |= (IEEE80211_RADIOTAP_MCS_STBC_2 << IEEE80211_RADIOTAP_MCS_STBC_SHIFT);
-            break;
-        case 3:
-            flags |= (IEEE80211_RADIOTAP_MCS_STBC_3 << IEEE80211_RADIOTAP_MCS_STBC_SHIFT);
-            break;
-        default:
-            fprintf(stderr, "Unsupported HT STBC type: %d\n", stbc);
-            exit(1);
-        }
-
-        if (ldpc)
-        {
-            flags |= IEEE80211_RADIOTAP_MCS_FEC_LDPC;
-        }
-
-        radiotap_header_len = sizeof(radiotap_header_ht);
-        radiotap_header = shared_ptr<uint8_t[]>(new uint8_t[radiotap_header_len]);
-        memcpy(radiotap_header.get(), radiotap_header_ht, radiotap_header_len);
-
-        radiotap_header[MCS_FLAGS_OFF] = flags;
-        radiotap_header[MCS_IDX_OFF] = mcs_index;
-    }
-    else
-    {
-        // Set flags in VHT radiotap header
-        uint8_t flags = 0;
-        radiotap_header_len = sizeof(radiotap_header_vht);
-        radiotap_header = shared_ptr<uint8_t[]>(new uint8_t[radiotap_header_len]);
-        memcpy(radiotap_header.get(), radiotap_header_vht, radiotap_header_len);
-
-        if (short_gi)
-        {
-            flags |= IEEE80211_RADIOTAP_VHT_FLAG_SGI;
-        }
-
-        if (stbc)
-        {
-            flags |= IEEE80211_RADIOTAP_VHT_FLAG_STBC;
-        }
-
-        switch(bandwidth)
-        {
-        case 10:
-            radiotap_header[VHT_BW_OFF] = IEEE80211_RADIOTAP_VHT_BW_20M;
-            break;
-        case 20:
-            radiotap_header[VHT_BW_OFF] = IEEE80211_RADIOTAP_VHT_BW_20M;
-            break;
-        case 40:
-            radiotap_header[VHT_BW_OFF] = IEEE80211_RADIOTAP_VHT_BW_40M;
-            break;
-        case 80:
-            radiotap_header[VHT_BW_OFF] = IEEE80211_RADIOTAP_VHT_BW_80M;
-            break;
-        case 160:
-            radiotap_header[VHT_BW_OFF] = IEEE80211_RADIOTAP_VHT_BW_160M;
-            break;
-        default:
-            fprintf(stderr, "Unsupported VHT bandwidth: %d\n", bandwidth);
-            exit(1);
-        }
-
-        if (ldpc)
-        {
-            radiotap_header[VHT_CODING_OFF] = IEEE80211_RADIOTAP_VHT_CODING_LDPC_USER0;
-        }
-
-        radiotap_header[VHT_FLAGS_OFF] = flags;
-        radiotap_header[VHT_MCSNSS0_OFF] |= ((mcs_index << IEEE80211_RADIOTAP_VHT_MCS_SHIFT) & IEEE80211_RADIOTAP_VHT_MCS_MASK);
-        radiotap_header[VHT_MCSNSS0_OFF] |= ((vht_nss << IEEE80211_RADIOTAP_VHT_NSS_SHIFT) & IEEE80211_RADIOTAP_VHT_NSS_MASK);
     }
 
     {
@@ -892,8 +1063,27 @@ int main(int argc, char * const *argv)
 
     try
     {
+        size_t radiotap_header_len = 0;
+        auto radiotap_header = init_radiotap_header(stbc, ldpc, short_gi, bandwidth, mcs_index, vht_mode, vht_nss, radiotap_header_len);
+
         vector<int> rx_fd;
         vector<string> wlans;
+        int control_fd = open_udp_socket_for_rx(control_port, 0, 0x7f000001);  // bind to 127.0.0.1 for security reasons
+
+        if (control_port == 0)
+        {
+            struct sockaddr_in saddr;
+            socklen_t saddr_size = sizeof(saddr);
+
+            if (getsockname(control_fd, (struct sockaddr *)&saddr, &saddr_size) != 0)
+            {
+                throw runtime_error(string_format("Unable to get socket info: %s", strerror(errno)));
+            }
+            control_port = ntohs(saddr.sin_port);
+            printf("%" PRIu64 "\tLISTEN_UDP_CONTROL\t%d\n", get_time_ms(), control_port);
+        }
+        fprintf(stderr, "Listen on %d for management commands\n", control_port);
+
         for(int i = 0; optind + i < argc; i++)
         {
             int bind_port = udp_port != 0 ? udp_port + i : 0;
@@ -938,7 +1128,7 @@ int main(int argc, char * const *argv)
                                                                           frame_type, use_qdisc, fwmark));
         }
 
-        data_source(t, rx_fd, fec_timeout, mirror, log_interval);
+        data_source(t, rx_fd, control_fd, fec_timeout, mirror, log_interval);
     }catch(runtime_error &e)
     {
         fprintf(stderr, "Error: %s\n", e.what());

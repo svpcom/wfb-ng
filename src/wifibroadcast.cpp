@@ -57,7 +57,7 @@ uint64_t get_time_us(void) // in microseconds
     return ts.tv_sec * 1000000LL + ts.tv_nsec / 1000;
 }
 
-int open_udp_socket_for_rx(int port, int rcv_buf_size)
+int open_udp_socket_for_rx(int port, int rcv_buf_size, uint32_t bind_addr)
 {
     struct sockaddr_in saddr;
     int fd = socket(AF_INET, SOCK_DGRAM, 0);
@@ -87,7 +87,7 @@ int open_udp_socket_for_rx(int port, int rcv_buf_size)
 
     memset(&saddr, '\0', sizeof(saddr));
     saddr.sin_family = AF_INET;
-    saddr.sin_addr.s_addr = htonl(INADDR_ANY);
+    saddr.sin_addr.s_addr = htonl(bind_addr);
     saddr.sin_port = htons((unsigned short)port);
 
     if (::bind(fd, (struct sockaddr *) &saddr, sizeof(saddr)) < 0)

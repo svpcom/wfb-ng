@@ -428,7 +428,7 @@ fec_new(uint16_t k, uint16_t n) {
 
     assert(k >= 1);
     assert(n >= 1);
-    assert(n <= 256);
+    assert(n < 256);
     assert(k <= n);
 
     if (fec_initialized == 0)

@@ -19,7 +19,7 @@ $(ENV):
 	[ -f $(ENV)/local/bin/pip ] && $(ENV)/local/bin/pip install --upgrade pip setuptools $(STDEB) \
                                 || $(ENV)/bin/pip install --upgrade pip setuptools $(STDEB)
 
-all_bin: wfb_rx wfb_tx wfb_keygen
+all_bin: wfb_rx wfb_tx wfb_keygen wfb_tx_cmd
 
 gs.key: wfb_keygen
 	@if ! [ -f gs.key ]; then ./wfb_keygen; fi
@@ -38,6 +38,9 @@ wfb_tx: src/tx.o src/fec.o src/wifibroadcast.o
 
 wfb_keygen: src/keygen.o
 	$(CC) -o $@ $^ $(_LDFLAGS)
+
+wfb_tx_cmd: src/tx_cmd.o
+	$(CXX) -o $@ $^
 
 test: all_bin
 	PYTHONPATH=`pwd` trial3 wfb_ng.tests
@@ -59,7 +62,7 @@ bdist: all_bin
 	rm -rf wfb_ng.egg-info/
 
 clean:
-	rm -rf env wfb_rx wfb_tx wfb_keygen dist deb_dist build wfb_ng.egg-info wfb-ng-*.tar.gz _trial_temp *~ src/*.o
+	rm -rf env wfb_rx wfb_tx wfb_tx_cmd wfb_keygen dist deb_dist build wfb_ng.egg-info wfb-ng-*.tar.gz _trial_temp *~ src/*.o
 
 deb_docker:  /opt/qemu/bin
 	@if ! [ -d /opt/qemu ]; then echo "Docker cross build requires patched QEMU!\nApply ./scripts/qemu/qemu.patch to qemu-7.2.0 and build it:\n  ./configure --prefix=/opt/qemu --static --disable-system && make && sudo make install"; exit 1; fi

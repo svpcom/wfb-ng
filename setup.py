@@ -47,7 +47,7 @@ setup(
                                       'wfb-server=wfb_ng.server:main',
                                       'wfb-log-parser=wfb_ng.log_parser:main']},
     package_data={'wfb_ng.conf': ['master.cfg', 'site.cfg']},
-    data_files = [('/usr/bin', ['wfb_tx', 'wfb_rx', 'wfb_keygen', 'scripts/wfb-cli-x11']),
+    data_files = [('/usr/bin', ['wfb_tx', 'wfb_rx', 'wfb_keygen', 'wfb_tx_cmd', 'scripts/wfb-cli-x11']),
                   ('/lib/systemd/system', ['scripts/wifibroadcast.service',
                                            'scripts/wifibroadcast@.service']),
                   ('/etc/default', ['scripts/default/wifibroadcast']),

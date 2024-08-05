@@ -36,6 +36,8 @@
 #include <endian.h>
 #include <string>
 
+#include "tx_cmd.h"
+
 extern std::string string_format(const char *format, ...);
 
 /* this is the template radiotap header we send packets out with */
@@ -256,12 +258,13 @@ typedef struct {
     uint16_t packet_size; // big endian
 }  __attribute__ ((packed)) wpacket_hdr_t;
 
+
 #define MAX_PAYLOAD_SIZE (WIFI_MTU - sizeof(ieee80211_header) - sizeof(wblock_hdr_t) - crypto_aead_chacha20poly1305_ABYTES - sizeof(wpacket_hdr_t))
 #define MAX_FEC_PAYLOAD  (WIFI_MTU - sizeof(ieee80211_header) - sizeof(wblock_hdr_t) - crypto_aead_chacha20poly1305_ABYTES)
 #define MAX_FORWARDER_PACKET_SIZE (WIFI_MTU - sizeof(ieee80211_header))
 #define MAX_SESSION_PACKET_SIZE (WIFI_MTU - sizeof(ieee80211_header))
 
-int open_udp_socket_for_rx(int port, int rcv_buf_size);
+int open_udp_socket_for_rx(int port, int rcv_buf_size, uint32_t bind_addr = INADDR_ANY);
 uint64_t get_time_ms(void);
 uint64_t get_time_us(void);
 

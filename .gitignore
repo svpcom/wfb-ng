@@ -8,6 +8,7 @@ env/
 _trial_temp/
 wfb_rx
 wfb_tx
+wfb_tx_cmd
 gs.key
 drone.key
 wfb_keygen

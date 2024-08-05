@@ -37,8 +37,10 @@ public:
     virtual ~Transmitter();
     bool send_packet(const uint8_t *buf, size_t size, uint8_t flags);
     void send_session_key(void);
+    void init_session(int k, int n);
     virtual void select_output(int idx) = 0;
     virtual void dump_stats(FILE *fp, uint64_t ts, uint32_t &injected_packets, uint32_t &dropped_packets, uint32_t &injected_bytes) = 0;
+    virtual void update_radiotap_header(shared_ptr<uint8_t[]> radiotap_header, size_t radiotap_header_len) {}
 protected:
     virtual void inject_packet(const uint8_t *buf, size_t size) = 0;
     virtual void set_mark(uint32_t idx) = 0;
@@ -47,7 +49,7 @@ private:
     Transmitter(const Transmitter&);
     Transmitter& operator=(const Transmitter&);
     void send_block_fragment(size_t packet_size);
-    void make_session_key(void);
+    void deinit_session(void);
 
     fec_t* fec_p;
     int fec_k;  // RS number of primary fragments in block
@@ -128,6 +130,12 @@ public:
         }
     }
     virtual void dump_stats(FILE *fp, uint64_t ts, uint32_t &injected_packets, uint32_t &dropped_packets, uint32_t &injected_bytes);
+    virtual void update_radiotap_header(shared_ptr<uint8_t[]> radiotap_header, size_t radiotap_header_len)
+    {
+        this->radiotap_header = radiotap_header;
+        this->radiotap_header_len = radiotap_header_len;
+    }
+
 private:
     virtual void inject_packet(const uint8_t *buf, size_t size);
     virtual void set_mark(uint32_t idx);
@@ -137,7 +145,7 @@ private:
     std::vector<int> sockfds;
     tx_antenna_stat_t antenna_stat;
     shared_ptr<uint8_t[]> radiotap_header;
-    const size_t radiotap_header_len;
+    size_t radiotap_header_len;
     const uint8_t frame_type;
     const bool use_qdisc;
     const uint32_t fwmark;
@@ -221,3 +229,13 @@ private:
     const bool use_qdisc;
     const uint32_t fwmark;
 };
+
+shared_ptr<uint8_t[]> init_radiotap_header(\
+    uint8_t stbc,
+    bool ldpc,
+    bool short_gi,
+    uint8_t bandwidth,
+    uint8_t mcs_index,
+    bool vht_mode,
+    uint8_t vht_nss,
+    size_t &radiotap_header_len);

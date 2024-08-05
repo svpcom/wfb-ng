@@ -298,6 +298,7 @@ void Aggregator::init_fec(int k, int n)
     assert(fec_p == NULL);
     assert(k >= 1);
     assert(n >= 1);
+    assert(n < 256);
     assert(k <= n);
 
     fec_k = k;
