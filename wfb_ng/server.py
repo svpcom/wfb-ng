@@ -660,11 +660,12 @@ def init_udp_direct_tx(service_name, cfg, wlans, link_id, ant_sel_f):
     cmd = ('%(cmd)s -f %(frame_type)s -p %(stream)d -u %(port)d -K %(key)s '\
            '-B %(bw)d -G %(gi)s -S %(stbc)d -L %(ldpc)d -M %(mcs)d'\
            '%(mirror)s%(force_vht)s%(qdisc)s '\
-           '-k %(fec_k)d -n %(fec_n)d -T %(fec_timeout)d -F %(fec_delay)d -i %(link_id)d -R %(rcv_buf_size)d' % \
+           '-k %(fec_k)d -n %(fec_n)d -T %(fec_timeout)d -F %(fec_delay)d -i %(link_id)d -R %(rcv_buf_size)d -C %(control_port)d' % \
            dict(cmd=os.path.join(settings.path.bin_dir, 'wfb_tx'),
                 frame_type=cfg.frame_type,
                 stream=cfg.stream_tx,
                 port=listen[1],
+                control_port = cfg.control_port,
                 key=os.path.join(settings.path.conf_dir, cfg.keypair),
                 bw=cfg.bandwidth,
                 force_vht=' -V' if cfg.force_vht else '',
@@ -685,11 +686,15 @@ def init_udp_direct_tx(service_name, cfg, wlans, link_id, ant_sel_f):
     # Direct udp doesn't support TX diversity - only first card will be used.
     # But if mirror mode is enabled it will use all cards.
 
-    control_port_df = defer.Deferred()
+    control_port_df = defer.Deferred() if cfg.control_port == 0 else None
     df = TXProtocol(ant_sel_f, cmd, 'video tx', control_port_df=control_port_df).start()
     log.msg('%s: %s' % (service_name, ' '.join(cmd),))
 
-    control_port = yield control_port_df
+    control_port = cfg.control_port
+
+    if control_port == 0:
+        control_port = yield control_port_df
+
     log.msg('%s use wfb_tx control_port %d' % (service_name, control_port))
 
     yield df
@@ -793,11 +798,12 @@ def init_mavlink(service_name, cfg, wlans, link_id, ant_sel_f):
     cmd_tx = ('%(cmd)s -f %(frame_type)s -p %(stream)d -u %(port)d -K %(key)s -B %(bw)d '\
               '-G %(gi)s -S %(stbc)d -L %(ldpc)d -M %(mcs)d'\
               '%(mirror)s%(force_vht)s%(qdisc)s '\
-              '-k %(fec_k)d -n %(fec_n)d -T %(fec_timeout)d -F %(fec_delay)d -i %(link_id)d -R %(rcv_buf_size)d' % \
+              '-k %(fec_k)d -n %(fec_n)d -T %(fec_timeout)d -F %(fec_delay)d -i %(link_id)d -R %(rcv_buf_size)d -C %(control_port)d' % \
               dict(cmd=os.path.join(settings.path.bin_dir, 'wfb_tx'),
                    frame_type=cfg.frame_type,
                    stream=cfg.stream_tx,
                    port=0,
+                   control_port=cfg.control_port,
                    key=os.path.join(settings.path.conf_dir, cfg.keypair),
                    bw=cfg.bandwidth,
                    force_vht=' -V' if cfg.force_vht else '',
@@ -824,12 +830,17 @@ def init_mavlink(service_name, cfg, wlans, link_id, ant_sel_f):
         reactor.listenTCP(cfg.mavlink_tcp_port, mav_tcp_f)
 
     tx_ports_df = defer.Deferred()
-    control_port_df = defer.Deferred()
+    control_port_df = defer.Deferred() if cfg.control_port == 0 else None
+
     dl = [TXProtocol(ant_sel_f, cmd_tx, '%s tx' % (service_name,), tx_ports_df, control_port_df).start()]
 
     # Wait while wfb_tx allocates ephemeral udp ports and reports them back
     tx_ports = yield tx_ports_df
-    control_port = yield control_port_df
+    control_port = cfg.control_port
+
+    if control_port == 0:
+        control_port = yield control_port_df
+
     log.msg('%s use wfb_tx ports %s, control_port %d' % (service_name, tx_ports, control_port))
 
     p_tx_l = [UDPProxyProtocol(('127.0.0.1', tx_ports[wlan])) for wlan in wlans]
@@ -889,11 +900,12 @@ def init_tunnel(service_name, cfg, wlans, link_id, ant_sel_f):
     cmd_tx = ('%(cmd)s -f %(frame_type)s -p %(stream)d -u %(port)d -K %(key)s -B %(bw)d -G %(gi)s '\
               '-S %(stbc)d -L %(ldpc)d -M %(mcs)d'\
               '%(mirror)s%(force_vht)s%(qdisc)s '\
-              '-k %(fec_k)d -n %(fec_n)d -T %(fec_timeout)d -F %(fec_delay)d -i %(link_id)d -R %(rcv_buf_size)d' % \
+              '-k %(fec_k)d -n %(fec_n)d -T %(fec_timeout)d -F %(fec_delay)d -i %(link_id)d -R %(rcv_buf_size)d -C %(control_port)d' % \
               dict(cmd=os.path.join(settings.path.bin_dir, 'wfb_tx'),
                    frame_type=cfg.frame_type,
                    stream=cfg.stream_tx,
                    port=0,
+                   control_port=cfg.control_port,
                    key=os.path.join(settings.path.conf_dir, cfg.keypair),
                    bw=cfg.bandwidth,
                    force_vht=' -V' if cfg.force_vht else '',
@@ -914,12 +926,16 @@ def init_tunnel(service_name, cfg, wlans, link_id, ant_sel_f):
     log.msg('%s TX: %s' % (service_name, ' '.join(cmd_tx),))
 
     tx_ports_df = defer.Deferred()
-    control_port_df = defer.Deferred()
+    control_port_df = defer.Deferred() if cfg.control_port == 0 else None
+
     dl = [TXProtocol(ant_sel_f, cmd_tx, '%s tx' % (service_name,), tx_ports_df, control_port_df).start()]
 
     # Wait while wfb_tx allocates ephemeral udp ports and reports them back
     tx_ports = yield tx_ports_df
-    control_port = yield control_port_df
+    control_port = cfg.control_port
+
+    if control_port == 0:
+        control_port = yield control_port_df
 
     log.msg('%s use wfb_tx ports %s, control_port %d' % (service_name, tx_ports, control_port))
 
@@ -996,11 +1012,12 @@ def init_udp_proxy(service_name, cfg, wlans, link_id, ant_sel_f):
         cmd_tx = ('%(cmd)s -f %(frame_type)s -p %(stream)d -u %(port)d -K %(key)s -B %(bw)d '\
                   '-G %(gi)s -S %(stbc)d -L %(ldpc)d -M %(mcs)d'\
                   '%(mirror)s%(force_vht)s%(qdisc)s '\
-                  '-k %(fec_k)d -n %(fec_n)d -T %(fec_timeout)d -F %(fec_delay)d -i %(link_id)d -R %(rcv_buf_size)d' % \
+                  '-k %(fec_k)d -n %(fec_n)d -T %(fec_timeout)d -F %(fec_delay)d -i %(link_id)d -R %(rcv_buf_size)d -C %(control_port)d' % \
                   dict(cmd=os.path.join(settings.path.bin_dir, 'wfb_tx'),
                        frame_type=cfg.frame_type,
                        stream=cfg.stream_tx,
                        port=0,
+                       control_port=cfg.control_port,
                        key=os.path.join(settings.path.conf_dir, cfg.keypair),
                        bw=cfg.bandwidth,
                        force_vht=' -V' if cfg.force_vht else '',
@@ -1019,12 +1036,17 @@ def init_udp_proxy(service_name, cfg, wlans, link_id, ant_sel_f):
         log.msg('%s TX: %s' % (service_name, ' '.join(cmd_tx)))
 
         tx_ports_df = defer.Deferred()
-        control_port_df = defer.Deferred()
+        control_port_df = defer.Deferred() if cfg.control_port == 0 else None
+
         dl += [TXProtocol(ant_sel_f, cmd_tx, '%s tx' % (service_name,), tx_ports_df, control_port_df).start()]
 
         # Wait while wfb_tx allocates ephemeral udp ports and reports them back
         tx_ports = yield tx_ports_df
-        control_port = yield control_port_df
+        control_port = cfg.control_port
+
+        if control_port == 0:
+            control_port = yield control_port_df
+
         log.msg('%s use wfb_tx ports %s, control_port %d' % (service_name, tx_ports, control_port))
 
         p_tx_l = [UDPProxyProtocol(('127.0.0.1', tx_ports[wlan])) for wlan in wlans]
