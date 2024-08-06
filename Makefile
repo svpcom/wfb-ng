@@ -40,7 +40,7 @@ wfb_keygen: src/keygen.o
 	$(CC) -o $@ $^ $(_LDFLAGS)
 
 wfb_tx_cmd: src/tx_cmd.o
-	$(CXX) -o $@ $^
+	$(CC) -o $@ $^
 
 test: all_bin
 	PYTHONPATH=`pwd` trial3 wfb_ng.tests
@@ -61,6 +61,8 @@ bdist: all_bin
 	$(PYTHON) ./setup.py bdist --plat-name linux-$(ARCH)
 	rm -rf wfb_ng.egg-info/
 
+check:
+	cppcheck src/ --std=c++11 --library=posix
 clean:
 	rm -rf env wfb_rx wfb_tx wfb_tx_cmd wfb_keygen dist deb_dist build wfb_ng.egg-info wfb-ng-*.tar.gz _trial_temp *~ src/*.o
 

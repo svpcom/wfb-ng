@@ -48,8 +48,7 @@ using namespace std;
 #include "wifibroadcast.hpp"
 #include "tx.hpp"
 
-
-Transmitter::Transmitter(int k, int n, const string &keypair, uint64_t epoch, uint32_t channel_id, uint32_t fec_delay, std::vector<tags_item_t> &tags) : \
+Transmitter::Transmitter(int k, int n, const string &keypair, uint64_t epoch, uint32_t channel_id, uint32_t fec_delay, vector<tags_item_t> &tags) : \
     fec_p(NULL), fec_k(-1), fec_n(-1),
     block_idx(0), fragment_idx(0),
     max_packet_size(0),
@@ -166,15 +165,15 @@ void Transmitter::init_session(int k, int n)
     // Fill optional Tags
 
     uint32_t session_data_size = sizeof(wsession_data_t);
-    for(auto it=tags.begin(); it != tags.end(); it++)
+    for(auto it = tags.begin(); it != tags.end(); it++)
     {
         tlv_hdr_t* tlv = (tlv_hdr_t*)((uint8_t*)tmp + session_data_size);
-        session_data_size += sizeof(tlv_hdr_t) + it->len;
+        session_data_size += sizeof(tlv_hdr_t) + it->value.size();
         assert(session_data_size <= sizeof(tmp));
 
         tlv->id = it->id;
-        tlv->len = it->len;
-        memcpy(tlv->value, it->value, it->len);
+        tlv->len = it->value.size();
+        memcpy(tlv->value, &it->value[0], it->value.size());
     }
 
     if (crypto_box_easy(session_packet + sizeof(wsession_hdr_t),
@@ -206,14 +205,13 @@ void RawSocketTransmitter::set_mark(uint32_t idx)
 
 
 RawSocketTransmitter::RawSocketTransmitter(int k, int n, const string &keypair, uint64_t epoch, uint32_t channel_id, uint32_t fec_delay,
-                                           std::vector<tags_item_t> &tags, const vector<string> &wlans, shared_ptr<uint8_t[]> radiotap_header, size_t radiotap_header_len,
+                                           vector<tags_item_t> &tags, const vector<string> &wlans, vector<uint8_t> &radiotap_header,
                                            uint8_t frame_type, bool use_qdisc, uint32_t fwmark) : \
     Transmitter(k, n, keypair, epoch, channel_id, fec_delay, tags),
     channel_id(channel_id),
     current_output(0),
     ieee80211_seq(0),
     radiotap_header(radiotap_header),
-    radiotap_header_len(radiotap_header_len),
     frame_type(frame_type),
     use_qdisc(use_qdisc),
     fwmark(fwmark)
@@ -286,8 +284,8 @@ void RawSocketTransmitter::inject_packet(const uint8_t *buf, size_t size)
     struct iovec iov[3] = \
         {
             // radiotap header
-            { .iov_base = (void*)radiotap_header.get(),
-              .iov_len = radiotap_header_len
+            { .iov_base = (void*)&radiotap_header[0],
+              .iov_len = radiotap_header.size()
             },
             // ieee80211 header
             { .iov_base = (void*)ieee_hdr,
@@ -415,7 +413,12 @@ bool Transmitter::send_packet(const uint8_t *buf, size_t size, uint8_t flags)
     packet_hdr->flags = flags;
     packet_hdr->packet_size = htobe16(size);
 
-    memcpy(block[fragment_idx] + sizeof(wpacket_hdr_t), buf, size);
+    if(size > 0)
+    {
+        assert(buf != NULL);
+        memcpy(block[fragment_idx] + sizeof(wpacket_hdr_t), buf, size);
+    }
+
     memset(block[fragment_idx] + sizeof(wpacket_hdr_t) + size, '\0', MAX_FEC_PAYLOAD - (sizeof(wpacket_hdr_t) + size));
 
     // mark data packets with fwmark
@@ -639,16 +642,14 @@ void data_source(shared_ptr<Transmitter> &t, vector<int> &rx_fd, int control_fd,
 
                     try
                     {
-                        size_t radiotap_header_len = 0;
                         auto radiotap_header = init_radiotap_header(req.u.cmd_set_radio.stbc,
                                                                     req.u.cmd_set_radio.ldpc,
                                                                     req.u.cmd_set_radio.short_gi,
                                                                     req.u.cmd_set_radio.bandwidth,
                                                                     req.u.cmd_set_radio.mcs_index,
                                                                     req.u.cmd_set_radio.vht_mode,
-                                                                    req.u.cmd_set_radio.vht_nss,
-                                                                    radiotap_header_len);
-                        t->update_radiotap_header(radiotap_header, radiotap_header_len);
+                                                                    req.u.cmd_set_radio.vht_nss);
+                        t->update_radiotap_header(radiotap_header);
                     }
                     catch(runtime_error &e)
                     {
@@ -785,17 +786,15 @@ void data_source(shared_ptr<Transmitter> &t, vector<int> &rx_fd, int control_fd,
 }
 
 
-shared_ptr<uint8_t[]> init_radiotap_header(\
-    uint8_t stbc,
-    bool ldpc,
-    bool short_gi,
-    uint8_t bandwidth,
-    uint8_t mcs_index,
-    bool vht_mode,
-    uint8_t vht_nss,
-    size_t &radiotap_header_len)
+vector<uint8_t> init_radiotap_header(uint8_t stbc,
+                                           bool ldpc,
+                                           bool short_gi,
+                                           uint8_t bandwidth,
+                                           uint8_t mcs_index,
+                                           bool vht_mode,
+                                           uint8_t vht_nss)
 {
-    shared_ptr<uint8_t[]> radiotap_header = NULL;
+    vector<uint8_t> radiotap_header;
 
     if (!vht_mode)
     {
@@ -844,9 +843,7 @@ shared_ptr<uint8_t[]> init_radiotap_header(\
             flags |= IEEE80211_RADIOTAP_MCS_FEC_LDPC;
         }
 
-        radiotap_header_len = sizeof(radiotap_header_ht);
-        radiotap_header = shared_ptr<uint8_t[]>(new uint8_t[radiotap_header_len]);
-        memcpy(radiotap_header.get(), radiotap_header_ht, radiotap_header_len);
+        copy(radiotap_header_ht, radiotap_header_ht + sizeof(radiotap_header_ht), back_inserter(radiotap_header));
 
         radiotap_header[MCS_FLAGS_OFF] = flags;
         radiotap_header[MCS_IDX_OFF] = mcs_index;
@@ -855,9 +852,8 @@ shared_ptr<uint8_t[]> init_radiotap_header(\
     {
         // Set flags in VHT radiotap header
         uint8_t flags = 0;
-        radiotap_header_len = sizeof(radiotap_header_vht);
-        radiotap_header = shared_ptr<uint8_t[]>(new uint8_t[radiotap_header_len]);
-        memcpy(radiotap_header.get(), radiotap_header_vht, radiotap_header_len);
+
+        copy(radiotap_header_vht, radiotap_header_vht + sizeof(radiotap_header_vht), back_inserter(radiotap_header));
 
         if (short_gi)
         {
@@ -1030,7 +1026,7 @@ int main(int argc, char * const *argv)
             fprintf(stderr, "Default: K='%s', k=%d, n=%d, fec_delay=%u [us], udp_port=%d, link_id=0x%06x, radio_port=%u, epoch=%" PRIu64 ", bandwidth=%d guard_interval=%s stbc=%d ldpc=%d mcs_index=%d vht_nss=%d, vht_mode=%d, fec_timeout=%d, log_interval=%d, rcv_buf=system_default, frame_type=data, mirror=false, use_qdisc=false, fwmark=%u, control_port=%d\n",
                     keypair.c_str(), k, n, fec_delay, udp_port, link_id, radio_port, epoch, bandwidth, short_gi ? "short" : "long", stbc, ldpc, mcs_index, vht_nss, vht_mode, fec_timeout, log_interval, fwmark, control_port);
             fprintf(stderr, "Radio MTU: %lu\n", (unsigned long)MAX_PAYLOAD_SIZE);
-            fprintf(stderr, "WFB-ng version " WFB_VERSION "\n");
+            fprintf(stderr, "WFB-ng version %s\n", WFB_VERSION);
             fprintf(stderr, "WFB-ng home page: <http://wfb-ng.org>\n");
             exit(1);
         }
@@ -1063,8 +1059,7 @@ int main(int argc, char * const *argv)
 
     try
     {
-        size_t radiotap_header_len = 0;
-        auto radiotap_header = init_radiotap_header(stbc, ldpc, short_gi, bandwidth, mcs_index, vht_mode, vht_nss, radiotap_header_len);
+        auto radiotap_header = init_radiotap_header(stbc, ldpc, short_gi, bandwidth, mcs_index, vht_mode, vht_nss);
 
         vector<int> rx_fd;
         vector<string> wlans;
@@ -1112,7 +1107,7 @@ int main(int argc, char * const *argv)
             fflush(stdout);
         }
 
-        std::vector<tags_item_t> tags;
+        vector<tags_item_t> tags;
         shared_ptr<Transmitter> t;
 
         uint32_t channel_id = (link_id << 8) + radio_port;
@@ -1124,8 +1119,7 @@ int main(int argc, char * const *argv)
                                                               fec_delay, tags, use_qdisc, fwmark));
         } else {
             t = shared_ptr<RawSocketTransmitter>(new RawSocketTransmitter(k, n, keypair, epoch, channel_id, fec_delay, tags,
-                                                                          wlans, radiotap_header, radiotap_header_len,
-                                                                          frame_type, use_qdisc, fwmark));
+                                                                          wlans, radiotap_header, frame_type, use_qdisc, fwmark));
         }
 
         data_source(t, rx_fd, control_fd, fec_timeout, mirror, log_interval);

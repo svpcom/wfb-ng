@@ -26,9 +26,18 @@
 #include <string>
 #include <vector>
 #include <string.h>
-#include "fec.h"
-#include "wifibroadcast.hpp"
 #include <stdexcept>
+
+#include "wifibroadcast.hpp"
+#include "tx_cmd.h"
+
+
+// Tags item
+typedef struct {
+    uint8_t id;
+    std::vector<uint8_t> value;
+} tags_item_t;
+
 
 class Transmitter
 {
@@ -40,7 +49,7 @@ public:
     void init_session(int k, int n);
     virtual void select_output(int idx) = 0;
     virtual void dump_stats(FILE *fp, uint64_t ts, uint32_t &injected_packets, uint32_t &dropped_packets, uint32_t &injected_bytes) = 0;
-    virtual void update_radiotap_header(shared_ptr<uint8_t[]> radiotap_header, size_t radiotap_header_len) {}
+    virtual void update_radiotap_header(std::vector<uint8_t> &radiotap_header) {}
 protected:
     virtual void inject_packet(const uint8_t *buf, size_t size) = 0;
     virtual void set_mark(uint32_t idx) = 0;
@@ -68,7 +77,7 @@ private:
     uint8_t session_key[crypto_aead_chacha20poly1305_KEYBYTES];
     uint8_t session_packet[MAX_SESSION_PACKET_SIZE];
     uint16_t session_packet_size;
-    std::vector<tags_item_t> &tags;
+    std::vector<tags_item_t> tags;
 };
 
 class txAntennaItem
@@ -115,7 +124,7 @@ class RawSocketTransmitter : public Transmitter
 {
 public:
     RawSocketTransmitter(int k, int n, const std::string &keypair, uint64_t epoch, uint32_t channel_id, uint32_t fec_delay, std::vector<tags_item_t> &tags,
-                         const std::vector<std::string> &wlans, shared_ptr<uint8_t[]> radiotap_header, size_t radiotap_header_len,
+                         const std::vector<std::string> &wlans, std::vector<uint8_t> &radiotap_header,
                          uint8_t frame_type, bool use_qdisc, uint32_t fwmark);
     virtual ~RawSocketTransmitter();
     virtual void select_output(int idx)
@@ -130,10 +139,9 @@ public:
         }
     }
     virtual void dump_stats(FILE *fp, uint64_t ts, uint32_t &injected_packets, uint32_t &dropped_packets, uint32_t &injected_bytes);
-    virtual void update_radiotap_header(shared_ptr<uint8_t[]> radiotap_header, size_t radiotap_header_len)
+    virtual void update_radiotap_header(std::vector<uint8_t> &radiotap_header)
     {
         this->radiotap_header = radiotap_header;
-        this->radiotap_header_len = radiotap_header_len;
     }
 
 private:
@@ -144,8 +152,7 @@ private:
     uint16_t ieee80211_seq;
     std::vector<int> sockfds;
     tx_antenna_stat_t antenna_stat;
-    shared_ptr<uint8_t[]> radiotap_header;
-    size_t radiotap_header_len;
+    std::vector<uint8_t> radiotap_header;
     const uint8_t frame_type;
     const bool use_qdisc;
     const uint32_t fwmark;
@@ -230,12 +237,10 @@ private:
     const uint32_t fwmark;
 };
 
-shared_ptr<uint8_t[]> init_radiotap_header(\
-    uint8_t stbc,
-    bool ldpc,
-    bool short_gi,
-    uint8_t bandwidth,
-    uint8_t mcs_index,
-    bool vht_mode,
-    uint8_t vht_nss,
-    size_t &radiotap_header_len);
+std::vector<uint8_t> init_radiotap_header(uint8_t stbc,
+                                          bool ldpc,
+                                          bool short_gi,
+                                          uint8_t bandwidth,
+                                          uint8_t mcs_index,
+                                          bool vht_mode,
+                                          uint8_t vht_nss);

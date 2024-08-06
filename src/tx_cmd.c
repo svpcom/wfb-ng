@@ -100,7 +100,7 @@ int set_fec(char *progname, int port, int argc, char **argv)
         default: /* '?' */
             fprintf(stderr, "Usage: %s <port> %s [-k RS_K] [-n RS_N]\n", progname, argv[0]);
             fprintf(stderr, "Default: k=%d, n=%d\n", k, n);
-            fprintf(stderr, "WFB-ng version " WFB_VERSION "\n");
+            fprintf(stderr, "WFB-ng version %s\n", WFB_VERSION);
             fprintf(stderr, "WFB-ng home page: <http://wfb-ng.org>\n");
             return 1;
         }
@@ -161,7 +161,7 @@ int set_radio(char *progname, int port, int argc, char **argv)
                     progname, argv[0]);
             fprintf(stderr, "Default: bandwidth=%d guard_interval=%s stbc=%d ldpc=%d mcs_index=%d vht_nss=%d\n",
                     bandwidth, short_gi ? "short" : "long", stbc, ldpc, mcs_index, vht_nss);
-            fprintf(stderr, "WFB-ng version " WFB_VERSION "\n");
+            fprintf(stderr, "WFB-ng version %s\n", WFB_VERSION);
             fprintf(stderr, "WFB-ng home page: <http://wfb-ng.org>\n");
             return 1;
         }
@@ -187,7 +187,7 @@ int main(int argc, char **argv)
     if (argc < 3)
     {
         fprintf(stderr, "Usage: %s <port> {set_fec | set_radio} ...\n", argv[0]);
-        fprintf(stderr, "WFB-ng version " WFB_VERSION "\n");
+        fprintf(stderr, "WFB-ng version %s\n", WFB_VERSION);
         fprintf(stderr, "WFB-ng home page: <http://wfb-ng.org>\n");
         return 1;
     }

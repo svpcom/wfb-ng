@@ -649,7 +649,7 @@ void Aggregator::process_packet(const uint8_t *buf, size_t size, uint8_t wlan_id
     }
 
     uint8_t decrypted[MAX_FEC_PAYLOAD];
-    long long unsigned int decrypted_len;
+    unsigned long long decrypted_len;
     wblock_hdr_t *block_hdr = (wblock_hdr_t*)buf;
 
     if (crypto_aead_chacha20poly1305_decrypt(decrypted, &decrypted_len,
@@ -1035,7 +1035,7 @@ int main(int argc, char* const *argv)
             fprintf(stderr, "Remote (forwarder): %s -f [-c client_addr] [-u client_port] [-p radio_port] [-i link_id] interface1 [interface2] ...\n", argv[0]);
             fprintf(stderr, "Remote (aggregator): %s -a server_port [-K rx_key] [-c client_addr] [-R rcv_buf] [-u client_port] [-l log_interval] [-p radio_port] [-e epoch] [-i link_id]\n", argv[0]);
             fprintf(stderr, "Default: K='%s', connect=%s:%d, link_id=0x%06x, radio_port=%u, epoch=%" PRIu64 ", log_interval=%d, rcv_buf=system_default\n", keypair.c_str(), client_addr.c_str(), client_port, link_id, radio_port, epoch, log_interval);
-            fprintf(stderr, "WFB-ng version " WFB_VERSION "\n");
+            fprintf(stderr, "WFB-ng version %s\n", WFB_VERSION);
             fprintf(stderr, "WFB-ng home page: <http://wfb-ng.org>\n");
             exit(1);
         }

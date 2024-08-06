@@ -410,11 +410,9 @@ init_fec (void) {
  * and then transforming it into a systematic matrix.
  */
 
-#define FEC_MAGIC	0xFECC0DEC
 
 void
 fec_free (fec_t *p) {
-    assert (p != NULL && p->magic == (((FEC_MAGIC ^ p->k) ^ p->n) ^ (unsigned long) (p->enc_matrix)));
     free (p->enc_matrix);
     free (p);
 }
@@ -438,7 +436,6 @@ fec_new(uint16_t k, uint16_t n) {
     retval->k = k;
     retval->n = n;
     retval->enc_matrix = NEW_GF_MATRIX (n, k);
-    retval->magic = ((FEC_MAGIC ^ k) ^ n) ^ (unsigned long) (retval->enc_matrix);
     tmp_m = NEW_GF_MATRIX (n, k);
     /*
      * fill the matrix with powers of field elements, starting from 0.

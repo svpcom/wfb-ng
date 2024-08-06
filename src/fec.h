@@ -14,7 +14,6 @@
 typedef unsigned char gf;
 
 typedef struct {
-  unsigned long magic;
   uint16_t k, n;                     /* parameters of the code */
   gf* enc_matrix;
 } fec_t;

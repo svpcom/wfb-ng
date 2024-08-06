@@ -113,7 +113,7 @@ int ieee80211_radiotap_iterator_init(
 	iterator->_bitmap_shifter = get_unaligned_le32(&radiotap_header->it_present);
 	iterator->_arg = (uint8_t *)radiotap_header + sizeof(*radiotap_header);
 	iterator->_reset_on_ext = 0;
-	iterator->_next_bitmap = &radiotap_header->it_present;
+	iterator->_next_bitmap = &radiotap_header->it_present; // NOLINT(clang-diagnostic-address-of-packed-member)
 	iterator->_next_bitmap++;
 	iterator->_vns = vns;
 	iterator->current_namespace = &radiotap_ns;
@@ -121,13 +121,13 @@ int ieee80211_radiotap_iterator_init(
 
 	/* find payload start allowing for extended bitmap(s) */
 
-	if (iterator->_bitmap_shifter & (1<<IEEE80211_RADIOTAP_EXT)) {
+	if (iterator->_bitmap_shifter & (1u <<IEEE80211_RADIOTAP_EXT)) {
 		if ((unsigned long)iterator->_arg -
 		    (unsigned long)iterator->_rtheader + sizeof(uint32_t) >
 		    (unsigned long)iterator->_max_length)
 			return -EINVAL;
 		while (get_unaligned_le32(iterator->_arg) &
-					(1 << IEEE80211_RADIOTAP_EXT)) {
+					(1u << IEEE80211_RADIOTAP_EXT)) {
 			iterator->_arg += sizeof(uint32_t);
 
 			/*

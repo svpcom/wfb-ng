@@ -35,8 +35,7 @@
 #include <sodium.h>
 #include <endian.h>
 #include <string>
-
-#include "tx_cmd.h"
+#include <vector>
 
 extern std::string string_format(const char *format, ...);
 
@@ -228,21 +227,12 @@ typedef struct {
     uint8_t tags[];  // Optional TLV attributes
 } __attribute__ ((packed)) wsession_data_t;
 
-
-// TLV attr header (in packet)
+// TLV attr header
 typedef struct {
     uint8_t id;
     uint16_t len;
     uint8_t value[];
 } __attribute__ ((packed)) tlv_hdr_t;
-
-
-// TLV item
-typedef struct {
-    uint8_t id;
-    uint16_t len;
-    void* value;
-} tags_item_t;
 
 // Data packet. Embed FEC-encoded data
 
