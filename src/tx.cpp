@@ -344,7 +344,7 @@ void RawSocketTransmitter::inject_packet(const uint8_t *buf, size_t size)
 
 void RawSocketTransmitter::dump_stats(FILE *fp, uint64_t ts, uint32_t &injected_packets, uint32_t &dropped_packets, uint32_t &injected_bytes)
 {
-    for(tx_antenna_stat_t::iterator it = antenna_stat.begin(); it != antenna_stat.end(); it++)
+    for(auto it = antenna_stat.begin(); it != antenna_stat.end(); it++)
     {
         fprintf(fp, "%" PRIu64 "\tTX_ANT\t%" PRIx64 "\t%u:%u:%" PRIu64 ":%" PRIu64 ":%" PRIu64 "\n",
                 ts, it->first,
@@ -442,10 +442,14 @@ bool Transmitter::send_packet(const uint8_t *buf, size_t size, uint8_t flags)
     {
         if(fec_delay > 0)
         {
-            int rc = usleep((useconds_t)fec_delay);
-            if(rc != 0 && errno != EINTR)
+            struct timespec t = { .tv_sec = fec_delay / 1000000,
+                                  .tv_nsec = (fec_delay % 1000000) * 1000 };
+
+            int rc = clock_nanosleep(CLOCK_MONOTONIC, 0, &t, NULL);
+
+            if(rc != 0 && rc != EINTR)
             {
-                throw runtime_error(string_format("usleep: %s", strerror(errno)));
+                throw runtime_error(string_format("clock_nanosleep: %s", strerror(rc)));
             }
         }
 
@@ -627,7 +631,7 @@ void data_source(shared_ptr<Transmitter> &t, vector<int> &rx_fd, int control_fd,
                     }
 
                     sendto(fd, &resp, sizeof(resp), MSG_DONTWAIT, (sockaddr*)&from_addr, addr_size);
-                    fprintf(stderr, "Session restarted with FEC %u/%u\n", fec_k, fec_n);
+                    fprintf(stderr, "Session restarted with FEC %d/%d\n", fec_k, fec_n);
                 }
                 break;
 
@@ -710,7 +714,6 @@ void data_source(shared_ptr<Transmitter> &t, vector<int> &rx_fd, int control_fd,
             if (fds[i % nfds].revents & POLLIN)
             {
                 uint8_t buf[MAX_PAYLOAD_SIZE + 1];
-                ssize_t rsize;
                 uint8_t cmsgbuf[CMSG_SPACE(sizeof(uint32_t))];
                 rc -= 1;
 
@@ -718,6 +721,7 @@ void data_source(shared_ptr<Transmitter> &t, vector<int> &rx_fd, int control_fd,
 
                 for(;;)
                 {
+                    ssize_t rsize;
                     int fd = fds[i % nfds].fd;
                     struct iovec iov = { .iov_base = (void*)buf,
                                          .iov_len = sizeof(buf) };
