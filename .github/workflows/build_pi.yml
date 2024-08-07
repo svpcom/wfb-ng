@@ -11,6 +11,7 @@ jobs:
   build_and_test:
     runs-on: ubuntu-24.04
     strategy:
+      fail-fast: false
       matrix:
         docker-images:
           - "2023-02-21-raspios-bullseye-armhf-lite"
@@ -27,7 +28,10 @@ jobs:
           make deb_docker DOCKER_SRC_IMAGE=p2ptech/cross-build:${{ matrix.docker-images }}
       - name: Archive production artifacts
         uses: actions/upload-artifact@v4
+        id: artifact-upload-step
         with:
           name: wfb-ng-${{ github.ref_name }}-${{ matrix.docker-images }}
           path: |
             deb_dist/*.deb
+      - name: Output artifact URL
+        run:  echo 'wfb-ng-${{ github.ref_name }}-${{ matrix.docker-images }} ${{ steps.artifact-upload-step.outputs.artifact-url }}'
