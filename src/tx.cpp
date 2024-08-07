@@ -442,8 +442,8 @@ bool Transmitter::send_packet(const uint8_t *buf, size_t size, uint8_t flags)
     {
         if(fec_delay > 0)
         {
-            struct timespec t = { .tv_sec = fec_delay / 1000000,
-                                  .tv_nsec = (fec_delay % 1000000) * 1000 };
+            struct timespec t = { .tv_sec = (time_t)(fec_delay / 1000000),
+                                  .tv_nsec = (suseconds_t)(fec_delay % 1000000) * 1000 };
 
             int rc = clock_nanosleep(CLOCK_MONOTONIC, 0, &t, NULL);
 

@@ -9,7 +9,7 @@ jobs:
     runs-on: ubuntu-22.04
     strategy:
       matrix:
-        version: [ "20.04", "22.04", "24.04", "24.10" ]
+        version: [ "20.04", "22.04", "24.04" ]
         arch: [ "arm32v7", "arm64v8", "amd64"]
 
     steps:
