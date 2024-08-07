@@ -501,7 +501,7 @@ fec_encode(const fec_t* code, const gf** src, gf** fecs, size_t sz) {
 void
 build_decode_matrix_into_space(const fec_t*restrict const code, const unsigned*const restrict index, const unsigned k, gf*restrict const matrix) {
     gf* p = matrix;
-    for (uint16_t i=0; i < k; i++, p += k) {
+    for (unsigned i=0; i < k; i++, p += k) {
         if (index[i] < k) {
             memset(p, 0, k);
             p[i] = 1;
