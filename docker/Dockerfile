@@ -2,8 +2,9 @@ ARG SRC_IMAGE
 
 FROM $SRC_IMAGE
 
-RUN apt update && \
-  apt install -y build-essential git wget \
+RUN apt-get update && \
+    DEBIAN_FRONTEND=noninteractive \
+    apt-get install -y build-essential git wget \
     virtualenv fakeroot debhelper \
     libpcap-dev libsodium-dev \
     python3-twisted python3-pyroute2 \
