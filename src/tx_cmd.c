@@ -28,6 +28,7 @@
 #include <time.h>
 #include "tx_cmd.h"
 
+#define COMMAND_TIMEOUT  3  //[seconds]
 
 int send_command(int port, cmd_req_t req, size_t req_size)
 {
@@ -46,6 +47,8 @@ int send_command(int port, cmd_req_t req, size_t req_size)
     addr.sin_family = AF_INET;
     addr.sin_port = htons(port);
     inet_pton(addr.sin_family, "127.0.0.1", &addr.sin_addr);
+
+    alarm(COMMAND_TIMEOUT);
 
     rc = sendto(fd, &req, req_size, 0, (struct sockaddr *)&addr, sizeof(addr));
     if (rc < 0)
