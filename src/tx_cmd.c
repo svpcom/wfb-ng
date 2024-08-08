@@ -124,7 +124,7 @@ int set_radio(char *progname, int port, int argc, char **argv)
     bool vht_mode = false;
     cmd_req_t req = { .req_id = htonl(rand()), .cmd_id = CMD_SET_RADIO };
 
-    while ((opt = getopt(argc, argv, "B:G:S:L:M:N:h")) != -1)
+    while ((opt = getopt(argc, argv, "B:G:S:L:M:N:Vh")) != -1)
     {
         switch (opt)
         {
@@ -156,11 +156,15 @@ int set_radio(char *progname, int port, int argc, char **argv)
             vht_nss = atoi(optarg);
             break;
 
+        case 'V':
+            vht_mode = true;
+            break;
+
         default: /* '?' */
-            fprintf(stderr, "Usage: %s <port> %s [-B bandwidth] [-G guard_interval] [-S stbc] [-L ldpc] [-M mcs_index] [-N VHT_NSS]\n",
+            fprintf(stderr, "Usage: %s <port> %s [-B bandwidth] [-G guard_interval] [-S stbc] [-L ldpc] [-M mcs_index] [-N VHT_NSS] [-V]\n",
                     progname, argv[0]);
-            fprintf(stderr, "Default: bandwidth=%d guard_interval=%s stbc=%d ldpc=%d mcs_index=%d vht_nss=%d\n",
-                    bandwidth, short_gi ? "short" : "long", stbc, ldpc, mcs_index, vht_nss);
+            fprintf(stderr, "Default: bandwidth=%d, guard_interval=%s, stbc=%d, ldpc=%d, mcs_index=%d, vht_nss=%d, vht_mode=%d\n",
+                    bandwidth, short_gi ? "short" : "long", stbc, ldpc, mcs_index, vht_nss, vht_mode);
             fprintf(stderr, "WFB-ng version %s\n", WFB_VERSION);
             fprintf(stderr, "WFB-ng home page: <http://wfb-ng.org>\n");
             return 1;
