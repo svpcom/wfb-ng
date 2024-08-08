@@ -109,12 +109,16 @@ class TXRXTestCase(unittest.TestCase):
         # Wait for tx/rx processes to initialize
         yield df_sleep(0.1)
 
+    @defer.inlineCallbacks
     def tearDown(self):
         self.rx_pp.transport.signalProcess('KILL')
         self.tx_pp.transport.signalProcess('KILL')
         self.rx_ep.stopListening()
         self.tx_ep.stopListening()
         self.cmd_ep.stopListening()
+        # Wait for tx/rx processes to die
+        yield df_sleep(0.1)
+
 
     @defer.inlineCallbacks
     def test_txrx(self):
