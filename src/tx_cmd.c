@@ -22,13 +22,21 @@
 #include <sys/types.h>
 #include <sys/socket.h>
 #include <netinet/in.h>
-#include <arpa/inet.h>
 #include <stdbool.h>
 #include <stddef.h>
 #include <time.h>
+#include <signal.h>
 #include "tx_cmd.h"
 
 #define COMMAND_TIMEOUT  3  //[seconds]
+
+void alarm_handler(int signum)
+{
+    char *msg = "Command timed out!\n";
+    // printf is not signal safe
+    write(2, msg, strlen(msg));
+    _exit(1);
+}
 
 int send_command(int port, cmd_req_t req, size_t req_size)
 {
@@ -46,8 +54,9 @@ int send_command(int port, cmd_req_t req, size_t req_size)
     memset(&addr, '\0', sizeof(addr));
     addr.sin_family = AF_INET;
     addr.sin_port = htons(port);
-    inet_pton(addr.sin_family, "127.0.0.1", &addr.sin_addr);
+    addr.sin_addr.s_addr = htonl(0x7f000001); // 127.0.0.1
 
+    // Exit with error code in case of any timeout
     alarm(COMMAND_TIMEOUT);
 
     rc = sendto(fd, &req, req_size, 0, (struct sockaddr *)&addr, sizeof(addr));
@@ -190,6 +199,15 @@ int main(int argc, char **argv)
 {
     int port;
     char *command;
+
+    struct sigaction act = { 0 };
+    act.sa_handler = &alarm_handler;
+
+    if (sigaction(SIGALRM, &act, NULL) == -1)
+    {
+        perror("sigaction");
+        return 1;
+    }
 
     if (argc < 3)
     {
