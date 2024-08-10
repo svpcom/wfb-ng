@@ -19,13 +19,12 @@
 #
 
 import sys
-import time
 import struct
 import os
 from twisted.python import log
 from twisted.internet import reactor, defer, task
 from twisted.internet.protocol import DatagramProtocol
-from twisted.trial import unittest
+
 from .common import df_sleep, abort_on_crash, exit_status
 
 

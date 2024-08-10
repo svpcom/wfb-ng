@@ -27,12 +27,10 @@ import time
 import struct
 import gzip
 
-from base64 import b85encode
 from itertools import groupby
 from twisted.python import log, failure
-from twisted.python.logfile import LogFile
 from twisted.internet import reactor, defer, main as ti_main, threads, task
-from twisted.internet.protocol import ProcessProtocol, Protocol, Factory
+from twisted.internet.protocol import ProcessProtocol, Factory
 from twisted.protocols.basic import LineReceiver, Int32StringReceiver
 from twisted.internet.serialport import SerialPort
 
@@ -114,7 +112,9 @@ class StatsAndSelectorFactory(Factory):
 
         # Select antenna #0 by default
         self.tx_sel = 0
-        self.tx_sel_delta = settings.common.tx_sel_delta
+        self.tx_sel_rssi_delta = settings.common.tx_sel_rssi_delta
+        self.tx_sel_counter_rel_delta = settings.common.tx_sel_counter_rel_delta
+        self.tx_sel_counter_abs_delta = settings.common.tx_sel_counter_abs_delta
 
         # tcp sockets for UI
         self.ui_sessions = []
@@ -212,34 +212,53 @@ class StatsAndSelectorFactory(Factory):
                                  snr_min, snr_avg, snr_max) in stats_agg.items())
 
     def select_tx_antenna(self, stats_agg):
-        wlan_rssi = {}
+        wlan_rssi_and_pkts = {}
+        max_pkts = 0
 
-        for k, grp in groupby(sorted(((ant_id >> 8) & 0xff, rssi_avg) \
+        for k, grp in groupby(sorted(((ant_id >> 8) & 0xff, pkt_s, rssi_avg) \
                                      for ant_id, (pkt_s,
                                                   rssi_min, rssi_avg, rssi_max,
                                                   snr_min, snr_avg, snr_max) in stats_agg.items()),
                               lambda x: x[0]):
-            # Select max average rssi [dBm] from all wlan's antennas
-            wlan_rssi[k] = max(rssi for _, rssi in grp)
 
-        if not wlan_rssi:
+            grp = list(grp)
+            # Use max average rssi [dBm] from all wlan's antennas
+            # Use max packet counter per antenna from all wlan's antennas
+            rssi = max(rssi for _, pkt_s, rssi in grp)
+            pkts = max(pkt_s for _, pkt_s, rssi in grp)
+            max_pkts = max(pkts, max_pkts)
+            wlan_rssi_and_pkts[k] = (rssi, pkts)
+
+        if not wlan_rssi_and_pkts:
             return
 
-        cur_ant_rssi = wlan_rssi.get(self.tx_sel, -1000)
-        max_rssi, max_rssi_ant = max((rssi, idx) for idx, rssi in wlan_rssi.items())
+        # Select antennas with near-maximum RX packet counters only
+        tx_sel_counter_thr = max_pkts - max(self.tx_sel_counter_abs_delta, max_pkts * self.tx_sel_counter_rel_delta)
+        ants_with_max_pkts = set(idx for idx, (rssi, pkt_s) in wlan_rssi_and_pkts.items() if pkt_s >= tx_sel_counter_thr)
 
-        if max_rssi <= cur_ant_rssi + self.tx_sel_delta:
+        if not ants_with_max_pkts:
             return
 
-        log.msg('Switch TX antenna from %d to %d' % (self.tx_sel, max_rssi_ant))
+        new_max_rssi, new_tx_ant = max((rssi, idx) for  idx, (rssi, pkt_s) in wlan_rssi_and_pkts.items() if idx in ants_with_max_pkts)
+        cur_max_rssi = wlan_rssi_and_pkts.get(self.tx_sel, (-1000, 0))[0]
+
+        if new_tx_ant == self.tx_sel:
+            return
+
+        if self.tx_sel in ants_with_max_pkts and new_max_rssi - cur_max_rssi < self.tx_sel_rssi_delta:
+            # Already selected antenna with near-maximum RX packets counter
+            # and other antennas doesn't have significally large RSSI
+            return
+
+        log.msg('Switch TX antenna #%d -> #%d, RSSI %d -> %d[dB]' % (self.tx_sel, new_tx_ant, cur_max_rssi, new_max_rssi))
 
         for ant_sel_cb in self.ant_sel_cb_list:
             try:
-                ant_sel_cb(max_rssi_ant)
+                ant_sel_cb(new_tx_ant)
             except Exception:
                 log.err()
 
-        self.tx_sel = max_rssi_ant
+        self.tx_sel = new_tx_ant
 
     def process_new_session(self, rx_id, session):
         if self.logger is not None:

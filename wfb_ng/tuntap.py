@@ -19,18 +19,18 @@
 #
 
 import os
-from . import mavlink
 import fcntl
 import struct
 
 from collections import deque
 from twisted.python import log, failure
-from twisted.internet import reactor, defer, abstract, main, task
+from twisted.internet import defer, abstract, main, task
 from twisted.internet.protocol import Protocol, connectionDone
 from pyroute2 import IPRoute
 from contextlib import closing
-from .conf import settings
+
 from .proxy import ProxyProtocol
+
 
 class TUNTAPTransport(abstract.FileDescriptor):
     TUN = 0x0001

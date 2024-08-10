@@ -21,13 +21,13 @@
 import struct
 import time
 
-from . import call_and_check_rc, ExecError
+from . import call_and_check_rc
 from .mavlink import MAV_MODE_FLAG_SAFETY_ARMED, MAVLINK_MSG_ID_HEARTBEAT, mavlink_map
 
 from zope.interface import implementer
 from twisted.python import log
-from twisted.internet import reactor, defer, utils, interfaces
-from twisted.internet.protocol import Protocol, DatagramProtocol, Factory
+from twisted.internet import defer, interfaces
+from twisted.internet.protocol import Protocol, Factory
 
 
 def unpack_mavlink(msg_id, mbuf):

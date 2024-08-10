@@ -18,9 +18,6 @@
 #   51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
 #
 
-import struct
-import os
-
 from contextlib import closing
 from twisted.python import log
 from twisted.internet import reactor, defer

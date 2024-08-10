@@ -63,6 +63,10 @@ bdist: all_bin
 
 check:
 	cppcheck --std=c++11 --library=std --library=posix --library=gnu --inline-suppr --template=gcc --enable=all --suppress=cstyleCast --suppress=missingOverride --suppress=missingIncludeSystem src/
+
+pylint:
+	pylint --disable=R,C wfb_ng/*.py
+
 clean:
 	rm -rf env wfb_rx wfb_tx wfb_tx_cmd wfb_keygen dist deb_dist build wfb_ng.egg-info wfb-ng-*.tar.gz _trial_temp *~ src/*.o
 
