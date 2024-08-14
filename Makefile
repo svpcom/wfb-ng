@@ -24,7 +24,7 @@ all: all_bin gs.key test
 
 $(ENV):
 	virtualenv --python=$(PYTHON) $(ENV)
-	PATH=$(ENV)/bin:$(ENV)/local/bin:$(PATH) pip install --upgrade pip setuptools $(STDEB)
+	$$(PATH=$(ENV)/bin:$(ENV)/local/bin:$(PATH) which pip3) install --upgrade pip setuptools $(STDEB)
 
 all_bin: wfb_rx wfb_tx wfb_keygen wfb_tx_cmd
 
@@ -59,7 +59,7 @@ rpm:  all_bin $(ENV)
 
 deb:  all_bin $(ENV)
 	rm -rf deb_dist
-	PATH=$(ENV)/bin:$(ENV)/local/bin:$(PATH) python ./setup.py --command-packages=stdeb.command bdist_deb
+	$$(PATH=$(ENV)/bin:$(ENV)/local/bin:$(PATH) which python3) ./setup.py --command-packages=stdeb.command bdist_deb
 	rm -rf wfb_ng.egg-info/ wfb-ng-$(VERSION).tar.gz
 
 bdist: all_bin
