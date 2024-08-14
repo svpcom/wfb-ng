@@ -1,8 +1,16 @@
 ARCH ?= $(shell uname -i)
 PYTHON ?= /usr/bin/python3
-COMMIT ?= $(shell git rev-parse HEAD)
-VERSION ?= $(shell $(PYTHON) ./version.py $(shell git show -s --format="%ct" $(shell git rev-parse HEAD)) $(shell git rev-parse --abbrev-ref HEAD))
-SOURCE_DATE_EPOCH ?= $(shell git show -s --format="%ct" $(shell git rev-parse HEAD))
+
+ifneq ("$(wildcard .git)","")
+    COMMIT ?= $(or $(shell git rev-parse HEAD), local)
+    VERSION ?= $(or $(shell $(PYTHON) ./version.py $(shell git show -s --format="%ct" $(shell git rev-parse HEAD)) $(shell git rev-parse --abbrev-ref HEAD)), 0.0.0)
+    SOURCE_DATE_EPOCH ?= $(or $(shell git show -s --format="%ct" $(shell git rev-parse HEAD)), $(shell date "+%s"))
+else
+    COMMIT ?= local
+    VERSION ?= 0.0.0
+    SOURCE_DATE_EPOCH ?= $(shell date "+%s")
+endif
+
 ENV ?= $(PWD)/env
 DOCKER_SRC_IMAGE ?= "p2ptech/cross-build:2023-02-21-raspios-bullseye-armhf-lite"
 STDEB ?= "git+https://github.com/svpcom/stdeb"
@@ -16,8 +24,7 @@ all: all_bin gs.key test
 
 $(ENV):
 	virtualenv --python=$(PYTHON) $(ENV)
-	[ -f $(ENV)/local/bin/pip ] && $(ENV)/local/bin/pip install --upgrade pip setuptools $(STDEB) \
-                                || $(ENV)/bin/pip install --upgrade pip setuptools $(STDEB)
+	PATH=$(ENV)/bin:$(ENV)/local/bin:$(PATH) pip install --upgrade pip setuptools $(STDEB)
 
 all_bin: wfb_rx wfb_tx wfb_keygen wfb_tx_cmd
 
@@ -52,8 +59,7 @@ rpm:  all_bin $(ENV)
 
 deb:  all_bin $(ENV)
 	rm -rf deb_dist
-	[ -f $(ENV)/local/bin/python ] && $(ENV)/local/bin/python ./setup.py --command-packages=stdeb.command bdist_deb \
-                                   || $(ENV)/bin/python ./setup.py --command-packages=stdeb.command bdist_deb
+	PATH=$(ENV)/bin:$(ENV)/local/bin:$(PATH) python ./setup.py --command-packages=stdeb.command bdist_deb
 	rm -rf wfb_ng.egg-info/ wfb-ng-$(VERSION).tar.gz
 
 bdist: all_bin

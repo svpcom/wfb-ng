@@ -16,13 +16,13 @@ try:
 except ImportError:
     pass
 
-
-version = os.environ.get('VERSION') or 'trunk'
+version = os.environ.get('VERSION')
 commit = os.environ.get('COMMIT')
 
-if version and commit:
-    with open('wfb_ng/conf/site.cfg', 'w') as fd:
-        fd.write("# Don't make any changes here, use local.cfg instead!\n\n[common]\nversion = %r\ncommit = %r\n" % (version, commit))
+assert version and commit
+
+with open('wfb_ng/conf/site.cfg', 'w') as fd:
+    fd.write("# Don't make any changes here, use local.cfg instead!\n\n[common]\nversion = %r\ncommit = %r\n" % (version, commit))
 
 def _long_description():
     with open('README.md', encoding='utf-8') as fd:
