@@ -11,8 +11,8 @@ RUN apt-get update && \
     python3-future python3-all python3-all-dev \
     python3-serial dh-python python3-setuptools python3-msgpack
 
+
+COPY src/Makefile /tmp
 ENV ENV=/opt/env
 ENV PYTHON=python3
-
-RUN virtualenv --python=$PYTHON $ENV
-RUN $ENV/bin/pip install --upgrade pip setuptools git+https://github.com/svpcom/stdeb
+RUN cd /tmp && make $ENV

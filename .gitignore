@@ -3,6 +3,7 @@
 *.pyc
 dist/
 deb_dist/
+docker/src/
 build/
 env/
 _trial_temp/
