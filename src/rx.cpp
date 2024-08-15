@@ -709,14 +709,15 @@ void Aggregator::process_packet(const uint8_t *buf, size_t size, uint8_t wlan_id
     // and send packets if there are no gaps in fragments from the beginning of this block
     if(ring_idx == rx_ring_front)
     {
-        // check if any packets without gaps
+        // check if there are any packets without gaps
+        // and send them immediately
         while(p->fragment_to_send_idx < fec_k && p->fragment_map[p->fragment_to_send_idx])
         {
             send_packet(ring_idx, p->fragment_to_send_idx);
             p->fragment_to_send_idx += 1;
         }
 
-        // remove block if full
+        // remove block if all K elements (without gaps) were sent
         if(p->fragment_to_send_idx == fec_k)
         {
             rx_ring_front = modN(rx_ring_front + 1, RX_RING_SIZE);
@@ -726,11 +727,11 @@ void Aggregator::process_packet(const uint8_t *buf, size_t size, uint8_t wlan_id
         }
     }
 
-    // 1. This is not the oldest block but with sufficient number of fragments (K) to decode
-    // 2. This is the oldest block but with gaps and total number of fragments is K
+    // Check that this block has K elements (with gaps) and can be recovered via FEC
     if(p->fragment_to_send_idx < fec_k && p->has_fragments == fec_k)
     {
-        // send all queued packets in all unfinished blocks before and remove them
+        // send all queued packets in all unfinished blocks before current
+        // and then remove that blocks
         int nrm = modN(ring_idx - rx_ring_front, RX_RING_SIZE);
 
         while(nrm > 0)
