@@ -82,4 +82,4 @@ deb_docker:  /opt/qemu/bin
 	cp -a Makefile docker/src/
 	TAG="wfb-ng:build-`date +%s`"; docker build -t $$TAG docker --build-arg SRC_IMAGE=$(DOCKER_SRC_IMAGE)  && \
 	docker run -i --rm -v $(PWD):/build $$TAG bash -c "trap 'chown -R --reference=. .' EXIT; export VERSION=$(VERSION) COMMIT=$(COMMIT) SOURCE_DATE_EPOCH=$(SOURCE_DATE_EPOCH) && cd /build && make clean && make test && make deb"
-	docker ps -a -f 'status=exited' --format '{{ .ID }} {{ .Image }}' | grep wfb-ng:build | tail -n+11 | while read c i ; do docker rm $$c && docker rmi $$i; done
+	docker image ls -q "wfb-ng:build-*" | uniq | tail -n+6 | while read i ; do docker rmi -f $$i; done
