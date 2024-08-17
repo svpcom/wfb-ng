@@ -357,7 +357,7 @@ void Forwarder::process_packet(const uint8_t *buf, size_t size, uint8_t wlan_idx
                                uint8_t bandwidth, sockaddr_in *sockaddr)
 {
     wrxfwd_t fwd_hdr = { .wlan_idx = wlan_idx,
-                         .freq = freq,
+                         .freq = htons(freq),
                          .mcs_index = mcs_index,
                          .bandwidth = bandwidth };
 
@@ -500,7 +500,8 @@ void Aggregator::log_rssi(const sockaddr_in *sockaddr, uint8_t wlan_idx, const u
 
         if (sockaddr != NULL && sockaddr->sin_family == AF_INET)
         {
-            key.antenna_id = ((uint64_t)ntohl(sockaddr->sin_addr.s_addr) << 32 | (uint64_t)ntohs(sockaddr->sin_port) << 16);
+            // We ignore port here because for the one host (wlan_idx, antenna_id) will be unique key for all forwarder processes.
+            key.antenna_id = ((uint64_t)ntohl(sockaddr->sin_addr.s_addr) << 32);
         }
 
         key.antenna_id |= ((uint64_t)wlan_idx << 8 | (uint64_t)ant[i]);
@@ -972,8 +973,9 @@ void network_loop(int srv_port, Aggregator &agg, int log_interval, int rcv_buf_s
                     fprintf(stderr, "Short packet (rx fwd header)\n");
                     continue;
                 }
-                agg.process_packet(buf, rsize - sizeof(wrxfwd_t), fwd_hdr.wlan_idx, fwd_hdr.antenna,
-                                   fwd_hdr.rssi, fwd_hdr.noise, fwd_hdr.freq,
+                agg.process_packet(buf, rsize - sizeof(wrxfwd_t),
+                                   fwd_hdr.wlan_idx, fwd_hdr.antenna,
+                                   fwd_hdr.rssi, fwd_hdr.noise, ntohs(fwd_hdr.freq),
                                    fwd_hdr.mcs_index, fwd_hdr.bandwidth, &sockaddr);
             }
             if(errno != EWOULDBLOCK) throw runtime_error(string_format("Error receiving packet: %s", strerror(errno)));

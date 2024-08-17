@@ -185,7 +185,7 @@ class StatsAndSelectorFactory(Factory):
     def _stats_agg_by_freq(self, ant_stats):
         stats_agg = {}
 
-        for (((freq, mcs_index, bandwith), ant_id),
+        for (((freq, mcs_index, bandwidth), ant_id),
              (pkt_s,
               rssi_min, rssi_avg, rssi_max,
               snr_min, snr_avg, snr_max)) in ant_stats.items():
@@ -561,7 +561,7 @@ def init_wlans(max_bw, wlans):
     elif max_bw == 160:
         ht_mode = '160MHz'
     else:
-        raise Exception('Unsupported bandwith %d MHz' % (max_bw,))
+        raise Exception('Unsupported bandwidth %d MHz' % (max_bw,))
 
     if not settings.common.primary:
         log.msg('Skip card init due to secondary role')

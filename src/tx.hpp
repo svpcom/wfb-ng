@@ -210,9 +210,14 @@ private:
 
         memset(fwd_hdr.antenna, 0xff, sizeof(fwd_hdr.antenna));
         memset(fwd_hdr.rssi, SCHAR_MIN, sizeof(fwd_hdr.rssi));
+        memset(fwd_hdr.noise, SCHAR_MAX, sizeof(fwd_hdr.noise));
 
+        fwd_hdr.mcs_index = 1;
+        fwd_hdr.bandwidth = 20;
+        fwd_hdr.freq = htons(4321);
         fwd_hdr.antenna[0] = (uint8_t)(rand() % 2);
-        fwd_hdr.rssi[0] = (int8_t)(rand() & 0xff);
+        fwd_hdr.rssi[0] = -42;
+        fwd_hdr.noise[0] = -70;
 
         struct iovec iov[2] = {{ .iov_base = (void*)&fwd_hdr,
                                  .iov_len = sizeof(fwd_hdr)},

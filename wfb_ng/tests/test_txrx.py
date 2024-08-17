@@ -35,6 +35,37 @@ def gen_req_id(f):
     return _f
 
 
+class FakeAntennaProtocol(object):
+    def process_new_session(self, rx_id, session):
+        log.msg('%s new session %r' % (rx_id, session))
+
+
+    def update_rx_stats(self, rx_id, packet_stats, ant_stats, session):
+        log.msg('%s %r %r %r' % (rx_id, packet_stats, ant_stats, session))
+
+        for (((freq, mcs_index, bandwidth), ant_id),
+             (pkt_s,
+              rssi_min, rssi_avg, rssi_max,
+              snr_min, snr_avg, snr_max)) in ant_stats.items():
+
+            assert pkt_s >= 0
+            assert freq == 4321
+            assert mcs_index == 1
+            assert bandwidth == 20
+            assert rssi_min == rssi_avg == rssi_max == -42
+            assert snr_min == snr_avg == snr_max == 28
+
+            host, port, wlan_idx, ant_id = struct.unpack('!IHBB', ant_id.to_bytes(8, byteorder='big'))
+            assert host == 0x7f000001
+            assert port == 0
+            assert 0 <= wlan_idx < 2
+            assert 0 <= ant_id < 2
+
+    def update_tx_stats(self, tx_id, packet_stats, ant_latency):
+        log.msg('%s %r %r' % (tx_id, packet_stats, ant_latency))
+
+
+
 class TXCommandClient(DatagramProtocol):
     noisy = False
 
@@ -100,8 +131,9 @@ class TXRXTestCase(unittest.TestCase):
                   # '-Q', '-P 1',  ## requires root priv
                   '-i', str(link_id), '-e', str(epoch), '-R', str(512 * 1024), 'wlan0']
 
-        self.rx_pp = RXProtocol(None, cmd_rx, 'debug rx')
-        self.tx_pp = TXProtocol(None, cmd_tx, 'debug tx')
+        ap = FakeAntennaProtocol()
+        self.rx_pp = RXProtocol(ap, cmd_rx, 'debug rx')
+        self.tx_pp = TXProtocol(ap, cmd_tx, 'debug tx')
 
         self.rx_pp.start().addErrback(lambda f: f.trap('twisted.internet.error.ProcessTerminated'))
         self.tx_pp.start().addErrback(lambda f: f.trap('twisted.internet.error.ProcessTerminated'))
@@ -136,7 +168,7 @@ class TXRXTestCase(unittest.TestCase):
             if i not in (4, 9, 10, 11, 12, 11 + 4, 11 + 5, 11 + 6):
                 self.rxp.send_msg(pkt)
 
-        yield df_sleep(0.1)
+        yield df_sleep(1.1)
         self.assertEqual([b'm%d' % (i + 1,) for i in range(16) if i + 1 != 4], self.rxp.rxq)
 
 
