@@ -205,7 +205,7 @@ void RawSocketTransmitter::set_mark(uint32_t idx)
 
 
 RawSocketTransmitter::RawSocketTransmitter(int k, int n, const string &keypair, uint64_t epoch, uint32_t channel_id, uint32_t fec_delay,
-                                           vector<tags_item_t> &tags, const vector<string> &wlans, vector<uint8_t> &radiotap_header,
+                                           vector<tags_item_t> &tags, const vector<string> &wlans, radiotap_header_t &radiotap_header,
                                            uint8_t frame_type, bool use_qdisc, uint32_t fwmark) : \
     Transmitter(k, n, keypair, epoch, channel_id, fec_delay, tags),
     channel_id(channel_id),
@@ -284,8 +284,8 @@ void RawSocketTransmitter::inject_packet(const uint8_t *buf, size_t size)
     struct iovec iov[3] = \
         {
             // radiotap header
-            { .iov_base = (void*)&radiotap_header[0],
-              .iov_len = radiotap_header.size()
+            { .iov_base = (void*)&radiotap_header.header[0],
+              .iov_len = radiotap_header.header.size()
             },
             // ieee80211 header
             { .iov_base = (void*)ieee_hdr,
@@ -580,8 +580,8 @@ void data_source(shared_ptr<Transmitter> &t, vector<int> &rx_fd, int control_fd,
 
             for(;;)
             {
-                cmd_req_t req;
-                cmd_resp_t resp;
+                cmd_req_t req = {};
+                cmd_resp_t resp = {};
                 ssize_t rsize;
                 struct sockaddr_in from_addr;
                 socklen_t addr_size = sizeof(from_addr);
@@ -604,7 +604,7 @@ void data_source(shared_ptr<Transmitter> &t, vector<int> &rx_fd, int control_fd,
                     if (rsize != offsetof(cmd_req_t, u) + sizeof(req.u.cmd_set_fec))
                     {
                         resp.rc = htonl(EINVAL);
-                        sendto(fd, &resp, sizeof(resp), MSG_DONTWAIT, (sockaddr*)&from_addr, addr_size);
+                        sendto(fd, &resp, offsetof(cmd_resp_t, u), MSG_DONTWAIT, (sockaddr*)&from_addr, addr_size);
                         continue;
                     }
 
@@ -614,7 +614,7 @@ void data_source(shared_ptr<Transmitter> &t, vector<int> &rx_fd, int control_fd,
                     if(!(fec_k <= fec_n && fec_k >=1 && fec_n >= 1 && fec_n < 256))
                     {
                         resp.rc = htonl(EINVAL);
-                        sendto(fd, &resp, sizeof(resp), MSG_DONTWAIT, (sockaddr*)&from_addr, addr_size);
+                        sendto(fd, &resp, offsetof(cmd_resp_t, u), MSG_DONTWAIT, (sockaddr*)&from_addr, addr_size);
                         fprintf(stderr, "Rejecting new FEC settings");
                         continue;
                     }
@@ -630,7 +630,7 @@ void data_source(shared_ptr<Transmitter> &t, vector<int> &rx_fd, int control_fd,
                         t->send_session_key();
                     }
 
-                    sendto(fd, &resp, sizeof(resp), MSG_DONTWAIT, (sockaddr*)&from_addr, addr_size);
+                    sendto(fd, &resp, offsetof(cmd_resp_t, u), MSG_DONTWAIT, (sockaddr*)&from_addr, addr_size);
                     fprintf(stderr, "Session restarted with FEC %d/%d\n", fec_k, fec_n);
                 }
                 break;
@@ -640,7 +640,7 @@ void data_source(shared_ptr<Transmitter> &t, vector<int> &rx_fd, int control_fd,
                     if (rsize != offsetof(cmd_req_t, u) + sizeof(req.u.cmd_set_radio))
                     {
                         resp.rc = htonl(EINVAL);
-                        sendto(fd, &resp, sizeof(resp), MSG_DONTWAIT, (sockaddr*)&from_addr, addr_size);
+                        sendto(fd, &resp, offsetof(cmd_resp_t, u), MSG_DONTWAIT, (sockaddr*)&from_addr, addr_size);
                         continue;
                     }
 
@@ -658,12 +658,12 @@ void data_source(shared_ptr<Transmitter> &t, vector<int> &rx_fd, int control_fd,
                     catch(runtime_error &e)
                     {
                         resp.rc = htonl(EINVAL);
-                        sendto(fd, &resp, sizeof(resp), MSG_DONTWAIT, (sockaddr*)&from_addr, addr_size);
+                        sendto(fd, &resp, offsetof(cmd_resp_t, u), MSG_DONTWAIT, (sockaddr*)&from_addr, addr_size);
                         fprintf(stderr, "Rejecting new radiotap header: %s\n", e.what());
                         continue;
                     }
 
-                    sendto(fd, &resp, sizeof(resp), MSG_DONTWAIT, (sockaddr*)&from_addr, addr_size);
+                    sendto(fd, &resp, offsetof(cmd_resp_t, u), MSG_DONTWAIT, (sockaddr*)&from_addr, addr_size);
                     fprintf(stderr,
                             "Radiotap updated with stbc=%d, ldpc=%d, short_gi=%d, bandwidth=%d, mcs_index=%d, vht_mode=%d, vht_nss=%d\n",
                             req.u.cmd_set_radio.stbc,
@@ -676,10 +676,53 @@ void data_source(shared_ptr<Transmitter> &t, vector<int> &rx_fd, int control_fd,
                 }
                 break;
 
+                case CMD_GET_FEC:
+                {
+                    int fec_k = 0, fec_n = 0;
+
+                    if (rsize != offsetof(cmd_req_t, u))
+                    {
+                        resp.rc = htonl(EINVAL);
+                        sendto(fd, &resp, offsetof(cmd_resp_t, u), MSG_DONTWAIT, (sockaddr*)&from_addr, addr_size);
+                        continue;
+                    }
+
+                    t->get_fec(fec_k, fec_n);
+
+                    resp.u.cmd_get_fec.k = fec_k;
+                    resp.u.cmd_get_fec.n = fec_n;
+
+                    sendto(fd, &resp, offsetof(cmd_resp_t, u) + sizeof(resp.u.cmd_get_fec), MSG_DONTWAIT, (sockaddr*)&from_addr, addr_size);
+                }
+                break;
+
+                case CMD_GET_RADIO:
+                {
+                    if (rsize != offsetof(cmd_req_t, u))
+                    {
+                        resp.rc = htonl(EINVAL);
+                        sendto(fd, &resp, offsetof(cmd_resp_t, u), MSG_DONTWAIT, (sockaddr*)&from_addr, addr_size);
+                        continue;
+                    }
+
+                    radiotap_header_t hdr = t->get_radiotap_header();
+
+                    resp.u.cmd_get_radio.stbc = hdr.stbc;
+                    resp.u.cmd_get_radio.ldpc = hdr.ldpc;
+                    resp.u.cmd_get_radio.short_gi = hdr.short_gi;
+                    resp.u.cmd_get_radio.bandwidth = hdr.bandwidth;
+                    resp.u.cmd_get_radio.mcs_index = hdr.mcs_index;
+                    resp.u.cmd_get_radio.vht_mode = hdr.vht_mode;
+                    resp.u.cmd_get_radio.vht_nss = hdr.vht_nss;
+
+                    sendto(fd, &resp, offsetof(cmd_resp_t, u) + sizeof(resp.u.cmd_get_radio), MSG_DONTWAIT, (sockaddr*)&from_addr, addr_size);
+                }
+                break;
+
                 default:
                 {
                     resp.rc = htonl(ENOTSUP);
-                    sendto(fd, &resp, sizeof(resp), MSG_DONTWAIT, (sockaddr*)&from_addr, addr_size);
+                    sendto(fd, &resp, offsetof(cmd_resp_t, u), MSG_DONTWAIT, (sockaddr*)&from_addr, addr_size);
                     continue;
                 }
                 break;
@@ -790,15 +833,24 @@ void data_source(shared_ptr<Transmitter> &t, vector<int> &rx_fd, int control_fd,
 }
 
 
-vector<uint8_t> init_radiotap_header(uint8_t stbc,
-                                           bool ldpc,
-                                           bool short_gi,
-                                           uint8_t bandwidth,
-                                           uint8_t mcs_index,
-                                           bool vht_mode,
-                                           uint8_t vht_nss)
+radiotap_header_t init_radiotap_header(uint8_t stbc,
+                                       bool ldpc,
+                                       bool short_gi,
+                                       uint8_t bandwidth,
+                                       uint8_t mcs_index,
+                                       bool vht_mode,
+                                       uint8_t vht_nss)
 {
-    vector<uint8_t> radiotap_header;
+    radiotap_header_t res = {
+        .header = {},
+        .stbc = stbc,
+        .ldpc = ldpc,
+        .short_gi = short_gi,
+        .bandwidth = bandwidth,
+        .mcs_index = mcs_index,
+        .vht_mode = vht_mode,
+        .vht_nss = vht_nss,
+    };
 
     if (!vht_mode)
     {
@@ -847,17 +899,17 @@ vector<uint8_t> init_radiotap_header(uint8_t stbc,
             flags |= IEEE80211_RADIOTAP_MCS_FEC_LDPC;
         }
 
-        copy(radiotap_header_ht, radiotap_header_ht + sizeof(radiotap_header_ht), back_inserter(radiotap_header));
+        copy(radiotap_header_ht, radiotap_header_ht + sizeof(radiotap_header_ht), back_inserter(res.header));
 
-        radiotap_header[MCS_FLAGS_OFF] = flags;
-        radiotap_header[MCS_IDX_OFF] = mcs_index;
+        res.header[MCS_FLAGS_OFF] = flags;
+        res.header[MCS_IDX_OFF] = mcs_index;
     }
     else
     {
         // Set flags in VHT radiotap header
         uint8_t flags = 0;
 
-        copy(radiotap_header_vht, radiotap_header_vht + sizeof(radiotap_header_vht), back_inserter(radiotap_header));
+        copy(radiotap_header_vht, radiotap_header_vht + sizeof(radiotap_header_vht), back_inserter(res.header));
 
         if (short_gi)
         {
@@ -872,19 +924,19 @@ vector<uint8_t> init_radiotap_header(uint8_t stbc,
         switch(bandwidth)
         {
         case 10:
-            radiotap_header[VHT_BW_OFF] = IEEE80211_RADIOTAP_VHT_BW_20M;
+            res.header[VHT_BW_OFF] = IEEE80211_RADIOTAP_VHT_BW_20M;
             break;
         case 20:
-            radiotap_header[VHT_BW_OFF] = IEEE80211_RADIOTAP_VHT_BW_20M;
+            res.header[VHT_BW_OFF] = IEEE80211_RADIOTAP_VHT_BW_20M;
             break;
         case 40:
-            radiotap_header[VHT_BW_OFF] = IEEE80211_RADIOTAP_VHT_BW_40M;
+            res.header[VHT_BW_OFF] = IEEE80211_RADIOTAP_VHT_BW_40M;
             break;
         case 80:
-            radiotap_header[VHT_BW_OFF] = IEEE80211_RADIOTAP_VHT_BW_80M;
+            res.header[VHT_BW_OFF] = IEEE80211_RADIOTAP_VHT_BW_80M;
             break;
         case 160:
-            radiotap_header[VHT_BW_OFF] = IEEE80211_RADIOTAP_VHT_BW_160M;
+            res.header[VHT_BW_OFF] = IEEE80211_RADIOTAP_VHT_BW_160M;
             break;
         default:
             throw runtime_error(string_format("Unsupported VHT bandwidth: %d", bandwidth));
@@ -892,15 +944,15 @@ vector<uint8_t> init_radiotap_header(uint8_t stbc,
 
         if (ldpc)
         {
-            radiotap_header[VHT_CODING_OFF] = IEEE80211_RADIOTAP_VHT_CODING_LDPC_USER0;
+            res.header[VHT_CODING_OFF] = IEEE80211_RADIOTAP_VHT_CODING_LDPC_USER0;
         }
 
-        radiotap_header[VHT_FLAGS_OFF] = flags;
-        radiotap_header[VHT_MCSNSS0_OFF] |= ((mcs_index << IEEE80211_RADIOTAP_VHT_MCS_SHIFT) & IEEE80211_RADIOTAP_VHT_MCS_MASK);
-        radiotap_header[VHT_MCSNSS0_OFF] |= ((vht_nss << IEEE80211_RADIOTAP_VHT_NSS_SHIFT) & IEEE80211_RADIOTAP_VHT_NSS_MASK);
+        res.header[VHT_FLAGS_OFF] = flags;
+        res.header[VHT_MCSNSS0_OFF] |= ((mcs_index << IEEE80211_RADIOTAP_VHT_MCS_SHIFT) & IEEE80211_RADIOTAP_VHT_MCS_MASK);
+        res.header[VHT_MCSNSS0_OFF] |= ((vht_nss << IEEE80211_RADIOTAP_VHT_NSS_SHIFT) & IEEE80211_RADIOTAP_VHT_NSS_MASK);
     }
 
-    return radiotap_header;
+    return res;
 }
 
 

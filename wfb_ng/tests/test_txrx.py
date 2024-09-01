@@ -71,6 +71,15 @@ class TXCommandClient(DatagramProtocol):
 
     CMD_SET_FEC = 1
     CMD_SET_RADIO = 2
+    CMD_GET_FEC = 3
+    CMD_GET_RADIO = 4
+
+    resp_map = {
+        CMD_SET_FEC: lambda x: None,
+        CMD_SET_RADIO: lambda x: None,
+        CMD_GET_FEC: lambda x: struct.unpack('!BB', x),
+        CMD_GET_RADIO: lambda x: struct.unpack('!B??BB?B', x)
+    }
 
     def __init__(self, tx_addr):
         self.tx_addr = tx_addr
@@ -81,7 +90,7 @@ class TXCommandClient(DatagramProtocol):
         if addr != self.tx_addr:
             return
 
-        req_id, rc = struct.unpack('!II', data)
+        req_id, rc = struct.unpack('!II', data[:8])
         df = self.callbacks.pop(req_id, None)
 
         if df is None:
@@ -89,7 +98,7 @@ class TXCommandClient(DatagramProtocol):
             return
 
         if rc == 0:
-            df.callback(None)
+            df.callback(data[8:])
         else:
             df.errback(OSError("Error: %s" % (errno.errorcode.get(rc, str(rc)))))
 
@@ -101,12 +110,37 @@ class TXCommandClient(DatagramProtocol):
 
     @gen_req_id
     def set_fec(self, req_id, k, n):
-        return self._do_cmd(req_id, struct.pack('!IBBB', req_id, self.CMD_SET_FEC, k, n))
+        def _got_response(data):
+            return None
+
+        return self._do_cmd(req_id, struct.pack('!IBBB', req_id, self.CMD_SET_FEC, k, n))\
+                   .addCallback(_got_response)
 
     @gen_req_id
     def set_radio(self, req_id, stbc, ldpc, short_gi, bandwidth, mcs_index, vht_mode, vht_nss):
+        def _got_response(data):
+            return None
+
         return self._do_cmd(req_id, struct.pack('!IBB??BB?B', req_id, self.CMD_SET_RADIO,
-                                                stbc, ldpc, short_gi, bandwidth, mcs_index, vht_mode, vht_nss))
+                                                stbc, ldpc, short_gi, bandwidth, mcs_index, vht_mode, vht_nss))\
+                   .addCallback(_got_response)
+
+    @gen_req_id
+    def get_fec(self, req_id):
+        def _got_response(data):
+            return dict(zip(('k', 'n'), self.resp_map[self.CMD_GET_FEC](data)))
+
+        return self._do_cmd(req_id, struct.pack('!IB', req_id, self.CMD_GET_FEC))\
+                   .addCallback(_got_response)
+
+    @gen_req_id
+    def get_radio(self, req_id):
+        def _got_response(data):
+            return dict(zip(('stbc', 'ldpc', 'short_gi', 'bandwidth', 'mcs_index', 'vht_mode', 'vht_nss'),
+                            self.resp_map[self.CMD_GET_RADIO](data)))
+
+        return self._do_cmd(req_id, struct.pack('!IB', req_id, self.CMD_GET_RADIO))\
+                   .addCallback(_got_response)
 
 
 class TXRXTestCase(unittest.TestCase):
@@ -199,7 +233,15 @@ class TXRXTestCase(unittest.TestCase):
         yield df_sleep(0.02) # don't wait for first fec timeout
         self.assertEqual(len(self.txp.rxq), 7) # 1 session + (6 data packets)
 
+        res = yield self.cmdp.get_fec()
+        self.assertEqual(res['k'], 8)
+        self.assertEqual(res['n'], 12)
+
         yield self.cmdp.set_fec(1, 2) # should close FEC block, set FEC 1/2 and issue N-K+1 session packets
+
+        res = yield self.cmdp.get_fec()
+        self.assertEqual(res['k'], 1)
+        self.assertEqual(res['n'], 2)
 
         self.assertEqual(len(self.txp.rxq), 15) # 1 session + (8 data packets + 4 fec packets) + 2 session
         self.txp.send_msg(b'm%d' % (7,))
@@ -256,7 +298,25 @@ class TXRXTestCase(unittest.TestCase):
         yield df_sleep(0.02) # don't wait for first fec timeout
         self.assertEqual(len(self.txp.rxq), 7) # 1 session + (6 data packets)
 
+        res = yield self.cmdp.get_radio()
+        self.assertEqual(res['stbc'], 0)
+        self.assertEqual(res['ldpc'], False)
+        self.assertEqual(res['short_gi'], False)
+        self.assertEqual(res['bandwidth'], 0)
+        self.assertEqual(res['mcs_index'], 0)
+        self.assertEqual(res['vht_mode'], False)
+        self.assertEqual(res['vht_nss'], 0)
+
         yield self.cmdp.set_radio(stbc=1, ldpc=True, short_gi=False, bandwidth=40, mcs_index=3, vht_mode=False, vht_nss=0)
+
+        res = yield self.cmdp.get_radio()
+        self.assertEqual(res['stbc'], 1)
+        self.assertEqual(res['ldpc'], True)
+        self.assertEqual(res['short_gi'], False)
+        self.assertEqual(res['bandwidth'], 40)
+        self.assertEqual(res['mcs_index'], 3)
+        self.assertEqual(res['vht_mode'], False)
+        self.assertEqual(res['vht_nss'], 0)
 
         self.txp.send_msg(b'm%d' % (7,))
         yield df_sleep(0.1)

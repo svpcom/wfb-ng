@@ -39,6 +39,19 @@ typedef struct {
 } tags_item_t;
 
 
+typedef struct {
+    std::vector<uint8_t> header;
+
+    // header info
+    uint8_t stbc;
+    bool ldpc;
+    bool short_gi;
+    uint8_t bandwidth;
+    uint8_t mcs_index;
+    bool vht_mode;
+    uint8_t vht_nss;
+} radiotap_header_t;
+
 class Transmitter
 {
 public:
@@ -47,9 +60,11 @@ public:
     bool send_packet(const uint8_t *buf, size_t size, uint8_t flags);
     void send_session_key(void);
     void init_session(int k, int n);
+    void get_fec(int &k, int &n) { k = fec_k; n = fec_n; }
     virtual void select_output(int idx) = 0;
     virtual void dump_stats(FILE *fp, uint64_t ts, uint32_t &injected_packets, uint32_t &dropped_packets, uint32_t &injected_bytes) = 0;
-    virtual void update_radiotap_header(std::vector<uint8_t> &radiotap_header) {}
+    virtual void update_radiotap_header(radiotap_header_t &radiotap_header) = 0;
+    virtual radiotap_header_t get_radiotap_header(void) = 0;
 protected:
     virtual void inject_packet(const uint8_t *buf, size_t size) = 0;
     virtual void set_mark(uint32_t idx) = 0;
@@ -124,7 +139,7 @@ class RawSocketTransmitter : public Transmitter
 {
 public:
     RawSocketTransmitter(int k, int n, const std::string &keypair, uint64_t epoch, uint32_t channel_id, uint32_t fec_delay, std::vector<tags_item_t> &tags,
-                         const std::vector<std::string> &wlans, std::vector<uint8_t> &radiotap_header,
+                         const std::vector<std::string> &wlans, radiotap_header_t &radiotap_header,
                          uint8_t frame_type, bool use_qdisc, uint32_t fwmark);
     virtual ~RawSocketTransmitter();
     virtual void select_output(int idx)
@@ -139,9 +154,14 @@ public:
         }
     }
     virtual void dump_stats(FILE *fp, uint64_t ts, uint32_t &injected_packets, uint32_t &dropped_packets, uint32_t &injected_bytes);
-    virtual void update_radiotap_header(std::vector<uint8_t> &radiotap_header)
+    virtual void update_radiotap_header(radiotap_header_t &radiotap_header)
     {
         this->radiotap_header = radiotap_header;
+    }
+
+    virtual radiotap_header_t get_radiotap_header(void)
+    {
+        return radiotap_header;
     }
 
 private:
@@ -152,7 +172,7 @@ private:
     uint16_t ieee80211_seq;
     std::vector<int> sockfds;
     tx_antenna_stat_t antenna_stat;
-    std::vector<uint8_t> radiotap_header;
+    radiotap_header_t radiotap_header;
     const uint8_t frame_type;
     const bool use_qdisc;
     const uint32_t fwmark;
@@ -164,7 +184,7 @@ class UdpTransmitter : public Transmitter
 public:
     UdpTransmitter(int k, int n, const std::string &keypair, const std::string &client_addr, int base_port, uint64_t epoch, uint32_t channel_id,
                    uint32_t fec_delay, std::vector<tags_item_t> &tags, bool use_qdisc, uint32_t fwmark): \
-        Transmitter(k, n, keypair, epoch, channel_id, fec_delay, tags), base_port(base_port), use_qdisc(use_qdisc), fwmark(fwmark)
+        Transmitter(k, n, keypair, epoch, channel_id, fec_delay, tags), radiotap_header({}), base_port(base_port), use_qdisc(use_qdisc), fwmark(fwmark)
     {
         sockfd = socket(AF_INET, SOCK_DGRAM, 0);
         if (sockfd < 0) throw std::runtime_error(string_format("Error opening socket: %s", strerror(errno)));
@@ -202,6 +222,17 @@ public:
         }
     }
 
+    virtual void update_radiotap_header(radiotap_header_t &radiotap_header)
+    {
+        this->radiotap_header = radiotap_header;
+    }
+
+    virtual radiotap_header_t get_radiotap_header(void)
+    {
+        return radiotap_header;
+    }
+
+
 private:
     virtual void inject_packet(const uint8_t *buf, size_t size)
     {
@@ -235,6 +266,7 @@ private:
         sendmsg(sockfd, &msghdr, MSG_DONTWAIT);
     }
 
+    radiotap_header_t radiotap_header;
     int sockfd;
     int base_port;
     struct sockaddr_in saddr;
@@ -242,10 +274,10 @@ private:
     const uint32_t fwmark;
 };
 
-std::vector<uint8_t> init_radiotap_header(uint8_t stbc,
-                                          bool ldpc,
-                                          bool short_gi,
-                                          uint8_t bandwidth,
-                                          uint8_t mcs_index,
-                                          bool vht_mode,
-                                          uint8_t vht_nss);
+radiotap_header_t init_radiotap_header(uint8_t stbc,
+                                       bool ldpc,
+                                       bool short_gi,
+                                       uint8_t bandwidth,
+                                       uint8_t mcs_index,
+                                       bool vht_mode,
+                                       uint8_t vht_nss);
