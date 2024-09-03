@@ -705,6 +705,9 @@ def init_udp_direct_tx(service_name, cfg, wlans, link_id, ant_sel_f):
     # Direct udp doesn't support TX diversity - only first card will be used.
     # But if mirror mode is enabled it will use all cards.
 
+    if not cfg.mirror and len(wlans) > 1:
+        raise Exception("udp_direct_tx doesn't supports diversity but multiple cards selected. Use udp_proxy for such case.")
+
     control_port_df = defer.Deferred() if cfg.control_port == 0 else None
     df = TXProtocol(ant_sel_f, cmd, 'video tx', control_port_df=control_port_df).start()
     log.msg('%s: %s' % (service_name, ' '.join(cmd),))
@@ -998,12 +1001,12 @@ def init_udp_proxy(service_name, cfg, wlans, link_id, ant_sel_f):
     if connect_re.match(cfg.peer):
         m = connect_re.match(cfg.peer)
         connect = m.group('addr'), int(m.group('port'))
-        log.msg('Connect %s stream %d(RX), %d(TX) to %s:%d' % (service_name, cfg.stream_rx, cfg.stream_tx, connect[0], connect[1]))
+        log.msg('Connect %s stream %s(RX), %s(TX) to %s:%d' % (service_name, cfg.stream_rx, cfg.stream_tx, connect[0], connect[1]))
 
     elif listen_re.match(cfg.peer):
         m = listen_re.match(cfg.peer)
         listen = m.group('addr'), int(m.group('port'))
-        log.msg('Listen for %s stream %d(RX), %d(TX) on %s:%d' % (service_name, cfg.stream_rx, cfg.stream_tx, listen[0], listen[1]))
+        log.msg('Listen for %s stream %s(RX), %s(TX) on %s:%d' % (service_name, cfg.stream_rx, cfg.stream_tx, listen[0], listen[1]))
 
     else:
         raise Exception('Unsupported peer address: %s' % (cfg.peer,))

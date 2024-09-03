@@ -1,7 +1,7 @@
 #!/bin/bash
 if [ -z "$WFB_CLI" ]
 then
-   WFB_CLI=1 exec xterm -fn 9x15 -fg orange2 -bg black +sb -e $0 $1
+   WFB_CLI=1 exec xterm -fn 9x15 -fg orange2 -bg black +sb -e $0 $@
 fi
 
 #Show WFB-ng logo on statup
@@ -243,4 +243,4 @@ P0OiqIruxw3/9Xf/JRX+fvmX//6H/wMkSRyZ6nAAAA==
 EOF
 
 # In case of error wait user input for exit
-python3 -m wfb_ng.cli $1 || read
+python3 -m wfb_ng.cli $@ || read
