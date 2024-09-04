@@ -47,7 +47,7 @@ wfb_keygen: src/keygen.o
 	$(CC) -o $@ $^ $(_LDFLAGS)
 
 wfb_tx_cmd: src/tx_cmd.o
-	$(CC) -o $@ $^
+	$(CC) -o $@ $^ $(LDFLAGS)
 
 test: all_bin
 	PYTHONPATH=`pwd` trial3 wfb_ng.tests
