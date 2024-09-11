@@ -194,14 +194,32 @@ void RawSocketTransmitter::set_mark(uint32_t idx)
         return;
     }
 
-    int fd = sockfds[current_output];
-    uint32_t sockopt = this->fwmark + idx;
-
-    if(setsockopt(fd, SOL_SOCKET, SO_MARK, (const void *)&sockopt , sizeof(sockopt)) !=0)
+    if (current_output >= 0)
     {
-        throw runtime_error(string_format("Unable to set SO_MARK fd(%d)=%u: %s", fd, sockopt, strerror(errno)));
+        int fd = sockfds[current_output];
+        uint32_t sockopt = fwmark + idx;
+
+        if(setsockopt(fd, SOL_SOCKET, SO_MARK, (const void *)&sockopt , sizeof(sockopt)) !=0)
+        {
+            throw runtime_error(string_format("Unable to set SO_MARK fd(%d)=%u: %s", fd, sockopt, strerror(errno)));
+        }
+
+        return;
+    }
+
+    // Handle mirror mode
+    for(auto it = sockfds.begin(); it != sockfds.end(); it++)
+    {
+        int fd = *it;
+        uint32_t sockopt = fwmark + idx;
+
+        if(setsockopt(fd, SOL_SOCKET, SO_MARK, (const void *)&sockopt , sizeof(sockopt)) !=0)
+        {
+            throw runtime_error(string_format("Unable to set SO_MARK fd(%d)=%u: %s", fd, sockopt, strerror(errno)));
+        }
     }
 }
+
 
 
 RawSocketTransmitter::RawSocketTransmitter(int k, int n, const string &keypair, uint64_t epoch, uint32_t channel_id, uint32_t fec_delay,
