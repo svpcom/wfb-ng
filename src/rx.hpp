@@ -246,7 +246,7 @@ private:
 class Receiver
 {
 public:
-    Receiver(const char* wlan, int wlan_idx, uint32_t channel_id, BaseAggregator* agg);
+    Receiver(const char* wlan, int wlan_idx, uint32_t channel_id, BaseAggregator* agg, int rcv_buf_size);
     ~Receiver();
     void loop_iter(void);
     int getfd(void){ return fd; }

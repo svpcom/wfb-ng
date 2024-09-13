@@ -28,6 +28,7 @@
 #include <assert.h>
 #include <sys/ioctl.h>
 #include <sys/socket.h>
+#include <netinet/in.h>
 #include <net/if.h>
 #include <linux/if_packet.h>
 #include <linux/if_ether.h>
@@ -37,6 +38,7 @@
 #include <string>
 #include <memory>
 #include <vector>
+#include <set>
 
 extern "C"
 {
@@ -187,44 +189,10 @@ void Transmitter::init_session(int k, int n)
     assert(session_packet_size <= MAX_SESSION_PACKET_SIZE);
 }
 
-void RawSocketTransmitter::set_mark(uint32_t idx)
-{
-    if (!use_qdisc)
-    {
-        return;
-    }
-
-    if (current_output >= 0)
-    {
-        int fd = sockfds[current_output];
-        uint32_t sockopt = fwmark + idx;
-
-        if(setsockopt(fd, SOL_SOCKET, SO_MARK, (const void *)&sockopt , sizeof(sockopt)) !=0)
-        {
-            throw runtime_error(string_format("Unable to set SO_MARK fd(%d)=%u: %s", fd, sockopt, strerror(errno)));
-        }
-
-        return;
-    }
-
-    // Handle mirror mode
-    for(auto it = sockfds.begin(); it != sockfds.end(); it++)
-    {
-        int fd = *it;
-        uint32_t sockopt = fwmark + idx;
-
-        if(setsockopt(fd, SOL_SOCKET, SO_MARK, (const void *)&sockopt , sizeof(sockopt)) !=0)
-        {
-            throw runtime_error(string_format("Unable to set SO_MARK fd(%d)=%u: %s", fd, sockopt, strerror(errno)));
-        }
-    }
-}
-
-
 
 RawSocketTransmitter::RawSocketTransmitter(int k, int n, const string &keypair, uint64_t epoch, uint32_t channel_id, uint32_t fec_delay,
                                            vector<tags_item_t> &tags, const vector<string> &wlans, radiotap_header_t &radiotap_header,
-                                           uint8_t frame_type, bool use_qdisc, uint32_t fwmark) : \
+                                           uint8_t frame_type, bool use_qdisc, uint32_t fwmark_base) : \
     Transmitter(k, n, keypair, epoch, channel_id, fec_delay, tags),
     channel_id(channel_id),
     current_output(0),
@@ -232,7 +200,8 @@ RawSocketTransmitter::RawSocketTransmitter(int k, int n, const string &keypair, 
     radiotap_header(radiotap_header),
     frame_type(frame_type),
     use_qdisc(use_qdisc),
-    fwmark(fwmark)
+    fwmark_base(fwmark_base),
+    fwmark(fwmark_base)
 {
     for(auto it=wlans.begin(); it!=wlans.end(); it++)
     {
@@ -275,6 +244,7 @@ RawSocketTransmitter::RawSocketTransmitter(int k, int n, const string &keypair, 
         }
 
         sockfds.push_back(fd);
+        fd_fwmarks[fd] = 0;
     }
 }
 
@@ -328,7 +298,21 @@ void RawSocketTransmitter::inject_packet(const uint8_t *buf, size_t size)
     {
         // Normal mode - only one card do packet transmission in a time
         uint64_t start_us = get_time_us();
-        int rc = sendmsg(sockfds[current_output], &msghdr, 0);
+        int fd = sockfds[current_output];
+
+        if (use_qdisc && fd_fwmarks[fd] != fwmark)
+        {
+            uint32_t sockopt = fwmark;
+
+            if(setsockopt(fd, SOL_SOCKET, SO_MARK, (const void *)&sockopt , sizeof(sockopt)) !=0)
+            {
+                throw runtime_error(string_format("Unable to set SO_MARK fd(%d)=%u: %s", fd, sockopt, strerror(errno)));
+            }
+
+            fd_fwmarks[fd] = fwmark;
+        }
+
+        int rc = sendmsg(fd, &msghdr, 0);
 
         if (rc < 0 && errno != ENOBUFS)
         {
@@ -346,7 +330,21 @@ void RawSocketTransmitter::inject_packet(const uint8_t *buf, size_t size)
         for(auto it=sockfds.begin(); it != sockfds.end(); it++, i++)
         {
             uint64_t start_us = get_time_us();
-            int rc = sendmsg(*it, &msghdr, 0);
+            int fd = *it;
+
+            if (use_qdisc && fd_fwmarks[fd] != fwmark)
+            {
+                uint32_t sockopt = fwmark;
+
+                if(setsockopt(fd, SOL_SOCKET, SO_MARK, (const void *)&sockopt , sizeof(sockopt)) !=0)
+                {
+                    throw runtime_error(string_format("Unable to set SO_MARK fd(%d)=%u: %s", fd, sockopt, strerror(errno)));
+                }
+
+                fd_fwmarks[fd] = fwmark;
+            }
+
+            int rc = sendmsg(fd, &msghdr, 0);
 
             if (rc < 0 && errno != ENOBUFS)
             {
@@ -385,6 +383,161 @@ RawSocketTransmitter::~RawSocketTransmitter()
         close(*it);
     }
 }
+
+
+RemoteTransmitter::RemoteTransmitter(int k, int n, const string &keypair, uint64_t epoch, uint32_t channel_id, uint32_t fec_delay,
+                                     vector<tags_item_t> &tags, const vector<pair<string, vector<uint16_t>>> &remote_hosts, radiotap_header_t &radiotap_header,
+                                     uint8_t frame_type, bool use_qdisc, uint32_t fwmark_base) : \
+    Transmitter(k, n, keypair, epoch, channel_id, fec_delay, tags),
+    channel_id(channel_id),
+    current_output(0),
+    ieee80211_seq(0),
+    radiotap_header(radiotap_header),
+    frame_type(frame_type),
+    use_qdisc(use_qdisc),
+    fwmark_base(fwmark_base),
+    fwmark(fwmark_base)
+{
+
+    sockfd = socket(AF_INET, SOCK_DGRAM, 0);
+    if (sockfd < 0) throw std::runtime_error(string_format("Error opening socket: %s", strerror(errno)));
+
+    int output = 0;
+    for(auto h_it=remote_hosts.begin(); h_it!=remote_hosts.end(); h_it++)
+    {
+        uint8_t wlan_id = 0;
+        for(auto p_it=h_it->second.begin(); p_it != h_it->second.end(); p_it++, output++, wlan_id++)
+        {
+            struct sockaddr_in saddr;
+            memset(&saddr, '\0', sizeof(saddr));
+            saddr.sin_family = AF_INET;
+            saddr.sin_addr.s_addr = inet_addr(h_it->first.c_str());
+            saddr.sin_port = htons((unsigned short)*p_it);
+            sockaddrs.push_back(saddr);
+            output_to_ant_id[output] = ((uint64_t)ntohl(saddr.sin_addr.s_addr) << 32) | (uint64_t)(wlan_id) << 8 | (uint64_t)0xff;
+        }
+    }
+}
+
+void RemoteTransmitter::inject_packet(const uint8_t *buf, size_t size)
+{
+    assert(size <= MAX_FORWARDER_PACKET_SIZE);
+    uint8_t ieee_hdr[sizeof(ieee80211_header)];
+
+    // fill default values
+    memcpy(ieee_hdr, ieee80211_header, sizeof(ieee80211_header));
+
+    // frame_type
+    ieee_hdr[0] = frame_type;
+
+    // channel_id
+    uint32_t channel_id_be = htobe32(channel_id);
+    memcpy(ieee_hdr + SRC_MAC_THIRD_BYTE, &channel_id_be, sizeof(uint32_t));
+    memcpy(ieee_hdr + DST_MAC_THIRD_BYTE, &channel_id_be, sizeof(uint32_t));
+
+    // sequence number
+    ieee_hdr[FRAME_SEQ_LB] = ieee80211_seq & 0xff;
+    ieee_hdr[FRAME_SEQ_HB] = (ieee80211_seq >> 8) & 0xff;
+    ieee80211_seq += 16;
+
+    uint32_t _fwmark = use_qdisc ? htonl(this->fwmark) : 0;
+
+    struct iovec iov[4] = \
+        {
+            // fwmark
+            {
+                .iov_base = (void*)&_fwmark,
+                .iov_len = sizeof(_fwmark),
+            },
+            // radiotap header
+            { .iov_base = (void*)&radiotap_header.header[0],
+              .iov_len = radiotap_header.header.size()
+            },
+            // ieee80211 header
+            { .iov_base = (void*)ieee_hdr,
+              .iov_len = sizeof(ieee_hdr)
+            },
+            // packet payload
+            { .iov_base = (void*)buf,
+              .iov_len = size
+            }
+        };
+
+    struct msghdr msghdr = \
+        { .msg_name = NULL,
+          .msg_namelen = 0,
+          .msg_iov = iov,
+          .msg_iovlen = 4,
+          .msg_control = NULL,
+          .msg_controllen = 0,
+          .msg_flags = 0};
+
+    struct sockaddr_in saddr;
+
+    if (current_output >= 0)
+    {
+        // Normal mode - only one card do packet transmission in a time
+        uint64_t start_us = get_time_us();
+
+        saddr = sockaddrs[current_output];
+        msghdr.msg_name = &saddr;
+        msghdr.msg_namelen = sizeof(saddr);
+
+        int rc = sendmsg(sockfd, &msghdr, 0);
+
+        if (rc < 0 && errno != ENOBUFS)
+        {
+            throw runtime_error(string_format("Unable to inject packet: %s", strerror(errno)));
+        }
+
+        uint64_t key = output_to_ant_id[current_output];
+        antenna_stat[key].log_latency(get_time_us() - start_us, rc >= 0, size);
+    }
+    else
+    {
+        // Mirror mode - transmit packet via all cards
+        // Use only for different frequency channels
+        int i = 0;
+        for(auto it=sockaddrs.begin(); it != sockaddrs.end(); it++, i++)
+        {
+            uint64_t start_us = get_time_us();
+
+            saddr = *it;
+            msghdr.msg_name = &saddr;
+            msghdr.msg_namelen = sizeof(saddr);
+
+            int rc = sendmsg(sockfd, &msghdr, 0);
+
+            if (rc < 0 && errno != ENOBUFS)
+            {
+                throw runtime_error(string_format("Unable to inject packet: %s", strerror(errno)));
+            }
+
+            uint64_t key = output_to_ant_id[i];
+            antenna_stat[key].log_latency(get_time_us() - start_us, rc >= 0, size);
+        }
+    }
+
+}
+
+void RemoteTransmitter::dump_stats(FILE *fp, uint64_t ts, uint32_t &injected_packets, uint32_t &dropped_packets, uint32_t &injected_bytes)
+{
+    for(auto it = antenna_stat.begin(); it != antenna_stat.end(); it++)
+    {
+        fprintf(fp, "%" PRIu64 "\tTX_ANT\t%" PRIx64 "\t%u:%u:%" PRIu64 ":%" PRIu64 ":%" PRIu64 "\n",
+                ts, it->first,
+                it->second.count_p_injected, it->second.count_p_dropped,
+                it->second.latency_min,
+                it->second.latency_sum / (it->second.count_p_injected + it->second.count_p_dropped),
+                it->second.latency_max);
+
+        injected_packets += it->second.count_p_injected;
+        dropped_packets += it->second.count_p_dropped;
+        injected_bytes += it->second.count_b_injected;
+    }
+    antenna_stat.clear();
+}
+
 
 
 void Transmitter::send_block_fragment(size_t packet_size)
@@ -529,7 +682,7 @@ void data_source(shared_ptr<Transmitter> &t, vector<int> &rx_fd, int control_fd,
     uint64_t fec_close_ts = fec_timeout > 0 ? get_time_ms() + fec_timeout : 0;
     uint32_t count_p_fec_timeouts = 0; // empty packets sent to close fec block due to timeout
     uint32_t count_p_incoming = 0;   // incoming udp packets (received + dropped due to rxq overflow)
-    uint32_t count_b_incoming = 0;   // incoming udp bytes (received + dropped due to rxq overflow)
+    uint32_t count_b_incoming = 0;   // incoming udp bytes (received only)
     uint32_t count_p_injected = 0;  // successfully injected packets (include additional fec packets)
     uint32_t count_b_injected = 0;  // successfully injected bytes (include additional fec packets)
     uint32_t count_p_dropped = 0;   // dropped due to rxq overflows or injection timeout
@@ -878,8 +1031,6 @@ radiotap_header_t init_radiotap_header(uint8_t stbc,
         switch(bandwidth)
         {
         case 10:
-            flags |= IEEE80211_RADIOTAP_MCS_BW_20;
-            break;
         case 20:
             flags |= IEEE80211_RADIOTAP_MCS_BW_20;
             break;
@@ -942,8 +1093,6 @@ radiotap_header_t init_radiotap_header(uint8_t stbc,
         switch(bandwidth)
         {
         case 10:
-            res.header[VHT_BW_OFF] = IEEE80211_RADIOTAP_VHT_BW_20M;
-            break;
         case 20:
             res.header[VHT_BW_OFF] = IEEE80211_RADIOTAP_VHT_BW_20M;
             break;
@@ -974,6 +1123,340 @@ radiotap_header_t init_radiotap_header(uint8_t stbc,
 }
 
 
+void packet_injector(RawSocketInjector &t, vector<int> &rx_fd, int log_interval)
+{
+    int nfds = rx_fd.size();
+    assert(nfds > 0);
+
+    struct pollfd fds[nfds];
+    memset(fds, '\0', sizeof(fds));
+
+    for(size_t i=0; i < rx_fd.size(); i++)
+    {
+        fds[i].fd = rx_fd[i];
+        fds[i].events = POLLIN;
+    }
+
+    uint32_t rxq_overflow = 0;
+    uint64_t log_send_ts = 0;
+
+    uint32_t count_p_incoming = 0;   // incoming udp packets (received + dropped due to rxq overflow)
+    uint32_t count_b_incoming = 0;   // incoming udp bytes (received only)
+    uint32_t count_p_dropped = 0;   // dropped due to rxq overflows or injection timeout
+    uint32_t count_p_bad = 0; // injected large packets that were bad
+
+    int start_fd_idx = 0;
+
+    for(;;)
+    {
+        uint64_t cur_ts = get_time_ms();
+        int poll_timeout = log_send_ts > cur_ts ? log_send_ts - cur_ts : 0;
+        int rc = poll(fds, nfds, poll_timeout);
+
+        if (rc < 0)
+        {
+            if (errno == EINTR || errno == EAGAIN) continue;
+            throw runtime_error(string_format("poll error: %s", strerror(errno)));
+        }
+
+        cur_ts = get_time_ms();
+
+        if (cur_ts >= log_send_ts)  // log timeout expired
+        {
+            if(count_p_dropped)
+            {
+                fprintf(stderr, "%u packets dropped\n", count_p_dropped);
+            }
+
+            if(count_p_bad)
+            {
+                fprintf(stderr, "%u packets bad\n", count_p_bad);
+            }
+
+            count_p_incoming = 0;
+            count_b_incoming = 0;
+            count_p_dropped = 0;
+            count_p_bad = 0;
+
+            log_send_ts = cur_ts + log_interval;
+        }
+
+        if (rc == 0) // poll timeout
+        {
+            continue;
+        }
+
+        // rc > 0: events detected
+        // start from last fd index and reset it to zero
+        int i = start_fd_idx;
+        for(start_fd_idx = 0; rc > 0; i++)
+        {
+            if (fds[i % nfds].revents & (POLLERR | POLLNVAL))
+            {
+                throw runtime_error(string_format("socket error: %s", strerror(errno)));
+            }
+
+            if (fds[i % nfds].revents & POLLIN)
+            {
+                uint8_t buf[MAX_DISTRIBUTION_PACKET_SIZE - sizeof(uint32_t) + 1];
+                uint8_t cmsgbuf[CMSG_SPACE(sizeof(uint32_t))];
+                rc -= 1;
+
+                for(;;)
+                {
+                    ssize_t rsize;
+                    uint32_t _fwmark;
+                    int fd = fds[i % nfds].fd;
+
+                    struct iovec iov[2] = {
+                        // fwmark
+                        {
+                            .iov_base = (void*)&_fwmark,
+                            .iov_len = sizeof(_fwmark),
+                        },
+                        // packet with radiotap header
+                        {
+                            .iov_base = (void*)buf,
+                            .iov_len = sizeof(buf),
+                        }
+                    };
+
+                    struct msghdr msghdr = { .msg_name = NULL,
+                                             .msg_namelen = 0,
+                                             .msg_iov = iov,
+                                             .msg_iovlen = 2,
+                                             .msg_control = &cmsgbuf,
+                                             .msg_controllen = sizeof(cmsgbuf),
+                                             .msg_flags = 0 };
+
+                    memset(cmsgbuf, '\0', sizeof(cmsgbuf));
+
+                    if ((rsize = recvmsg(fd, &msghdr, MSG_DONTWAIT)) < 0)
+                    {
+                        if (errno != EWOULDBLOCK) throw runtime_error(string_format("Error receiving packet: %s", strerror(errno)));
+                        break;
+                    }
+
+                    if (rsize < (ssize_t)MIN_DISTRIBUTION_PACKET_SIZE || rsize > (ssize_t)MAX_DISTRIBUTION_PACKET_SIZE)
+                    {
+                        count_p_bad += 1;
+                        continue;
+                    }
+
+                    rsize -= sizeof(uint32_t);
+                    count_p_incoming += 1;
+                    count_b_incoming += rsize;
+
+                    uint32_t cur_rxq_overflow = extract_rxq_overflow(&msghdr);
+                    if (cur_rxq_overflow != rxq_overflow)
+                    {
+                        // Count dropped packets as possible incoming
+                        count_p_dropped += (cur_rxq_overflow - rxq_overflow);
+                        count_p_incoming += (cur_rxq_overflow - rxq_overflow);
+                        rxq_overflow = cur_rxq_overflow;
+                    }
+
+                    cur_ts = get_time_ms();
+
+                    t.inject_packet(i % nfds, buf, rsize, ntohl(_fwmark));
+
+                    if (cur_ts >= log_send_ts)  // log timeout expired
+                    {
+                        // We need to transmit all packets from the queue before tx card switch
+                        start_fd_idx = i % nfds;
+                        break;
+                    }
+                }
+            }
+        }
+    }
+}
+
+void injector_loop(int argc, char* const* argv, int optind, int srv_port, int rcv_buf, bool use_qdisc, int log_interval)
+{
+    vector<int> rx_fd;
+    vector<string> wlans;
+    for(int i = 0; optind + i < argc; i++)
+    {
+        int bind_port = srv_port != 0 ? srv_port + i : 0;
+        int fd = open_udp_socket_for_rx(bind_port, rcv_buf);
+
+        if (srv_port == 0)
+        {
+            struct sockaddr_in saddr;
+            socklen_t saddr_size = sizeof(saddr);
+
+            if (getsockname(fd, (struct sockaddr *)&saddr, &saddr_size) != 0)
+            {
+                throw runtime_error(string_format("Unable to get socket info: %s", strerror(errno)));
+            }
+            bind_port = ntohs(saddr.sin_port);
+            printf("%" PRIu64 "\tLISTEN_UDP\t%d:%x\n", get_time_ms(), bind_port, i);
+        }
+        fprintf(stderr, "Listen on %d for %s\n", bind_port, argv[optind + i]);
+        rx_fd.push_back(fd);
+        wlans.push_back(string(argv[optind + i]));
+    }
+
+    if (srv_port == 0)
+    {
+        printf("%" PRIu64 "\tLISTEN_UDP_END\n", get_time_ms());
+        fflush(stdout);
+    }
+
+    auto t = RawSocketInjector(wlans, use_qdisc);
+    packet_injector(t, rx_fd, log_interval);
+}
+
+
+int open_control_fd(int control_port)
+{
+    int control_fd = open_udp_socket_for_rx(control_port, 0, 0x7f000001);  // bind to 127.0.0.1 for security reasons
+
+    if (control_port == 0)
+    {
+        struct sockaddr_in saddr;
+        socklen_t saddr_size = sizeof(saddr);
+
+        if (getsockname(control_fd, (struct sockaddr *)&saddr, &saddr_size) != 0)
+        {
+            throw runtime_error(string_format("Unable to get socket info: %s", strerror(errno)));
+        }
+        control_port = ntohs(saddr.sin_port);
+        printf("%" PRIu64 "\tLISTEN_UDP_CONTROL\t%d\n", get_time_ms(), control_port);
+    }
+
+    fprintf(stderr, "Listen on %d for management commands\n", control_port);
+    return control_fd;
+}
+
+void local_loop(int argc, char* const* argv, int optind, int srv_port, int rcv_buf, int log_interval,
+                int udp_port, int debug_port, int k, int n, const string &keypair, int fec_timeout,
+                uint64_t epoch, uint32_t channel_id, uint32_t fec_delay, bool use_qdisc, uint32_t fwmark,
+                radiotap_header_t &radiotap_header, uint8_t frame_type, int control_port, bool mirror)
+{
+    vector<int> rx_fd;
+    vector<string> wlans;
+    vector<tags_item_t> tags;
+    shared_ptr<Transmitter> t;
+
+    for(int i = 0; optind + i < argc; i++)
+    {
+        int bind_port = udp_port != 0 ? udp_port + i : 0;
+        int fd = open_udp_socket_for_rx(bind_port, rcv_buf);
+
+        if (udp_port == 0)
+        {
+            struct sockaddr_in saddr;
+            socklen_t saddr_size = sizeof(saddr);
+
+            if (getsockname(fd, (struct sockaddr *)&saddr, &saddr_size) != 0)
+            {
+                throw runtime_error(string_format("Unable to get socket info: %s", strerror(errno)));
+            }
+            bind_port = ntohs(saddr.sin_port);
+            printf("%" PRIu64 "\tLISTEN_UDP\t%d:%x\n", get_time_ms(), bind_port, i);
+        }
+        fprintf(stderr, "Listen on %d for %s\n", bind_port, argv[optind + i]);
+        rx_fd.push_back(fd);
+        wlans.push_back(string(argv[optind + i]));
+    }
+
+    if (udp_port == 0)
+    {
+        printf("%" PRIu64 "\tLISTEN_UDP_END\n", get_time_ms());
+        fflush(stdout);
+    }
+
+    if (debug_port)
+    {
+        fprintf(stderr, "Using %zu ports from %d for wlan emulation\n", wlans.size(), debug_port);
+        t = shared_ptr<UdpTransmitter>(new UdpTransmitter(k, n, keypair, "127.0.0.1", debug_port, epoch, channel_id,
+                                                          fec_delay, tags, use_qdisc, fwmark));
+    }
+    else
+    {
+        t = shared_ptr<RawSocketTransmitter>(new RawSocketTransmitter(k, n, keypair, epoch, channel_id, fec_delay, tags,
+                                                                              wlans, radiotap_header, frame_type, use_qdisc, fwmark));
+    }
+
+    int control_fd = open_control_fd(control_port);
+    data_source(t, rx_fd, control_fd, fec_timeout, mirror, log_interval);
+}
+
+void distributor_loop(int argc, char* const* argv, int optind, int srv_port, int rcv_buf, int log_interval,
+                      int udp_port, int k, int n, const string &keypair, int fec_timeout,
+                      uint64_t epoch, uint32_t channel_id, uint32_t fec_delay, bool use_qdisc, uint32_t fwmark,
+                      radiotap_header_t &radiotap_header, uint8_t frame_type, int control_port, bool mirror)
+{
+    vector<int> rx_fd;
+    vector<pair<string, vector<uint16_t>>> remote_hosts;
+    int port_idx = 0;
+
+    set<string> hosts;
+
+    for(int i = optind; i < argc; i++)
+    {
+        vector<uint16_t> remote_ports;
+        char *p = argv[i];
+        char *t = NULL;
+
+        t = strsep(&p, ":");
+        if (t == NULL) continue;
+
+        string remote_host = string(t);
+
+        if(hosts.count(remote_host))
+        {
+            throw runtime_error(string_format("Duplicate host %s", remote_host.c_str()));
+        }
+
+        hosts.insert(remote_host);
+
+        for(int j=0; (t=strsep(&p, ",")) != NULL; j++)
+        {
+            uint16_t remote_port = atoi(t);
+            int bind_port = (udp_port != 0) ? (udp_port + port_idx++) : 0;
+            int fd = open_udp_socket_for_rx(bind_port, rcv_buf);
+
+            if (udp_port == 0)
+            {
+                struct sockaddr_in saddr;
+                socklen_t saddr_size = sizeof(saddr);
+
+                if (getsockname(fd, (struct sockaddr *)&saddr, &saddr_size) != 0)
+                {
+                    throw runtime_error(string_format("Unable to get socket info: %s", strerror(errno)));
+                }
+                bind_port = ntohs(saddr.sin_port);
+
+                uint64_t wlan_id = (uint64_t)ntohl(inet_addr(remote_host.c_str())) << 24  | j;
+                printf("%" PRIu64 "\tLISTEN_UDP\t%d:%" PRIx64 "\n", get_time_ms(), bind_port, wlan_id);
+            }
+
+            fprintf(stderr, "Listen on %d for %s:%d\n", bind_port, remote_host.c_str(), remote_port);
+
+            rx_fd.push_back(fd);
+            remote_ports.push_back(remote_port);
+        }
+
+        remote_hosts.push_back(pair<string, vector<uint16_t>>(remote_host, remote_ports));
+    }
+
+    if (udp_port == 0)
+    {
+        printf("%" PRIu64 "\tLISTEN_UDP_END\n", get_time_ms());
+        fflush(stdout);
+    }
+
+    vector<tags_item_t> tags;
+    shared_ptr<Transmitter> t = shared_ptr<RemoteTransmitter>(new RemoteTransmitter(k, n, keypair, epoch, channel_id, fec_delay, tags,
+                                                                                   remote_hosts, radiotap_header, frame_type, use_qdisc, fwmark));
+
+    int control_fd = open_control_fd(control_port);
+    data_source(t, rx_fd, control_fd, fec_timeout, mirror, log_interval);
+}
+
 int main(int argc, char * const *argv)
 {
     int opt;
@@ -981,6 +1464,7 @@ int main(int argc, char * const *argv)
     uint32_t fec_delay = 0;
     uint32_t link_id = 0x0;
     uint64_t epoch = 0;
+    int srv_port = 10000;
     int udp_port=5600;
     int control_port=0;
     int log_interval = 1000;
@@ -1000,9 +1484,17 @@ int main(int argc, char * const *argv)
     uint8_t frame_type = FRAME_TYPE_DATA;
     bool use_qdisc = false;
     uint32_t fwmark = 0;
+    tx_mode_t tx_mode = LOCAL;
 
-    while ((opt = getopt(argc, argv, "K:k:n:u:p:F:l:B:G:S:L:M:N:D:T:i:e:R:f:mVQP:C:")) != -1) {
+    while ((opt = getopt(argc, argv, "dI:K:k:n:u:p:F:l:B:G:S:L:M:N:D:T:i:e:R:f:mVQP:C:")) != -1) {
         switch (opt) {
+        case 'I':
+            tx_mode = INJECTOR;
+            srv_port = atoi(optarg);
+            break;
+        case 'd':
+            tx_mode = DISTRIBUTOR;
+            break;
         case 'K':
             keypair = optarg;
             break;
@@ -1095,7 +1587,13 @@ int main(int argc, char * const *argv)
             break;
         default: /* '?' */
         show_usage:
-            fprintf(stderr, "Usage: %s [-K tx_key] [-k RS_K] [-n RS_N] [-u udp_port] [-R rcv_buf] [-p radio_port] [-F fec_delay] [-B bandwidth] [-G guard_interval] [-S stbc] [-L ldpc] [-M mcs_index] [-N VHT_NSS] [-T fec_timeout] [-l log_interval] [-e epoch] [-i link_id] [-f { data | rts }] [-m] [-V] [-Q] [-P fwmark] [-C control_port] interface1 [interface2] ...\n",
+            fprintf(stderr, "Local TX: %s [-K tx_key] [-k RS_K] [-n RS_N] [-u udp_port] [-R rcv_buf] [-p radio_port] [-F fec_delay] [-B bandwidth] [-G guard_interval] [-S stbc] [-L ldpc] [-M mcs_index] [-N VHT_NSS]\n"
+                            "             [-T fec_timeout] [-l log_interval] [-e epoch] [-i link_id] [-f { data | rts }] [-m] [-V] [-Q] [-P fwmark] [-C control_port] interface1 [interface2] ...\n",
+                    argv[0]);
+            fprintf(stderr, "TX distributor: %s -d [-K tx_key] [-k RS_K] [-n RS_N] [-u udp_port] [-R rcv_buf] [-p radio_port] [-F fec_delay] [-B bandwidth] [-G guard_interval] [-S stbc] [-L ldpc] [-M mcs_index] [-N VHT_NSS]\n"
+                            "                      [-T fec_timeout] [-l log_interval] [-e epoch] [-i link_id] [-f { data | rts }] [-m] [-V] [-Q] [-P fwmark] [-C control_port] host1:port1,port2,... [host2:port1,port2,...] ...\n",
+                    argv[0]);
+            fprintf(stderr, "TX injector: %s -I port [-Q] [-R rcv_buf] [-l log_interval] interface1 [interface2] ...\n",
                     argv[0]);
             fprintf(stderr, "Default: K='%s', k=%d, n=%d, fec_delay=%u [us], udp_port=%d, link_id=0x%06x, radio_port=%u, epoch=%" PRIu64 ", bandwidth=%d guard_interval=%s stbc=%d ldpc=%d mcs_index=%d vht_nss=%d, vht_mode=%d, fec_timeout=%d, log_interval=%d, rcv_buf=system_default, frame_type=data, mirror=false, use_qdisc=false, fwmark=%u, control_port=%d\n",
                     keypair.c_str(), k, n, fec_delay, udp_port, link_id, radio_port, epoch, bandwidth, short_gi ? "short" : "long", stbc, ldpc, mcs_index, vht_nss, vht_mode, fec_timeout, log_interval, fwmark, control_port);
@@ -1134,70 +1632,34 @@ int main(int argc, char * const *argv)
     try
     {
         auto radiotap_header = init_radiotap_header(stbc, ldpc, short_gi, bandwidth, mcs_index, vht_mode, vht_nss);
-
-        vector<int> rx_fd;
-        vector<string> wlans;
-        int control_fd = open_udp_socket_for_rx(control_port, 0, 0x7f000001);  // bind to 127.0.0.1 for security reasons
-
-        if (control_port == 0)
-        {
-            struct sockaddr_in saddr;
-            socklen_t saddr_size = sizeof(saddr);
-
-            if (getsockname(control_fd, (struct sockaddr *)&saddr, &saddr_size) != 0)
-            {
-                throw runtime_error(string_format("Unable to get socket info: %s", strerror(errno)));
-            }
-            control_port = ntohs(saddr.sin_port);
-            printf("%" PRIu64 "\tLISTEN_UDP_CONTROL\t%d\n", get_time_ms(), control_port);
-        }
-        fprintf(stderr, "Listen on %d for management commands\n", control_port);
-
-        for(int i = 0; optind + i < argc; i++)
-        {
-            int bind_port = udp_port != 0 ? udp_port + i : 0;
-            int fd = open_udp_socket_for_rx(bind_port, rcv_buf);
-
-            if (udp_port == 0)
-            {
-                struct sockaddr_in saddr;
-                socklen_t saddr_size = sizeof(saddr);
-
-                if (getsockname(fd, (struct sockaddr *)&saddr, &saddr_size) != 0)
-                {
-                    throw runtime_error(string_format("Unable to get socket info: %s", strerror(errno)));
-                }
-                bind_port = ntohs(saddr.sin_port);
-                printf("%" PRIu64 "\tLISTEN_UDP\t%d:%s\n", get_time_ms(), bind_port, argv[optind + i]);
-            }
-            fprintf(stderr, "Listen on %d for %s\n", bind_port, argv[optind + i]);
-            rx_fd.push_back(fd);
-            wlans.push_back(string(argv[optind + i]));
-        }
-
-        if (udp_port == 0)
-        {
-            printf("%" PRIu64 "\tLISTEN_UDP_END\n", get_time_ms());
-            fflush(stdout);
-        }
-
-        vector<tags_item_t> tags;
-        shared_ptr<Transmitter> t;
-
         uint32_t channel_id = (link_id << 8) + radio_port;
 
-        if (debug_port)
+        switch(tx_mode)
         {
-            fprintf(stderr, "Using %zu ports from %d for wlan emulation\n", wlans.size(), debug_port);
-            t = shared_ptr<UdpTransmitter>(new UdpTransmitter(k, n, keypair, "127.0.0.1", debug_port, epoch, channel_id,
-                                                              fec_delay, tags, use_qdisc, fwmark));
-        } else {
-            t = shared_ptr<RawSocketTransmitter>(new RawSocketTransmitter(k, n, keypair, epoch, channel_id, fec_delay, tags,
-                                                                          wlans, radiotap_header, frame_type, use_qdisc, fwmark));
-        }
+        case INJECTOR:
+            injector_loop(argc, argv, optind, srv_port, rcv_buf, use_qdisc, log_interval);
+            break;
 
-        data_source(t, rx_fd, control_fd, fec_timeout, mirror, log_interval);
-    }catch(runtime_error &e)
+        case LOCAL:
+            local_loop(argc, argv, optind, srv_port, rcv_buf, log_interval,
+                       udp_port, debug_port, k, n, keypair, fec_timeout,
+                       epoch, channel_id, fec_delay, use_qdisc, fwmark,
+                       radiotap_header, frame_type, control_port, mirror);
+            break;
+
+
+        case DISTRIBUTOR:
+            distributor_loop(argc, argv, optind, srv_port, rcv_buf, log_interval,
+                             udp_port, k, n, keypair, fec_timeout,
+                             epoch, channel_id, fec_delay, use_qdisc, fwmark,
+                             radiotap_header, frame_type, control_port, mirror);
+            break;
+
+        default:
+            assert(0);
+        }
+    }
+    catch(runtime_error &e)
     {
         fprintf(stderr, "Error: %s\n", e.what());
         exit(1);

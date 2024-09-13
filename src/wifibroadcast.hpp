@@ -253,8 +253,11 @@ typedef struct {
 #define MAX_FEC_PAYLOAD  (WIFI_MTU - sizeof(ieee80211_header) - sizeof(wblock_hdr_t) - crypto_aead_chacha20poly1305_ABYTES)
 #define MAX_FORWARDER_PACKET_SIZE (WIFI_MTU - sizeof(ieee80211_header))
 #define MAX_SESSION_PACKET_SIZE (WIFI_MTU - sizeof(ieee80211_header))
+#define MIN_DISTRIBUTION_PACKET_SIZE (sizeof(uint32_t) + sizeof(radiotap_header_ht) + sizeof(ieee80211_header))   // ht hdr < vht hdr
+#define MAX_DISTRIBUTION_PACKET_SIZE (sizeof(uint32_t) + sizeof(radiotap_header_vht) + WIFI_MTU)
+#define MAX_PCAP_PACKET_SIZE (WIFI_MTU + 256)  // radiotap header is variable but 8812au/eu has max rtap buffer size 256
 
-int open_udp_socket_for_rx(int port, int rcv_buf_size, uint32_t bind_addr = INADDR_ANY);
+int open_udp_socket_for_rx(int port, int rcv_buf_size, uint32_t bind_addr = INADDR_ANY, int socket_type = SOCK_DGRAM, int socket_protocol = 0);
 uint64_t get_time_ms(void);
 uint64_t get_time_us(void);
 

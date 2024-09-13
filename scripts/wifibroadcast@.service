@@ -9,7 +9,7 @@ Type=simple
 EnvironmentFile=/etc/default/wifibroadcast
 # per-profile environment
 EnvironmentFile=-/etc/default/wifibroadcast.%i
-ExecStart=/usr/bin/wfb-server %i ${WFB_NICS}
+ExecStart=/bin/bash -c "exec /usr/bin/wfb-server --profiles $(echo %i | tr : ' ') --wlans ${WFB_NICS}"
 TimeoutStopSec=5s
 Restart=on-failure
 RestartSec=5s

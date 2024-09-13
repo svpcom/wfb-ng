@@ -50,7 +50,7 @@ extern "C"
 using namespace std;
 
 
-Receiver::Receiver(const char *wlan, int wlan_idx, uint32_t channel_id, BaseAggregator *agg) : wlan_idx(wlan_idx), agg(agg)
+Receiver::Receiver(const char *wlan, int wlan_idx, uint32_t channel_id, BaseAggregator *agg, int rcv_buf_size) : wlan_idx(wlan_idx), agg(agg)
 {
     char errbuf[PCAP_ERRBUF_SIZE];
 
@@ -60,9 +60,10 @@ Receiver::Receiver(const char *wlan, int wlan_idx, uint32_t channel_id, BaseAggr
         throw runtime_error(string_format("Unable to open interface %s in pcap: %s", wlan, errbuf));
     }
 
-    if (pcap_set_snaplen(ppcap, 4096) !=0) throw runtime_error("set_snaplen failed");
+    if (rcv_buf_size > 0 && pcap_set_buffer_size(ppcap, rcv_buf_size) != 0) throw runtime_error("set_buffer_size failed");
+    if (pcap_set_snaplen(ppcap, MAX_PCAP_PACKET_SIZE) != 0) throw runtime_error("set_snaplen failed");
     if (pcap_set_promisc(ppcap, 1) != 0) throw runtime_error("set_promisc failed");
-    if (pcap_set_timeout(ppcap, -1) !=0) throw runtime_error("set_timeout failed");
+    if (pcap_set_timeout(ppcap, -1) != 0) throw runtime_error("set_timeout failed");
     if (pcap_set_immediate_mode(ppcap, 1) != 0) throw runtime_error(string_format("pcap_set_immediate_mode failed: %s", pcap_geterr(ppcap)));
     if (pcap_activate(ppcap) !=0) throw runtime_error(string_format("pcap_activate failed: %s", pcap_geterr(ppcap)));
     if (pcap_setnonblock(ppcap, 1, errbuf) != 0) throw runtime_error(string_format("set_nonblock failed: %s", errbuf));
@@ -850,7 +851,7 @@ void Aggregator::apply_fec(int ring_idx)
     fec_decode(fec_p, (const uint8_t**)in_blocks, out_blocks, index, MAX_FEC_PAYLOAD);
 }
 
-void radio_loop(int argc, char* const *argv, int optind, uint32_t channel_id, shared_ptr<BaseAggregator> agg, int log_interval)
+void radio_loop(int argc, char* const *argv, int optind, uint32_t channel_id, shared_ptr<BaseAggregator> agg, int log_interval, int rcv_buf_size)
 {
     int nfds = argc - optind;
     uint64_t log_send_ts = 0;
@@ -866,7 +867,7 @@ void radio_loop(int argc, char* const *argv, int optind, uint32_t channel_id, sh
 
     for(int i = 0; i < nfds; i++)
     {
-        rx[i] = new Receiver(argv[optind + i], i, channel_id, agg.get());
+        rx[i] = new Receiver(argv[optind + i], i, channel_id, agg.get(), rcv_buf_size);
         fds[i].fd = rx[i]->getfd();
         fds[i].events = POLLIN;
     }
@@ -970,7 +971,6 @@ void network_loop(int srv_port, Aggregator &agg, int log_interval, int rcv_buf_s
 
                 if (rsize < (ssize_t)sizeof(wrxfwd_t))
                 {
-                    fprintf(stderr, "Short packet (rx fwd header)\n");
                     continue;
                 }
                 agg.process_packet(buf, rsize - sizeof(wrxfwd_t),
@@ -1035,8 +1035,8 @@ int main(int argc, char* const *argv)
             break;
         default: /* '?' */
         show_usage:
-            fprintf(stderr, "Local receiver: %s [-K rx_key] [-c client_addr] [-u client_port] [-p radio_port] [-l log_interval] [-e epoch] [-i link_id] interface1 [interface2] ...\n", argv[0]);
-            fprintf(stderr, "Remote (forwarder): %s -f [-c client_addr] [-u client_port] [-p radio_port] [-i link_id] interface1 [interface2] ...\n", argv[0]);
+            fprintf(stderr, "Local receiver: %s [-K rx_key] [-c client_addr] [-u client_port] [-p radio_port] [-R rcv_buf] [-l log_interval] [-e epoch] [-i link_id] interface1 [interface2] ...\n", argv[0]);
+            fprintf(stderr, "Remote (forwarder): %s -f [-c client_addr] [-u client_port] [-p radio_port]  [-R rcv_buf] [-i link_id] interface1 [interface2] ...\n", argv[0]);
             fprintf(stderr, "Remote (aggregator): %s -a server_port [-K rx_key] [-c client_addr] [-R rcv_buf] [-u client_port] [-l log_interval] [-p radio_port] [-e epoch] [-i link_id]\n", argv[0]);
             fprintf(stderr, "Default: K='%s', connect=%s:%d, link_id=0x%06x, radio_port=%u, epoch=%" PRIu64 ", log_interval=%d, rcv_buf=system_default\n", keypair.c_str(), client_addr.c_str(), client_port, link_id, radio_port, epoch, log_interval);
             fprintf(stderr, "WFB-ng version %s\n", WFB_VERSION);
@@ -1080,7 +1080,7 @@ int main(int argc, char* const *argv)
                 agg = shared_ptr<Forwarder>(new Forwarder(client_addr, client_port));
             }
 
-            radio_loop(argc, argv, optind, channel_id, agg, log_interval);
+            radio_loop(argc, argv, optind, channel_id, agg, log_interval, rcv_buf);
         }else if(rx_mode == AGGREGATOR)
         {
             if (optind > argc) goto show_usage;

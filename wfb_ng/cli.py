@@ -125,8 +125,22 @@ def human_rate(r):
         return '%3d %s' % (rate, mod)
 
 
+def format_ant(ant_id):
+    if ant_id < (1<<32):
+        if ant_id & 0xff == 0xff:
+            return '%2X:X ' % (ant_id >> 8)
+        else:
+            return '%2X:%X ' % (ant_id >> 8, ant_id & 0xff)
+
+    if ant_id & 0xff == 0xff:
+        return '%08X:%X:X' % (ant_id >> 32, (ant_id >> 8) & 0xff)
+    else:
+        return '%08X:%X:%X' % (ant_id >> 32, (ant_id >> 8) & 0xff, ant_id & 0xff)
+
+
 class AntennaStat(Int32StringReceiver):
     MAX_LENGTH = 1024 * 1024
+    is_cluster = False
 
     def stringReceived(self, string):
         attrs = msgpack.unpackb(string, strict_map_key=False, use_list=False)
@@ -136,13 +150,14 @@ class AntennaStat(Int32StringReceiver):
         elif attrs['type'] == 'tx':
             self.draw_tx(attrs)
         elif attrs['type'] == 'cli_title':
+            self.is_cluster = attrs['is_cluster']
             set_window_title(attrs['cli_title'])
 
     def draw_rx(self, attrs):
         p = attrs['packets']
         session_d = attrs['session']
         stats_d = attrs['rx_ant_stats']
-        tx_ant = attrs.get('tx_ant')
+        tx_wlan = attrs.get('tx_wlan')
         rx_id = attrs['id']
 
         window = self.factory.windows.get(rx_id)
@@ -175,14 +190,21 @@ class AntennaStat(Int32StringReceiver):
         addstr_markup(window, 0, 20, flow_str)
 
         if stats_d:
-            addstr_markup(window, 2, 20, '{Freq MCS BW [ANT] pkt/s}     {RSSI} [dBm]        {SNR} [dB]')
+            if self.is_cluster:
+                lpad = ' ' * 4
+                rpad = ' ' * 3
+            else:
+                lpad = ''
+                rpad = ''
+
+            addstr_markup(window, 2, 20, '{Freq MCS BW %s[ANT]%s pkt/s}     {RSSI} [dBm]        {SNR} [dB]' % (lpad, rpad))
             for y, (((freq, mcs_index, bandwith), ant_id), v) in enumerate(sorted(stats_d.items()), 3):
                 pkt_s, rssi_min, rssi_avg, rssi_max, snr_min, snr_avg, snr_max = v
                 if y < ymax:
-                    active_tx = (ant_id >> 8) == tx_ant
-                    addstr_markup(window, y, 20, '%04d %3d %2d  %s%04x%s  %4d  %3d < {%3d} < %3d  %3d < {%3d} < %3d' % \
+                    active_tx = ((ant_id >> 8) == tx_wlan)
+                    addstr_markup(window, y, 20, '%04d %3d %2d %s%s%s  %4d  %3d < {%3d} < %3d  %3d < {%3d} < %3d' % \
                            (freq, mcs_index, bandwith,
-                            '{' if active_tx else '', ant_id, '}' if active_tx else '',
+                            '{' if active_tx else '', format_ant(ant_id), '}' if active_tx else '',
                             pkt_s,
                             rssi_min, rssi_avg, rssi_max,
                             snr_min, snr_avg, snr_max), 0 if active_tx else curses.A_DIM)
@@ -221,7 +243,14 @@ class AntennaStat(Int32StringReceiver):
                   human_rate(p['injected_bytes'][0])))
 
         if latency_d:
-            addstr_markup(window, 2, 20, '{[ANT] pkt/s}   {\u00b0C}    {Injection} [us]')
+            if self.is_cluster:
+                lpad = ' ' * 4
+                rpad = ' ' * 3
+            else:
+                lpad = ''
+                rpad = ''
+
+            addstr_markup(window, 2, 20, '{%s[ANT]%s pkt/s}   {\u00b0C}    {Injection} [us]' % (lpad, rpad))
             for y, (k, v) in enumerate(sorted(latency_d.items()), 3):
                 k = int(k) # json doesn't support int keys
                 injected, dropped, lat_min, lat_avg, lat_max = v
@@ -237,7 +266,7 @@ class AntennaStat(Int32StringReceiver):
                     temp = ' (--)'
 
                 if y < ymax:
-                    addstr_markup(window, y, 21, '{%02x}(XX)  %4d  %3s %4d < {%4d} < %4d' % (k >> 8, injected, temp, lat_min, lat_avg, lat_max))
+                    addstr_markup(window, y, 20, '{%s}  %4d  %3s %4d < {%4d} < %4d' % (format_ant(k), injected, temp, lat_min, lat_avg, lat_max))
         else:
             addstr_noerr(window, 2, 20, '[No data]', curses.A_REVERSE)
 
@@ -262,7 +291,7 @@ class AntennaStatClientFactory(ReconnectingClientFactory):
         curses.resize_term(height, width)
         self.stdscr.clear()
 
-        service_list = list((s_name, cfg.stream_rx is not None, cfg.stream_tx is not None) for s_name, _, cfg in  parse_services(self.profile))
+        service_list = list((s_name, cfg.stream_rx is not None, cfg.stream_tx is not None) for s_name, _, cfg in  parse_services(self.profile, None))
 
         if not service_list:
             rectangle(self.stdscr, 0, 0, height - 1, width - 1)

@@ -12,7 +12,9 @@ from twisted.internet import reactor, defer
 from twisted.internet.protocol import DatagramProtocol
 
 from ..common import df_sleep
-from ..server import RXProtocol, TXProtocol, call_and_check_rc
+from ..protocols import RXProtocol, TXProtocol
+from .. import call_and_check_rc
+
 
 class UDP_TXRX(DatagramProtocol):
     def __init__(self, tx_addr):

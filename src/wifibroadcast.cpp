@@ -62,10 +62,10 @@ uint64_t get_time_us(void) // in microseconds
     return ts.tv_sec * 1000000LL + ts.tv_nsec / 1000;
 }
 
-int open_udp_socket_for_rx(int port, int rcv_buf_size, uint32_t bind_addr)
+int open_udp_socket_for_rx(int port, int rcv_buf_size, uint32_t bind_addr, int socket_type, int socket_protocol)
 {
     struct sockaddr_in saddr;
-    int fd = socket(AF_INET, SOCK_DGRAM, 0);
+    int fd = socket(AF_INET, socket_type, socket_protocol);
     if (fd < 0) throw runtime_error(string_format("Error opening socket: %s", strerror(errno)));
 
     const int optval = 1;

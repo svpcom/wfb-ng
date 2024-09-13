@@ -23,7 +23,7 @@ _CFLAGS := $(CFLAGS) -Wall -O2 -fno-strict-aliasing -DWFB_VERSION='"$(VERSION)-$
 all: all_bin gs.key test
 
 $(ENV):
-	virtualenv --python=$(PYTHON) $(ENV)
+	$(PYTHON) -m virtualenv $(ENV)
 	$$(PATH=$(ENV)/bin:$(ENV)/local/bin:$(PATH) which pip3) install --upgrade pip setuptools $(STDEB)
 
 all_bin: wfb_rx wfb_tx wfb_keygen wfb_tx_cmd
