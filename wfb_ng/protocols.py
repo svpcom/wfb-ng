@@ -116,6 +116,7 @@ class StatsAndSelectorFactory(Factory):
         self.is_cluster = is_cluster
         self.ant_sel_cb_list = []
         self.rssi_cb_l = []
+        self.cur_stats = {}
 
         self.tx_sel = None
         self.tx_sel_rssi_delta = settings.common.tx_sel_rssi_delta
@@ -134,8 +135,11 @@ class StatsAndSelectorFactory(Factory):
         self.cli_title = cli_title
         self.rf_temp_meter = rf_temp_meter
 
+        self.lc = task.LoopingCall(self.aggregate_stats)
+        self.lc.start(settings.common.log_interval / 1000.0, now=False)
+
     def _cleanup(self):
-        pass
+        self.lc.stop()
 
     def add_ant_sel_cb(self, ant_sel_cb):
         self.ant_sel_cb_list.append(ant_sel_cb)
@@ -144,27 +148,28 @@ class StatsAndSelectorFactory(Factory):
     def add_rssi_cb(self, rssi_cb):
         self.rssi_cb_l.append(rssi_cb)
 
-    def _stats_agg_by_freq(self, ant_stats):
+    def _stats_agg_by_freq_and_rxid(self, ant_stats_by_rx):
         stats_agg = {}
 
-        for (((freq, mcs_index, bandwidth), ant_id),
-             (pkt_s,
-              rssi_min, rssi_avg, rssi_max,
-              snr_min, snr_avg, snr_max)) in ant_stats.items():
+        for ant_stats in ant_stats_by_rx.values():
+            for (((freq, mcs_index, bandwidth), ant_id),
+                 (pkt_s,
+                  rssi_min, rssi_avg, rssi_max,
+                  snr_min, snr_avg, snr_max)) in ant_stats.items():
 
-            if ant_id not in stats_agg:
-                stats_agg[ant_id] = (pkt_s,
-                                     rssi_min, rssi_avg * pkt_s, rssi_max,
-                                     snr_min, snr_avg * pkt_s, snr_max)
-            else:
-                tmp = stats_agg[ant_id]
-                stats_agg[ant_id] = (pkt_s + tmp[0],
-                                    min(rssi_min, tmp[1]),
-                                    rssi_avg * pkt_s + tmp[2],
-                                    max(rssi_max, tmp[3]),
-                                    min(snr_min, tmp[4]),
-                                    snr_avg * pkt_s + tmp[5],
-                                    max(snr_max, tmp[6]))
+                if ant_id not in stats_agg:
+                    stats_agg[ant_id] = (pkt_s,
+                                         rssi_min, rssi_avg * pkt_s, rssi_max,
+                                         snr_min, snr_avg * pkt_s, snr_max)
+                else:
+                    tmp = stats_agg[ant_id]
+                    stats_agg[ant_id] = (pkt_s + tmp[0],
+                                        min(rssi_min, tmp[1]),
+                                        rssi_avg * pkt_s + tmp[2],
+                                        max(rssi_max, tmp[3]),
+                                        min(snr_min, tmp[4]),
+                                        snr_avg * pkt_s + tmp[5],
+                                        max(snr_max, tmp[6]))
 
         return dict((ant_id, (pkt_s,
                               rssi_min, rssi_avg // pkt_s, rssi_max,
@@ -230,8 +235,12 @@ class StatsAndSelectorFactory(Factory):
                                         id=rx_id,
                                         **session))
 
-    def update_rx_stats(self, rx_id, packet_stats, ant_stats, session):
-        stats_agg = self._stats_agg_by_freq(ant_stats)
+    def aggregate_stats(self):
+        cur_stats, self.cur_stats = self.cur_stats, {}
+        ant_stats_by_rx = dict((rx_id, ant_stats) for rx_id, (ant_stats, packet_stats) in cur_stats.items())
+        packet_stats_by_rx = dict((rx_id, packet_stats) for rx_id, (ant_stats, packet_stats) in cur_stats.items())
+
+        stats_agg = self._stats_agg_by_freq_and_rxid(ant_stats_by_rx)
         card_rssi_l = list(rssi_avg
                            for pkt_s,
                                rssi_min, rssi_avg, rssi_max,
@@ -245,25 +254,31 @@ class StatsAndSelectorFactory(Factory):
             _idx = 0 if settings.common.mavlink_err_rate else 1
             flags = 0
 
+            bad_packets = sum(p['dec_err'][0] + p['bad'][0] for p in packet_stats_by_rx.values())
+
             if not card_rssi_l:
                 flags |= WFBFlags.LINK_LOST
 
-            elif packet_stats['dec_err'][0] + packet_stats['bad'][0] > 0:
+            elif bad_packets > 0:
                 flags |= WFBFlags.LINK_JAMMED
 
-            rx_errors = min(packet_stats['dec_err'][_idx] + packet_stats['bad'][_idx] + packet_stats['lost'][_idx], 65535)
-            rx_fec = min(packet_stats['fec_rec'][_idx], 65535)
+            rx_errors = sum(p['dec_err'][_idx] + p['bad'][_idx] + p['lost'][_idx] for p in packet_stats_by_rx.values())
+            rx_fec = sum(p['fec_rec'][_idx] for p in packet_stats_by_rx.values())
             mav_rssi = (max(card_rssi_l) if card_rssi_l else -128) % 256
 
             for rssi_cb in self.rssi_cb_l:
                 try:
-                    rssi_cb(rx_id, mav_rssi, rx_errors, rx_fec, flags)
+                    rssi_cb(mav_rssi, min(rx_errors, 65535), min(rx_fec, 65535), flags)
                 except Exception:
                     log.err()
 
         if settings.common.debug:
-            log.msg('%s rssi %s TX %x %s %s' % (rx_id, max(card_rssi_l) if card_rssi_l else 'N/A',
-                                                self.tx_sel if self.tx_sel is not None else -1, packet_stats, ant_stats))
+            log.msg('RSSI %s TX %x %s %s' % (max(card_rssi_l) if card_rssi_l else 'N/A',
+                                             self.tx_sel if self.tx_sel is not None else -1, packet_stats_by_rx, ant_stats_by_rx))
+
+
+    def update_rx_stats(self, rx_id, packet_stats, ant_stats, session):
+        self.cur_stats[rx_id] = (ant_stats, packet_stats)
 
         # Send stats to CLI sessions and logger
         for s in self.ui_sessions:

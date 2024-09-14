@@ -82,7 +82,7 @@ class UDPProxyTestCase(unittest.TestCase):
         yield df_sleep(0.1)
 
         try:
-            self.p1.send_rssi('test', 1, 2, 3, 4)
+            self.p1.send_rssi(1, 2, 3, 4)
             ts = time.time()
             _replies = yield p.df
             _expected = [(b'\xfd\t\x00\x00\x00\x03\xf2m\x00\x00\x02\x00\x03\x00\x01\x01d\x00\x04\xa8\xad', addr)]
