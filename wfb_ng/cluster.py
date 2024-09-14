@@ -131,7 +131,7 @@ wfb_tx -I {{ attrs['tx_port_base'] }} -R {{ settings.common.tx_rcv_buf_size }} {
 {% endfor %}
 
 # Fail in case of connection loss
-(set +x; sleep 1; exec cat > /dev/null) &
+(sleep 1; exec cat > /dev/null) &
 
 wait -n
 '''

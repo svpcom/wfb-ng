@@ -114,7 +114,7 @@ def init(profiles, wlans, cluster_mode):
         if cluster_mode == 'ssh':
             for node, setup_script in gen_cluster_scripts(cluster_nodes).items():
                 dl.append(SSHClientProtocol(node, settings.cluster.ssh_user,
-                                            '/bin/bash', '-x',
+                                            '/bin/bash',
                                             key=settings.cluster.ssh_key,
                                             port=settings.cluster.ssh_port,
                                             use_agent=settings.cluster.ssh_key is None,
