@@ -46,9 +46,9 @@ def abort_on_crash(f, stop_reactor=True, warn_cancel=True):
         f = f.value.subFailure
 
     if settings.common.debug:
-        log.err(f, 'Stopping reactor due to fatal error')
+        log.err(f, 'Stopping reactor due to fatal error', isError=1)
     else:
-        log.msg('Stopping reactor due to fatal error: %s' % (f.value,))
+        log.msg('Stopping reactor due to fatal error: %s' % (f.value,), isError=1)
 
     fatal_error(stop_reactor)
 
@@ -56,3 +56,9 @@ def abort_on_crash(f, stop_reactor=True, warn_cancel=True):
 def df_sleep(timeout, res=None):
     return task.deferLater(reactor, timeout, lambda: res)
 
+
+def search_attr(key, *attrs):
+    for a in attrs:
+        if key in a:
+            return a[key]
+    raise KeyError('Attribute %r is not defined!' % (key,))

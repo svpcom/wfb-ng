@@ -30,7 +30,7 @@ from twisted.python import log, failure
 from twisted.internet import reactor, defer
 
 from . import _log_msg, ConsoleObserver, ErrorSafeLogFile, call_and_check_rc, ExecError, version_msg
-from .common import abort_on_crash, exit_status, df_sleep
+from .common import abort_on_crash, exit_status, df_sleep, search_attr
 from .protocols import StatsAndSelectorFactory, RFTempMeter, SSHClientProtocol
 from .services import parse_services, init_udp_direct_tx, init_udp_direct_rx, init_mavlink, init_tunnel, init_udp_proxy, hash_link_domain, bandwidth_map
 from .cluster import parse_cluster_services, gen_cluster_scripts
@@ -88,8 +88,15 @@ def init_wlans(max_bw, wlans):
 
             yield call_and_check_rc('iw', 'dev', wlan, 'set', 'channel', str(channel), ht_mode)
 
-            if settings.common.wifi_txpower:
-                yield call_and_check_rc('iw', 'dev', wlan, 'set', 'txpower', 'fixed', str(settings.common.wifi_txpower))
+            # You can set own tx power for each card
+            if isinstance(settings.common.wifi_txpower, dict):
+                txpower = settings.common.wifi_txpower[wlan]
+            else:
+                txpower = settings.common.wifi_txpower
+
+            if txpower is not None:
+                yield call_and_check_rc('iw', 'dev', wlan, 'set', 'txpower', 'fixed', str(txpower))
+
     except ExecError as v:
         if v.stdout:
             log.msg(v.stdout, isError=1)
@@ -109,16 +116,34 @@ def init(profiles, wlans, cluster_mode):
     dl = []
     is_cluster = bool(cluster_mode)
 
+    def _ssh_exited(x, node):
+        raise Exception('Connection to %s closed, aborting' % (node,))
+
     if is_cluster:
         services, cluster_nodes = parse_cluster_services(profiles)
         if cluster_mode == 'ssh':
             for node, setup_script in gen_cluster_scripts(cluster_nodes).items():
-                dl.append(SSHClientProtocol(node, settings.cluster.ssh_user,
-                                            '/bin/bash',
-                                            key=settings.cluster.ssh_key,
-                                            port=settings.cluster.ssh_port,
-                                            use_agent=settings.cluster.ssh_key is None,
-                                            stdin=setup_script).start())
+                ssh_user = search_attr('ssh_user',
+                                       settings.cluster.nodes[node],
+                                       settings.cluster.__dict__)
+
+                ssh_port = search_attr('ssh_port',
+                                       settings.cluster.nodes[node],
+                                       settings.cluster.__dict__)
+
+                ssh_key = search_attr('ssh_key',
+                                      settings.cluster.nodes[node],
+                                      settings.cluster.__dict__)
+
+                if ssh_user and ssh_port:
+                    dl.append(SSHClientProtocol(node,
+                                                ssh_user,
+                                                '/bin/bash',
+                                                key=ssh_key,
+                                                port=ssh_port,
+                                                use_agent=ssh_key is None,
+                                                stdin=setup_script).start()\
+                              .addBoth(_ssh_exited, node))
     else:
         services = list((profile, parse_services(profile, None)) for profile in profiles)
         # Do cards init

@@ -558,7 +558,7 @@ class SSHClientProtocol(ProcessProtocol):
 
     def processEnded(self, status):
         rc = status.value.exitCode
-        log.msg('Stopped ssh %s with code %s' % (self.host, rc))
+        log.msg('Stopped ssh %s with code %s' % (self.host, rc), isError=(rc != 0))
 
         if rc == 0:
             self.df.callback(str(status.value))

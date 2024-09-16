@@ -20,6 +20,7 @@
 import itertools
 from jinja2 import Environment, StrictUndefined
 
+from .common import search_attr
 from .services import parse_services, hash_link_domain, bandwidth_map
 from .conf import settings
 
@@ -27,22 +28,26 @@ def parse_cluster_services(profiles):
     if not settings.cluster.nodes:
         raise Exception('Cluster is empty!')
 
-    if not settings.cluster.server_address:
-        raise Exception('Server IP address is not set!')
-
     udp_port_allocator = itertools.count(settings.cluster.base_port_server)
     services = list((profile, parse_services(profile, udp_port_allocator)) for profile in profiles)
     port_allocators = {}
     cluster_nodes = {}
 
     def update_node(node, profile, service_name, link_id, tx_port_base, wlans, srv_cfg):
+        server_address = search_attr('server_address',
+                                     settings.cluster.nodes[node],
+                                     settings.cluster.__dict__)
+
+        if not server_address:
+            raise Exception('Server IP address is not set!')
+
         d = dict(wlans = wlans,
                  link_id = link_id,
                  bandwidth = srv_cfg.bandwidth,
                  stream_tx = srv_cfg.stream_tx,
                  stream_rx = srv_cfg.stream_rx,
                  tx_port_base = tx_port_base,
-                 rx_fwd = (settings.cluster.server_address, srv_cfg.udp_port_auto))
+                 rx_fwd = (server_address, srv_cfg.udp_port_auto))
 
         if node not in cluster_nodes:
             cluster_nodes[node] = {}
@@ -86,7 +91,7 @@ env.globals.update({'sorted': sorted, 'repr': repr, 'max': max,
 
 script_template = '''\
 #!/bin/bash
-set -em
+set -emb
 
 export LC_ALL=C
 
@@ -103,22 +108,22 @@ _cleanup()
 trap _cleanup EXIT
 
 iw reg set {{ settings.common.wifi_region }}
+{% for wlan in  wlans %}
 
-for wlan in {{ wlans|join(' ') }}
-do
-  if which nmcli > /dev/null && ! nmcli device show $wlan | grep -q '(unmanaged)'
-  then
-     nmcli device set $wlan managed no
-  fi
+# init {{ wlan }}
+if which nmcli > /dev/null && ! nmcli device show {{ wlan }} | grep -q '(unmanaged)'
+then
+  nmcli device set {{ wlan }} managed no
+fi
 
-  ip link set $wlan down
-  iw dev $wlan set monitor otherbss
-  ip link set $wlan up
-  iw dev $wlan set channel {{ settings.common.wifi_channel }} {{ ht_mode }}
-{% if settings.common.wifi_txpower != None %}
-  iw dev $wlan set txpower fixed {{ settings.common.wifi_txpower }}
+ip link set {{ wlan }} down
+iw dev {{ wlan }} set monitor otherbss
+ip link set {{ wlan }} up
+iw dev {{ wlan }} set channel {{ channel[wlan] }} {{ ht_mode }}
+{% if txpower[wlan] != None %}
+iw dev {{ wlan }} set txpower fixed {{ txpower[wlan] }}
 {% endif %}
-done
+{% endfor %}
 {% for service, attrs in services.items() %}
 
 # {{ service }}
@@ -130,10 +135,12 @@ wfb_tx -I {{ attrs['tx_port_base'] }} -R {{ settings.common.tx_rcv_buf_size }} {
 {% endif %}
 {% endfor %}
 
-# Fail in case of connection loss
+# Will fail in case of connection loss
 (sleep 1; exec cat > /dev/null) &
 
+echo "WFB-ng init done"
 wait -n
+
 '''
 
 script_template = env.from_string(script_template)
@@ -144,6 +151,25 @@ def gen_cluster_scripts(cluster_nodes):
     for node, node_attrs in cluster_nodes.items():
         wlans = sorted(set().union(*[srv_attrs['wlans'] for srv_attrs in node_attrs.values()]))
         max_bw = max(srv_attrs['bandwidth'] for srv_attrs in node_attrs.values())
-        res[node] = script_template.render(wlans=wlans, ht_mode=bandwidth_map[max_bw], services=node_attrs)
+
+        channel = search_attr('wifi_channel',
+                              settings.cluster.nodes[node],
+                              settings.common.__dict__)
+
+        if not isinstance(channel, dict):
+            channel = dict((wlan, channel) for wlan in wlans)
+
+        txpower = search_attr('wifi_txpower',
+                              settings.cluster.nodes[node],
+                              settings.common.__dict__)
+
+        if not isinstance(txpower, dict):
+            txpower = dict((wlan, txpower) for wlan in wlans)
+
+        res[node] = script_template.render(wlans=wlans,
+                                           ht_mode=bandwidth_map[max_bw],
+                                           services=node_attrs,
+                                           txpower=txpower,
+                                           channel=channel)
 
     return res
