@@ -18,6 +18,7 @@ except ImportError:
 
 version = os.environ.get('VERSION')
 commit = os.environ.get('COMMIT')
+install_data_files = not bool(os.environ.get('OMIT_DATA_FILES'))
 
 assert version and commit
 
@@ -52,7 +53,7 @@ setup(
                                            'scripts/wifibroadcast@.service']),
                   ('/etc/default', ['scripts/default/wifibroadcast']),
                   ('/etc/sysctl.d', ['scripts/98-wifibroadcast.conf']),
-                  ('/etc/logrotate.d', ['scripts/wifibroadcast'])],
+                  ('/etc/logrotate.d', ['scripts/wifibroadcast'])] if install_data_files else [],
 
     keywords="wfb-ng, wifibroadcast",
     author="Vasily Evseenko",
