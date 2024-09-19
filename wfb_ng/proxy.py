@@ -84,7 +84,7 @@ class ProxyProtocol:
             self.agg_queue_timer = reactor.callLater(self.agg_timeout, self.flush_queue)
 
     # inject radio rssi info
-    def send_rssi(self, rssi, rx_errors, rx_fec, flags):
+    def send_rssi(self, rssi, noise, rx_errors, rx_fec, flags):
         pass
 
 
@@ -125,11 +125,11 @@ class MavlinkProxyProtocol(ProxyProtocol):
         else:
             self.radio_mav = None
 
-    def send_rssi(self, rssi, rx_errors, rx_fec, flags):
+    def send_rssi(self, rssi, noise, rx_errors, rx_fec, flags):
         # Send flags as remnoise, because txbuf value is used by PX4 to throttle bandwidth
         # use self.write to send mavlink message
         if self.radio_mav is not None:
-            self.radio_mav.radio_status_send(rssi, rssi, 100, 0, flags, rx_errors, rx_fec)
+            self.radio_mav.radio_status_send(rssi % 256, rssi % 256, 100, noise % 256, flags, rx_errors, rx_fec)
 
 
 class MavlinkUDPProxyProtocol(DatagramProtocol, MavlinkProxyProtocol):
