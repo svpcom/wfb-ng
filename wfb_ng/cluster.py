@@ -47,6 +47,7 @@ def parse_cluster_services(profiles):
                  stream_tx = srv_cfg.stream_tx,
                  stream_rx = srv_cfg.stream_rx,
                  tx_port_base = tx_port_base,
+                 fwmark = srv_cfg.fwmark if srv_cfg.use_qdisc else None,
                  rx_fwd = (server_address, srv_cfg.udp_port_auto))
 
         if node not in cluster_nodes:
@@ -131,7 +132,7 @@ iw dev {{ wlan }} set txpower fixed {{ txpower[wlan] }}
 wfb_rx -f -c {{ attrs['rx_fwd'][0] }} -u {{ attrs['rx_fwd'][1] }} -p {{ attrs['stream_rx'] }} -i {{ attrs['link_id'] }} -R {{ settings.common.tx_rcv_buf_size }} {{ attrs['wlans']|join(' ') }} &
 {% endif %}
 {% if attrs['stream_tx'] != None %}
-wfb_tx -I {{ attrs['tx_port_base'] }} -R {{ settings.common.tx_rcv_buf_size }} {{ attrs['wlans']|join(' ') }} &
+wfb_tx -I {{ attrs['tx_port_base'] }} -R {{ settings.common.tx_rcv_buf_size }} {{ '-Q -P %d' % (attrs['fwmark'],) if attrs['fwmark'] != None else '' }} {{ attrs['wlans']|join(' ') }} &
 {% endif %}
 {% endfor %}
 
