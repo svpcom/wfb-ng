@@ -15,9 +15,8 @@ PKG_BUILD_PARALLEL:=1
 PKG_MAINTAINER:=Vasily Evseenko <svpcom@p2ptech.org>
 PYPI_SOURCE_NAME:=wfb_ng
 
-include ../../lang/python/pypi.mk
 include $(INCLUDE_DIR)/package.mk
-include ../../lang/python/python3-package.mk
+include $(TOPDIR)/feeds/packages/lang/python/python3-package.mk
 
 PYTHON3_VARS:=$(PYTHON3_VARS) VERSION=$(PKG_VERSION) COMMIT=$(PKG_SOURCE_VERSION) OMIT_DATA_FILES=1
 
