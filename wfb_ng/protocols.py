@@ -241,7 +241,8 @@ class StatsAndSelectorFactory(Factory):
         packet_stats_by_rx = dict((rx_id, packet_stats) for rx_id, (ant_stats, packet_stats) in cur_stats.items())
 
         stats_agg = self._stats_agg_by_freq_and_rxid(ant_stats_by_rx)
-        card_rssi_l = list(rssi_avg
+        # (rssi,noise) tuples
+        card_rssi_l = list((rssi_avg, rssi_avg - snr_avg)
                            for pkt_s,
                                rssi_min, rssi_avg, rssi_max,
                                snr_min, snr_avg, snr_max
@@ -258,17 +259,19 @@ class StatsAndSelectorFactory(Factory):
 
             if not card_rssi_l:
                 flags |= WFBFlags.LINK_LOST
+                mav_rssi, mav_noise = -128, -128
 
-            elif bad_packets > 0:
-                flags |= WFBFlags.LINK_JAMMED
+            else:
+                if bad_packets > 0:
+                    flags |= WFBFlags.LINK_JAMMED
+                mav_rssi, mav_noise = max(card_rssi_l)
 
             rx_errors = sum(p['dec_err'][_idx] + p['bad'][_idx] + p['lost'][_idx] for p in packet_stats_by_rx.values())
             rx_fec = sum(p['fec_rec'][_idx] for p in packet_stats_by_rx.values())
-            mav_rssi = (max(card_rssi_l) if card_rssi_l else -128) % 256
 
             for rssi_cb in self.rssi_cb_l:
                 try:
-                    rssi_cb(mav_rssi, min(rx_errors, 65535), min(rx_fec, 65535), flags)
+                    rssi_cb(mav_rssi, mav_noise, min(rx_errors, 65535), min(rx_fec, 65535), flags)
                 except Exception:
                     log.err()
 
