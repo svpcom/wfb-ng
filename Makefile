@@ -69,6 +69,9 @@ bdist: all_bin
 
 check:
 	cppcheck --std=c++11 --library=std --library=posix --library=gnu --inline-suppr --template=gcc --enable=all --suppress=cstyleCast --suppress=missingOverride --suppress=missingIncludeSystem src/
+	make clean
+	make CFLAGS="-g -fsanitize=address -fno-omit-frame-pointer" LDFLAGS="-fsanitize=address -static-libasan" test
+	make clean
 
 pylint:
 	pylint --disable=R,C wfb_ng/*.py

@@ -98,10 +98,10 @@ void Transmitter::deinit_session(void)
 {
     for(int i=0; i < fec_n; i++)
     {
-        delete block[i];
+        delete[] block[i];
     }
 
-    delete block;
+    delete[] block;
     fec_free(fec_p);
 
     block = NULL;
@@ -659,7 +659,7 @@ uint32_t extract_rxq_overflow(struct msghdr *msg)
     return 0;
 }
 
-void data_source(shared_ptr<Transmitter> &t, vector<int> &rx_fd, int control_fd, int fec_timeout, bool mirror, int log_interval)
+void data_source(unique_ptr<Transmitter> &t, vector<int> &rx_fd, int control_fd, int fec_timeout, bool mirror, int log_interval)
 {
     int nfds = rx_fd.size();
     assert(nfds > 0);
@@ -1338,7 +1338,7 @@ void local_loop(int argc, char* const* argv, int optind, int srv_port, int rcv_b
     vector<int> rx_fd;
     vector<string> wlans;
     vector<tags_item_t> tags;
-    shared_ptr<Transmitter> t;
+    unique_ptr<Transmitter> t;
 
     for(int i = 0; optind + i < argc; i++)
     {
@@ -1371,12 +1371,12 @@ void local_loop(int argc, char* const* argv, int optind, int srv_port, int rcv_b
     if (debug_port)
     {
         fprintf(stderr, "Using %zu ports from %d for wlan emulation\n", wlans.size(), debug_port);
-        t = shared_ptr<UdpTransmitter>(new UdpTransmitter(k, n, keypair, "127.0.0.1", debug_port, epoch, channel_id,
+        t = unique_ptr<UdpTransmitter>(new UdpTransmitter(k, n, keypair, "127.0.0.1", debug_port, epoch, channel_id,
                                                           fec_delay, tags, use_qdisc, fwmark));
     }
     else
     {
-        t = shared_ptr<RawSocketTransmitter>(new RawSocketTransmitter(k, n, keypair, epoch, channel_id, fec_delay, tags,
+        t = unique_ptr<RawSocketTransmitter>(new RawSocketTransmitter(k, n, keypair, epoch, channel_id, fec_delay, tags,
                                                                               wlans, radiotap_header, frame_type, use_qdisc, fwmark));
     }
 
@@ -1450,8 +1450,8 @@ void distributor_loop(int argc, char* const* argv, int optind, int srv_port, int
     }
 
     vector<tags_item_t> tags;
-    shared_ptr<Transmitter> t = shared_ptr<RemoteTransmitter>(new RemoteTransmitter(k, n, keypair, epoch, channel_id, fec_delay, tags,
-                                                                                   remote_hosts, radiotap_header, frame_type, use_qdisc, fwmark));
+    unique_ptr<Transmitter> t = unique_ptr<RemoteTransmitter>(new RemoteTransmitter(k, n, keypair, epoch, channel_id, fec_delay, tags,
+                                                                                    remote_hosts, radiotap_header, frame_type, use_qdisc, fwmark));
 
     int control_fd = open_control_fd(control_port);
     data_source(t, rx_fd, control_fd, fec_timeout, mirror, log_interval);

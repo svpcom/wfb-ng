@@ -332,12 +332,14 @@ void Aggregator::deinit_fec(void)
 
     for(int ring_idx = 0; ring_idx < RX_RING_SIZE; ring_idx++)
     {
-        delete rx_ring[ring_idx].fragment_map;
+        delete[] rx_ring[ring_idx].fragment_map;
+        rx_ring[ring_idx].fragment_map = NULL;
         for(int i=0; i < fec_n; i++)
         {
-            delete rx_ring[ring_idx].fragments[i];
+            delete[] rx_ring[ring_idx].fragments[i];
         }
-        delete rx_ring[ring_idx].fragments;
+        delete[] rx_ring[ring_idx].fragments;
+        rx_ring[ring_idx].fragments = NULL;
     }
 
     fec_free(fec_p);
@@ -851,12 +853,12 @@ void Aggregator::apply_fec(int ring_idx)
     fec_decode(fec_p, (const uint8_t**)in_blocks, out_blocks, index, MAX_FEC_PAYLOAD);
 }
 
-void radio_loop(int argc, char* const *argv, int optind, uint32_t channel_id, shared_ptr<BaseAggregator> agg, int log_interval, int rcv_buf_size)
+void radio_loop(int argc, char* const *argv, int optind, uint32_t channel_id, unique_ptr<BaseAggregator> &agg, int log_interval, int rcv_buf_size)
 {
     int nfds = argc - optind;
     uint64_t log_send_ts = 0;
     struct pollfd fds[MAX_RX_INTERFACES];
-    Receiver* rx[MAX_RX_INTERFACES];
+    unique_ptr<Receiver> rx[MAX_RX_INTERFACES];
 
     if (nfds > MAX_RX_INTERFACES)
     {
@@ -867,7 +869,7 @@ void radio_loop(int argc, char* const *argv, int optind, uint32_t channel_id, sh
 
     for(int i = 0; i < nfds; i++)
     {
-        rx[i] = new Receiver(argv[optind + i], i, channel_id, agg.get(), rcv_buf_size);
+        rx[i].reset(new Receiver(argv[optind + i], i, channel_id, agg.get(), rcv_buf_size));
         fds[i].fd = rx[i]->getfd();
         fds[i].events = POLLIN;
     }
@@ -1073,11 +1075,11 @@ int main(int argc, char* const *argv)
         {
             if (optind >= argc) goto show_usage;
 
-            shared_ptr<BaseAggregator> agg;
+            unique_ptr<BaseAggregator> agg;
             if(rx_mode == LOCAL){
-                agg = shared_ptr<Aggregator>(new Aggregator(client_addr, client_port, keypair, epoch, channel_id));
+                agg = unique_ptr<Aggregator>(new Aggregator(client_addr, client_port, keypair, epoch, channel_id));
             }else{
-                agg = shared_ptr<Forwarder>(new Forwarder(client_addr, client_port));
+                agg = unique_ptr<Forwarder>(new Forwarder(client_addr, client_port));
             }
 
             radio_loop(argc, argv, optind, channel_id, agg, log_interval, rcv_buf);
