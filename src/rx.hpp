@@ -58,6 +58,13 @@ protected:
         saddr.sin_addr.s_addr = inet_addr(client_addr.c_str());
         saddr.sin_port = htons((unsigned short)client_port);
 
+        // FIXME: only do this for broadcast client IPs
+        const int broadcast_val = 1;
+        if (setsockopt(fd, SOL_SOCKET, SO_BROADCAST, &broadcast_val, sizeof(broadcast_val)))
+        {
+            throw std::runtime_error(string_format("Error obtaining broadcast permissions: %s", strerror(errno)));
+        }
+
         if (connect(fd, (struct sockaddr *) &saddr, sizeof(saddr)) < 0)
         {
             throw std::runtime_error(string_format("Connect error: %s", strerror(errno)));
