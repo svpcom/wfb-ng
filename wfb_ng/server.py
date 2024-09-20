@@ -122,7 +122,7 @@ def init(profiles, wlans, cluster_mode):
     if is_cluster:
         services, cluster_nodes = parse_cluster_services(profiles)
         if cluster_mode == 'ssh':
-            for node, setup_script in gen_cluster_scripts(cluster_nodes).items():
+            for node, setup_script in gen_cluster_scripts(cluster_nodes, ssh_mode=True).items():
                 ssh_user = search_attr('ssh_user',
                                        settings.cluster.nodes[node],
                                        settings.cluster.__dict__)

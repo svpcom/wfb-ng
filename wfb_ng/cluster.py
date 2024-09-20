@@ -108,6 +108,10 @@ _cleanup()
 
 trap _cleanup EXIT
 
+{% if custom_init_script != None %}
+{{ custom_init_script }}
+{% endif %}
+
 iw reg set {{ settings.common.wifi_region }}
 {% for wlan in  wlans %}
 
@@ -136,8 +140,10 @@ wfb_tx -I {{ attrs['tx_port_base'] }} -R {{ settings.common.tx_rcv_buf_size }} {
 {% endif %}
 {% endfor %}
 
+{% if ssh_mode %}
 # Will fail in case of connection loss
 (sleep 1; exec cat > /dev/null) &
+{% endif %}
 
 echo "WFB-ng init done"
 wait -n
@@ -146,7 +152,11 @@ wait -n
 
 script_template = env.from_string(script_template)
 
-def gen_cluster_scripts(cluster_nodes):
+def gen_cluster_scripts(cluster_nodes, ssh_mode=False):
+    """
+    cluster_nodes:  node_name -> service_map
+    """
+
     res = {}
 
     for node, node_attrs in cluster_nodes.items():
@@ -164,6 +174,10 @@ def gen_cluster_scripts(cluster_nodes):
                               settings.cluster.nodes[node],
                               settings.common.__dict__)
 
+        custom_init_script = search_attr('custom_init_script',
+                                         settings.cluster.nodes[node],
+                                         settings.cluster.__dict__)
+
         if not isinstance(txpower, dict):
             txpower = dict((wlan, txpower) for wlan in wlans)
 
@@ -171,6 +185,8 @@ def gen_cluster_scripts(cluster_nodes):
                                            ht_mode=bandwidth_map[max_bw],
                                            services=node_attrs,
                                            txpower=txpower,
-                                           channel=channel)
+                                           channel=channel,
+                                           ssh_mode=ssh_mode,
+                                           custom_init_script=custom_init_script)
 
     return res
