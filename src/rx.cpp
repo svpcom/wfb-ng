@@ -60,34 +60,42 @@ Receiver::Receiver(const char *wlan, int wlan_idx, uint32_t channel_id, BaseAggr
         throw runtime_error(string_format("Unable to open interface %s in pcap: %s", wlan, errbuf));
     }
 
-    if (rcv_buf_size > 0 && pcap_set_buffer_size(ppcap, rcv_buf_size) != 0) throw runtime_error("set_buffer_size failed");
-    if (pcap_set_snaplen(ppcap, MAX_PCAP_PACKET_SIZE) != 0) throw runtime_error("set_snaplen failed");
-    if (pcap_set_promisc(ppcap, 1) != 0) throw runtime_error("set_promisc failed");
-    if (pcap_set_timeout(ppcap, -1) != 0) throw runtime_error("set_timeout failed");
-    if (pcap_set_immediate_mode(ppcap, 1) != 0) throw runtime_error(string_format("pcap_set_immediate_mode failed: %s", pcap_geterr(ppcap)));
-    if (pcap_activate(ppcap) !=0) throw runtime_error(string_format("pcap_activate failed: %s", pcap_geterr(ppcap)));
-    if (pcap_setnonblock(ppcap, 1, errbuf) != 0) throw runtime_error(string_format("set_nonblock failed: %s", errbuf));
+    try
+    {
+        if (rcv_buf_size > 0 && pcap_set_buffer_size(ppcap, rcv_buf_size) != 0) throw runtime_error("set_buffer_size failed");
+        if (pcap_set_snaplen(ppcap, MAX_PCAP_PACKET_SIZE) != 0) throw runtime_error("set_snaplen failed");
+        if (pcap_set_promisc(ppcap, 1) != 0) throw runtime_error("set_promisc failed");
+        if (pcap_set_timeout(ppcap, -1) != 0) throw runtime_error("set_timeout failed");
+        if (pcap_set_immediate_mode(ppcap, 1) != 0) throw runtime_error(string_format("pcap_set_immediate_mode failed: %s", pcap_geterr(ppcap)));
+        if (pcap_activate(ppcap) !=0) throw runtime_error(string_format("pcap_activate failed: %s", pcap_geterr(ppcap)));
+        if (pcap_setnonblock(ppcap, 1, errbuf) != 0) throw runtime_error(string_format("set_nonblock failed: %s", errbuf));
 
-    int link_encap = pcap_datalink(ppcap);
-    struct bpf_program bpfprogram;
-    string program;
+        int link_encap = pcap_datalink(ppcap);
+        struct bpf_program bpfprogram;
+        string program;
 
-    if (link_encap != DLT_IEEE802_11_RADIO) {
-        throw runtime_error(string_format("unknown encapsulation on %s", wlan));
+        if (link_encap != DLT_IEEE802_11_RADIO) {
+            throw runtime_error(string_format("unknown encapsulation on %s", wlan));
+        }
+
+        program = string_format("ether[0x0a:2]==0x5742 && ether[0x0c:4] == 0x%08x", channel_id);
+
+        if (pcap_compile(ppcap, &bpfprogram, program.c_str(), 1, 0) == -1) {
+            throw runtime_error(string_format("Unable to compile %s: %s", program.c_str(), pcap_geterr(ppcap)));
+        }
+
+        if (pcap_setfilter(ppcap, &bpfprogram) == -1) {
+            throw runtime_error(string_format("Unable to set filter %s: %s", program.c_str(), pcap_geterr(ppcap)));
+        }
+
+        pcap_freecode(&bpfprogram);
+        fd = pcap_get_selectable_fd(ppcap);
     }
-
-    program = string_format("ether[0x0a:2]==0x5742 && ether[0x0c:4] == 0x%08x", channel_id);
-
-    if (pcap_compile(ppcap, &bpfprogram, program.c_str(), 1, 0) == -1) {
-        throw runtime_error(string_format("Unable to compile %s: %s", program.c_str(), pcap_geterr(ppcap)));
+    catch(...)
+    {
+        pcap_close(ppcap);
+        throw;
     }
-
-    if (pcap_setfilter(ppcap, &bpfprogram) == -1) {
-        throw runtime_error(string_format("Unable to set filter %s: %s", program.c_str(), pcap_geterr(ppcap)));
-    }
-
-    pcap_freecode(&bpfprogram);
-    fd = pcap_get_selectable_fd(ppcap);
 }
 
 
