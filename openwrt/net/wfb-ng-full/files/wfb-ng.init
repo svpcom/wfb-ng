@@ -1,0 +1,44 @@
+#!/bin/sh /etc/rc.common
+
+START=99
+STOP=10
+
+USE_PROCD=1
+NAME=wfb-ng
+
+SYSUPGRADE_CONF="/etc/sysupgrade.conf"
+WFB_CFG="/etc/wifibroadcast.cfg"
+WFB_INIT="/usr/sbin/wfb-ng.sh"
+WFB_SERVER="/usr/bin/wfb-server --profiles gs --cluster manual"
+
+if [ -f $SYSUPGRADE_CONF ] && [ -x $WFB_INIT ] && ! grep -q $WFB_INIT $SYSUPGRADE_CONF
+then
+   echo $WFB_INIT >> $SYSUPGRADE_CONF
+fi
+
+if [ -f $SYSUPGRADE_CONF ] && [ -f $WFB_CFG ] && ! grep -q $WFB_CFG $SYSUPGRADE_CONF
+then
+   echo $WFB_CFG >> $SYSUPGRADE_CONF
+fi
+
+start_service() {
+        # start cluster node
+        if [ -x $WFB_INIT ]; then
+                procd_open_instance wfb-ng
+                procd_set_param command $WFB_INIT
+                procd_set_param respawn
+                procd_set_param stdout 1
+                procd_set_param stderr 1
+                procd_close_instance
+        fi
+
+        # start cluster manager
+        if [ -f $WFB_CFG ]; then
+                procd_open_instance wfb-ng-server
+                procd_set_param command $WFB_SERVER
+                procd_set_param respawn
+                procd_set_param stdout 1
+                procd_set_param stderr 1
+                procd_close_instance
+        fi
+}
