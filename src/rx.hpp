@@ -46,24 +46,6 @@ public:
                                 uint8_t bandwidth, sockaddr_in *sockaddr) = 0;
 
     virtual void dump_stats(FILE *fp) = 0;
-protected:
-    int open_udp_socket_for_tx(const std::string &client_addr, int client_port)
-    {
-        struct sockaddr_in saddr;
-        int fd = socket(AF_INET, SOCK_DGRAM, 0);
-        if (fd < 0) throw std::runtime_error(string_format("Error opening socket: %s", strerror(errno)));
-
-        memset(&saddr, '\0', sizeof(saddr));
-        saddr.sin_family = AF_INET;
-        saddr.sin_addr.s_addr = inet_addr(client_addr.c_str());
-        saddr.sin_port = htons((unsigned short)client_port);
-
-        if (connect(fd, (struct sockaddr *) &saddr, sizeof(saddr)) < 0)
-        {
-            throw std::runtime_error(string_format("Connect error: %s", strerror(errno)));
-        }
-        return fd;
-    }
 };
 
 
@@ -78,6 +60,7 @@ public:
     virtual void dump_stats(FILE *) {}
 private:
     int sockfd;
+    struct sockaddr_in saddr;
 };
 
 
@@ -229,6 +212,7 @@ private:
     int fec_k;  // RS number of primary fragments in block
     int fec_n;  // RS total number of fragments in block
     int sockfd;
+    struct sockaddr_in saddr;
     uint32_t seq;
     rx_ring_item_t rx_ring[RX_RING_SIZE];
     int rx_ring_front; // current packet

@@ -271,7 +271,14 @@ Aggregator::Aggregator(const string &client_addr, int client_port, const string 
     fec_p(NULL), fec_k(-1), fec_n(-1), seq(0), rx_ring{}, rx_ring_front(0), rx_ring_alloc(0),
     last_known_block((uint64_t)-1), epoch(epoch), channel_id(channel_id)
 {
-    sockfd = open_udp_socket_for_tx(client_addr, client_port);
+    sockfd = socket(AF_INET, SOCK_DGRAM, 0);
+    if (sockfd < 0) throw std::runtime_error(string_format("Error opening socket: %s", strerror(errno)));
+
+    memset(&saddr, '\0', sizeof(saddr));
+    saddr.sin_family = AF_INET;
+    saddr.sin_addr.s_addr = inet_addr(client_addr.c_str());
+    saddr.sin_port = htons((unsigned short)client_port);
+
     memset(session_key, '\0', sizeof(session_key));
 
     FILE *fp;
@@ -359,7 +366,13 @@ void Aggregator::deinit_fec(void)
 
 Forwarder::Forwarder(const string &client_addr, int client_port)
 {
-    sockfd = open_udp_socket_for_tx(client_addr, client_port);
+    sockfd = socket(AF_INET, SOCK_DGRAM, 0);
+    if (sockfd < 0) throw std::runtime_error(string_format("Error opening socket: %s", strerror(errno)));
+
+    memset(&saddr, '\0', sizeof(saddr));
+    saddr.sin_family = AF_INET;
+    saddr.sin_addr.s_addr = inet_addr(client_addr.c_str());
+    saddr.sin_port = htons((unsigned short)client_port);
 }
 
 
@@ -381,8 +394,8 @@ void Forwarder::process_packet(const uint8_t *buf, size_t size, uint8_t wlan_idx
                            { .iov_base = (void*)buf,
                              .iov_len = size }};
 
-    struct msghdr msghdr = { .msg_name = NULL,
-                             .msg_namelen = 0,
+    struct msghdr msghdr = { .msg_name = &saddr,
+                             .msg_namelen = sizeof(saddr),
                              .msg_iov = iov,
                              .msg_iovlen = 2,
                              .msg_control = NULL,
@@ -818,7 +831,7 @@ void Aggregator::send_packet(int ring_idx, int fragment_idx)
     }
     else if(!(flags & WFB_PACKET_FEC_ONLY))
     {
-        send(sockfd, payload, packet_size, MSG_DONTWAIT);
+        sendto(sockfd, payload, packet_size, MSG_DONTWAIT, (sockaddr*)&saddr, sizeof(saddr));
         count_p_outgoing += 1;
         count_b_outgoing += packet_size;
     }
