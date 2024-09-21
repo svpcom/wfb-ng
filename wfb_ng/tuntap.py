@@ -143,7 +143,7 @@ class TUNTAPProtocol(Protocol, ProxyProtocol):
 
     def _send_to_all_peers(self, data):
         for peer in self.all_peers:
-            self.peer.write(data)
+            peer.write(data)
 
     def _cleanup(self):
         self.lc.stop()
