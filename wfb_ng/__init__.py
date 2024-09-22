@@ -25,9 +25,16 @@ import threading
 import atexit
 import time
 
+# Patch twisted to enable monotonic clock in the reactor
+# This is a bit fragile, but no other ways to do it without patching twisted sources
 from twisted.python import runtime
 runtime.seconds = time.monotonic
 runtime.Platform.seconds = staticmethod(time.monotonic)
+
+# This is only needed for unit-tests because trial imports it early before we patch clock source
+from importlib import reload
+from twisted.internet import base as twisted_internet_base
+reload(twisted_internet_base)
 
 from twisted.internet import utils, reactor
 from logging import currentframe
