@@ -1,12 +1,12 @@
 include $(TOPDIR)/rules.mk
 
 PKG_NAME:=wfb-ng-full
-PKG_VERSION:=24.9.5
+PKG_VERSION:=24.9.6
 PKG_RELEASE:=1
 
 PKG_SOURCE_PROTO:=git
 PKG_SOURCE_URL:=https://github.com/svpcom/wfb-ng.git
-PKG_SOURCE_VERSION:=01d7895f5fe8659a6b60d8b4a4273eb66681509e
+PKG_SOURCE_VERSION:=126e4be76e25bce9ed8a6ac65c499bf975fb11e9
 #PKG_MIRROR_HASH:=2451a64be61a5052c2625c859548adcea141afece7ad297e0043bb911035dcdd
 
 PKG_LICENSE:=GPL-3.0-only
@@ -20,7 +20,14 @@ include $(INCLUDE_DIR)/package.mk
 include $(TOPDIR)/feeds/packages/lang/python/python3-package.mk
 
 PYTHON3_VARS:=$(PYTHON3_VARS) VERSION=$(PKG_VERSION) COMMIT=$(PKG_SOURCE_VERSION) OMIT_DATA_FILES=1
-MAKE_FLAGS += VERSION=$(PKG_VERSION) COMMIT=$(PKG_SOURCE_VERSION) all_bin
+
+define Build/Compile
+	$(MAKE) $(PKG_JOBS) -C $(PKG_BUILD_DIR)/$(MAKE_PATH) \
+		$(MAKE_FLAGS) \
+		VERSION=$(PKG_VERSION) COMMIT=$(PKG_SOURCE_VERSION) \
+		all_bin
+	$(call Py3Build/Compile)
+endef
 
 define Package/wfb-ng-full
   SECTION:=net
