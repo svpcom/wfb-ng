@@ -117,7 +117,7 @@ def init_udp_direct_tx(service_name, cfg, wlans, link_id, ant_sel_f, is_cluster)
            ).split() + wlans
 
     control_port_df = defer.Deferred() if cfg.control_port == 0 else None
-    df = TXProtocol(ant_sel_f, cmd, 'video tx', control_port_df=control_port_df).start()
+    df = TXProtocol(ant_sel_f, cmd, '%s tx' % (service_name,), control_port_df=control_port_df).start()
     log.msg('%s: %s' % (service_name, ' '.join(cmd),))
 
     control_port = cfg.control_port
