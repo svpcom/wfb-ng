@@ -676,9 +676,9 @@ void data_source(unique_ptr<Transmitter> &t, vector<int> &rx_fd, int control_fd,
     fds[nfds].fd = control_fd;
     fds[nfds].events = POLLIN;
 
-    uint64_t session_key_announce_ts = 0;
+    uint64_t session_key_announce_ts = get_time_ms();
     uint32_t rxq_overflow = 0;
-    uint64_t log_send_ts = 0;
+    uint64_t log_send_ts = get_time_ms();
     uint64_t fec_close_ts = fec_timeout > 0 ? get_time_ms() + fec_timeout : 0;
     uint32_t count_p_fec_timeouts = 0; // empty packets sent to close fec block due to timeout
     uint32_t count_p_incoming = 0;   // incoming udp packets (received + dropped due to rxq overflow)
@@ -735,7 +735,7 @@ void data_source(unique_ptr<Transmitter> &t, vector<int> &rx_fd, int control_fd,
             count_p_dropped = 0;
             count_p_truncated = 0;
 
-            log_send_ts = cur_ts + log_interval;
+            log_send_ts = cur_ts + log_interval - ((cur_ts - log_send_ts) % log_interval);
         }
 
         // Check control socket first
@@ -917,26 +917,30 @@ void data_source(unique_ptr<Transmitter> &t, vector<int> &rx_fd, int control_fd,
 
         // rc > 0: events detected
         // start from last fd index and reset it to zero
-        int i = start_fd_idx;
-        for(start_fd_idx = 0; rc > 0; i++)
+        int _tmp = start_fd_idx;
+        start_fd_idx = 0;
+
+        for(int i = _tmp; rc > 0; i = (i + 1) % nfds)
         {
-            if (fds[i % nfds].revents & (POLLERR | POLLNVAL))
+            assert(i < nfds);
+
+            if (fds[i].revents & (POLLERR | POLLNVAL))
             {
                 throw runtime_error(string_format("socket error: %s", strerror(errno)));
             }
 
-            if (fds[i % nfds].revents & POLLIN)
+            if (fds[i].revents & POLLIN)
             {
                 uint8_t buf[MAX_PAYLOAD_SIZE + 1];
                 uint8_t cmsgbuf[CMSG_SPACE(sizeof(uint32_t))];
                 rc -= 1;
 
-                t->select_output(mirror ? -1 : (i % nfds));
+                t->select_output(mirror ? -1 : (i));
 
                 for(;;)
                 {
                     ssize_t rsize;
-                    int fd = fds[i % nfds].fd;
+                    int fd = fds[i].fd;
                     struct iovec iov = { .iov_base = (void*)buf,
                                          .iov_len = sizeof(buf) };
 
@@ -980,6 +984,9 @@ void data_source(unique_ptr<Transmitter> &t, vector<int> &rx_fd, int control_fd,
                     {
                         // Announce session key
                         t->send_session_key();
+
+                        // Session packet interval is not in fixed grid because
+                        // we yield session packets only if there are data packets
                         session_key_announce_ts = cur_ts + SESSION_KEY_ANNOUNCE_MSEC;
                     }
 
@@ -987,8 +994,10 @@ void data_source(unique_ptr<Transmitter> &t, vector<int> &rx_fd, int control_fd,
 
                     if (cur_ts >= log_send_ts)  // log timeout expired
                     {
+                        // Save current index and go to outer loop
                         // We need to transmit all packets from the queue before tx card switch
-                        start_fd_idx = i % nfds;
+                        start_fd_idx = i;
+                        rc = 0;
                         break;
                     }
                 }
@@ -1138,7 +1147,7 @@ void packet_injector(RawSocketInjector &t, vector<int> &rx_fd, int log_interval)
     }
 
     uint32_t rxq_overflow = 0;
-    uint64_t log_send_ts = 0;
+    uint64_t log_send_ts = get_time_ms();
 
     uint32_t count_p_incoming = 0;   // incoming udp packets (received + dropped due to rxq overflow)
     uint32_t count_b_incoming = 0;   // incoming udp bytes (received only)
@@ -1178,7 +1187,7 @@ void packet_injector(RawSocketInjector &t, vector<int> &rx_fd, int log_interval)
             count_p_dropped = 0;
             count_p_bad = 0;
 
-            log_send_ts = cur_ts + log_interval;
+            log_send_ts = cur_ts + log_interval - ((cur_ts - log_send_ts) % log_interval);
         }
 
         if (rc == 0) // poll timeout
@@ -1188,15 +1197,19 @@ void packet_injector(RawSocketInjector &t, vector<int> &rx_fd, int log_interval)
 
         // rc > 0: events detected
         // start from last fd index and reset it to zero
-        int i = start_fd_idx;
-        for(start_fd_idx = 0; rc > 0; i++)
+        int _tmp = start_fd_idx;
+        start_fd_idx = 0;
+
+        for(int i = _tmp; rc > 0; i = (i + 1) % nfds)
         {
-            if (fds[i % nfds].revents & (POLLERR | POLLNVAL))
+            assert(i < nfds);
+
+            if (fds[i].revents & (POLLERR | POLLNVAL))
             {
                 throw runtime_error(string_format("socket error: %s", strerror(errno)));
             }
 
-            if (fds[i % nfds].revents & POLLIN)
+            if (fds[i].revents & POLLIN)
             {
                 uint8_t buf[MAX_DISTRIBUTION_PACKET_SIZE - sizeof(uint32_t) + 1];
                 uint8_t cmsgbuf[CMSG_SPACE(sizeof(uint32_t))];
@@ -1206,7 +1219,7 @@ void packet_injector(RawSocketInjector &t, vector<int> &rx_fd, int log_interval)
                 {
                     ssize_t rsize;
                     uint32_t _fwmark;
-                    int fd = fds[i % nfds].fd;
+                    int fd = fds[i].fd;
 
                     struct iovec iov[2] = {
                         // fwmark
@@ -1258,12 +1271,14 @@ void packet_injector(RawSocketInjector &t, vector<int> &rx_fd, int log_interval)
 
                     cur_ts = get_time_ms();
 
-                    t.inject_packet(i % nfds, buf, rsize, ntohl(_fwmark));
+                    t.inject_packet(i, buf, rsize, ntohl(_fwmark));
 
                     if (cur_ts >= log_send_ts)  // log timeout expired
                     {
+                        // Save current index and go to outer loop
                         // We need to transmit all packets from the queue before tx card switch
-                        start_fd_idx = i % nfds;
+                        start_fd_idx = i;
+                        rc = 0;
                         break;
                     }
                 }

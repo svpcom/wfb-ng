@@ -877,7 +877,7 @@ void Aggregator::apply_fec(int ring_idx)
 void radio_loop(int argc, char* const *argv, int optind, uint32_t channel_id, unique_ptr<BaseAggregator> &agg, int log_interval, int rcv_buf_size)
 {
     int nfds = argc - optind;
-    uint64_t log_send_ts = 0;
+    uint64_t log_send_ts = get_time_ms();
     struct pollfd fds[MAX_RX_INTERFACES];
     unique_ptr<Receiver> rx[MAX_RX_INTERFACES];
 
@@ -909,7 +909,7 @@ void radio_loop(int argc, char* const *argv, int optind, uint32_t channel_id, un
         if (cur_ts >= log_send_ts)
         {
             agg->dump_stats(stdout);
-            log_send_ts = cur_ts + log_interval;
+            log_send_ts = cur_ts + log_interval - ((cur_ts - log_send_ts) % log_interval);
         }
 
         if (rc == 0) continue; // timeout expired
@@ -934,7 +934,7 @@ void network_loop(int srv_port, Aggregator &agg, int log_interval, int rcv_buf_s
     struct sockaddr_in sockaddr;
     uint8_t buf[MAX_FORWARDER_PACKET_SIZE];
 
-    uint64_t log_send_ts = 0;
+    uint64_t log_send_ts = get_time_ms();
     struct pollfd fds[1];
     int fd = open_udp_socket_for_rx(srv_port, rcv_buf_size);
 
@@ -956,7 +956,7 @@ void network_loop(int srv_port, Aggregator &agg, int log_interval, int rcv_buf_s
         if (cur_ts >= log_send_ts)
         {
             agg.dump_stats(stdout);
-            log_send_ts = cur_ts + log_interval;
+            log_send_ts = cur_ts + log_interval - ((cur_ts - log_send_ts) % log_interval);
         }
 
         if (rc == 0) continue; // timeout expired

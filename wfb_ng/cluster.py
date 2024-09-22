@@ -119,6 +119,7 @@ iw reg set {{ settings.common.wifi_region }}
 if which nmcli > /dev/null && ! nmcli device show {{ wlan }} | grep -q '(unmanaged)'
 then
   nmcli device set {{ wlan }} managed no
+  sleep 1
 fi
 
 ip link set {{ wlan }} down

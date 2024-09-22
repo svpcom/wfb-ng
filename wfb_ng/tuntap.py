@@ -29,6 +29,7 @@ from twisted.internet.protocol import Protocol, connectionDone
 from pyroute2 import IPRoute
 from contextlib import closing
 
+from .conf import settings
 from .proxy import ProxyProtocol
 
 
@@ -129,7 +130,7 @@ class TUNTAPTransport(abstract.FileDescriptor):
 
 class TUNTAPProtocol(Protocol, ProxyProtocol):
     noisy = False
-    keepalive_interval = 0.9
+    keepalive_interval = 0.5 * settings.common.log_interval / 1000.0
 
     def __init__(self, mtu, agg_timeout=None):
         self.all_peers = []
@@ -140,6 +141,8 @@ class TUNTAPProtocol(Protocol, ProxyProtocol):
         # Sent keepalive packets
         self.lc = task.LoopingCall(self.send_keepalive)
         self.lc.start(self.keepalive_interval, now=False)
+        self.pkt_in_sem = 0
+        self.pkt_out_sem = 0
 
     def _send_to_all_peers(self, data):
         for peer in self.all_peers:
@@ -151,7 +154,9 @@ class TUNTAPProtocol(Protocol, ProxyProtocol):
 
     # call from peer only!
     def write(self, msg):
-        # Remove keepalive messages
+        self.pkt_in_sem = 2
+
+        # Ignore incoming keepalive messages
         if self.transport is None or not msg:
             return
 
@@ -173,11 +178,25 @@ class TUNTAPProtocol(Protocol, ProxyProtocol):
             i += pkt_size
 
     def send_keepalive(self):
-        # Send keepalive message via all antennas.
+        # Send keepalive messages:
+        # 1. via all antennas if no RX from peer during 2 keepalive intervals
+        # 2. via current antenna if no TX to peer during one keepalive interval
+
         # This allow to use multiple directed antennas on the both ends
         # and/or use different frequency channels on different cards.
-        self._send_to_all_peers(b'')
+
+        if self.pkt_in_sem == 0:
+            self._send_to_all_peers(b'')
+
+        elif self.pkt_out_sem == 0:
+            self._send_to_peer(b'')
+
+        if self.pkt_in_sem > 0:
+            self.pkt_in_sem -= 1
+
+        if self.pkt_out_sem > 0:
+            self.pkt_out_sem -= 1
 
     def dataReceived(self, data):
-        self.lc.reset()  # reset keepalive timer
+        self.pkt_out_sem = 1
         return self.messageReceived(struct.pack('!H', len(data)) + data)

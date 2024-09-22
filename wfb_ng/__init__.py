@@ -25,6 +25,10 @@ import threading
 import atexit
 import time
 
+from twisted.python import runtime
+runtime.seconds = time.monotonic
+runtime.Platform.seconds = staticmethod(time.monotonic)
+
 from twisted.internet import utils, reactor
 from logging import currentframe
 from twisted.python import log
