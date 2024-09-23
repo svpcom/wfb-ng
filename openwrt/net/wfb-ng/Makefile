@@ -34,6 +34,10 @@ define Package/wfb-ng/description
   standalone receiver or transmitter without diversity.
 endef
 
+define Package/wfb-ng/conffiles
+/usr/sbin/wfb-ng.sh
+endef
+
 define Package/wfb-ng/install
 	$(INSTALL_DIR) $(1)/usr/bin
 	$(INSTALL_BIN) $(PKG_BUILD_DIR)/wfb_rx $(1)/usr/bin/

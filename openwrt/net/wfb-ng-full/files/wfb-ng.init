@@ -4,22 +4,10 @@ START=99
 STOP=10
 
 USE_PROCD=1
-NAME=wfb-ng
 
-SYSUPGRADE_CONF="/etc/sysupgrade.conf"
 WFB_CFG="/etc/wifibroadcast.cfg"
 WFB_INIT="/usr/sbin/wfb-ng.sh"
 WFB_SERVER="/usr/bin/wfb-server --profiles gs --cluster manual"
-
-if [ -f $SYSUPGRADE_CONF ] && [ -x $WFB_INIT ] && ! grep -q $WFB_INIT $SYSUPGRADE_CONF
-then
-   echo $WFB_INIT >> $SYSUPGRADE_CONF
-fi
-
-if [ -f $SYSUPGRADE_CONF ] && [ -f $WFB_CFG ] && ! grep -q $WFB_CFG $SYSUPGRADE_CONF
-then
-   echo $WFB_CFG >> $SYSUPGRADE_CONF
-fi
 
 start_service() {
         # start cluster node

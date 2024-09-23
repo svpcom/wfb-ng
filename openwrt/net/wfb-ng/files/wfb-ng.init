@@ -4,15 +4,7 @@ START=99
 STOP=10
 
 USE_PROCD=1
-NAME=wfb-ng
-
-SYSUPGRADE_CONF="/etc/sysupgrade.conf"
 WFB_INIT="/usr/sbin/wfb-ng.sh"
-
-if [ -f $SYSUPGRADE_CONF ] && [ -x $WFB_INIT ] && ! grep -q $WFB_INIT $SYSUPGRADE_CONF
-then
-   echo $WFB_INIT >> $SYSUPGRADE_CONF
-fi
 
 start_service() {
         if [ -x $WFB_INIT ]; then

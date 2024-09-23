@@ -45,6 +45,11 @@ define Package/wfb-ng-full/description
   receiver or transmitter with divesity.
 endef
 
+define Package/wfb-ng/conffiles
+/usr/sbin/wfb-ng.sh
+/etc/wifibroadcast.cfg
+endef
+
 define Py3Package/wfb-ng-full/install
 	$(INSTALL_DIR) $(1)/usr/bin
 	$(CP) $(PKG_INSTALL_DIR)/usr/bin/* $(1)/usr/bin/
