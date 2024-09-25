@@ -98,7 +98,7 @@ int open_udp_socket_for_rx(int port, int rcv_buf_size, uint32_t bind_addr, int s
     if (::bind(fd, (struct sockaddr *) &saddr, sizeof(saddr)) < 0)
     {
         close(fd);
-        throw runtime_error(string_format("Bind error: %s", strerror(errno)));
+        throw runtime_error(string_format("Unable to bind to %s:%d : %s", inet_ntoa(saddr.sin_addr), port, strerror(errno)));
     }
     return fd;
 }
