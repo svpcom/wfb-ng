@@ -126,7 +126,7 @@ ip link set {{ wlan }} down
 iw dev {{ wlan }} set monitor otherbss
 ip link set {{ wlan }} up
 iw dev {{ wlan }} set channel {{ channel[wlan] }} {{ ht_mode }}
-{% if txpower[wlan] != None %}
+{% if txpower[wlan] not in (None, 'off') %}
 iw dev {{ wlan }} set txpower fixed {{ txpower[wlan] }}
 {% endif %}
 {% endfor %}

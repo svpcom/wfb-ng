@@ -112,8 +112,9 @@ class StatsAndSelectorFactory(Factory):
     Aggregate RX stats and select TX antenna
     """
 
-    def __init__(self, logger, cli_title=None, rf_temp_meter=None, is_cluster=False):
+    def __init__(self, logger, cli_title=None, rf_temp_meter=None, is_cluster=False, rx_only_wlan_ids=None):
         self.is_cluster = is_cluster
+        self.rx_only_wlan_ids = rx_only_wlan_ids or set()
         self.ant_sel_cb_list = []
         self.rssi_cb_l = []
         self.cur_stats = {}
@@ -187,6 +188,10 @@ class StatsAndSelectorFactory(Factory):
                                                         rssi_min, rssi_avg, rssi_max,
                                                         snr_min, snr_avg, snr_max) in stats_agg.items()),
                                     lambda x: x[0]):
+
+            # Skip RX only cards in TX voting
+            if wlan_id in self.rx_only_wlan_ids:
+                continue
 
             grp = list(grp)
             # Use max average rssi [dBm] from all wlan's antennas

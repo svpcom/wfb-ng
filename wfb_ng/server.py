@@ -22,6 +22,7 @@ import sys
 import msgpack
 import os
 import time
+import socket
 import struct
 import gzip
 import argparse
@@ -88,13 +89,13 @@ def init_wlans(max_bw, wlans):
 
             yield call_and_check_rc('iw', 'dev', wlan, 'set', 'channel', str(channel), ht_mode)
 
-            # You can set own tx power for each card
-            if isinstance(settings.common.wifi_txpower, dict):
-                txpower = settings.common.wifi_txpower[wlan]
-            else:
-                txpower = settings.common.wifi_txpower
+            txpower = settings.common.wifi_txpower
 
-            if txpower is not None:
+            # You can set own tx power for each card
+            if isinstance(txpower, dict):
+                txpower = txpower[wlan]
+
+            if txpower not in (None, 'off'):
                 yield call_and_check_rc('iw', 'dev', wlan, 'set', 'txpower', 'fixed', str(txpower))
 
     except ExecError as v:
@@ -119,8 +120,21 @@ def init(profiles, wlans, cluster_mode):
     def _ssh_exited(x, node):
         raise Exception('Connection to %s closed, aborting' % (node,))
 
+    rx_only_wlan_ids = set()
+
     if is_cluster:
         services, cluster_nodes = parse_cluster_services(profiles)
+        for node in cluster_nodes:
+            node_ipv4_addr = struct.unpack("!L", socket.inet_aton(node))[0]
+            txpower = search_attr('wifi_txpower',
+                                  settings.cluster.nodes[node],
+                                  settings.common.__dict__)
+
+            for idx, wlan in enumerate(settings.cluster.nodes[node]['wlans']):
+                if (txpower[wlan] if isinstance(txpower, dict) else txpower) == 'off':
+                    rx_only_wlan_ids.add((node_ipv4_addr << 24) | idx)
+
+
         if cluster_mode == 'ssh':
             for node, setup_script in gen_cluster_scripts(cluster_nodes, ssh_mode=True).items():
                 ssh_user = search_attr('ssh_user',
@@ -153,6 +167,13 @@ def init(profiles, wlans, cluster_mode):
         max_bw = max(cfg.bandwidth for _, tmp in services for _, _, cfg in tmp)
         yield init_wlans(max_bw, wlans)
 
+        txpower = settings.common.wifi_txpower
+
+        for idx, wlan in enumerate(wlans):
+            if (txpower[wlan] if isinstance(txpower, dict) else txpower) == 'off':
+                rx_only_wlan_ids.add(idx)
+
+
     sockets = []
     cleanup_l = []
 
@@ -170,6 +191,9 @@ def init(profiles, wlans, cluster_mode):
         cleanup_l.append(rf_temp_meter)
     else:
         rf_temp_meter = None
+
+    if rx_only_wlan_ids:
+        log.msg('RX-only wlan ids: %s' % (', '.join(map(hex, rx_only_wlan_ids))))
 
     for profile, service_list in services:
         # Domain wide antenna selector
@@ -192,7 +216,7 @@ def init(profiles, wlans, cluster_mode):
                                                'cluster' if is_cluster else ', '.join(wlans),
                                                profile_cfg.link_domain)
 
-        ant_sel_f = StatsAndSelectorFactory(logger, cli_title, rf_temp_meter, is_cluster)
+        ant_sel_f = StatsAndSelectorFactory(logger, cli_title, rf_temp_meter, is_cluster, rx_only_wlan_ids)
         cleanup_l.append(ant_sel_f)
 
         link_id = hash_link_domain(profile_cfg.link_domain)
@@ -204,7 +228,7 @@ def init(profiles, wlans, cluster_mode):
             log.msg('Starting %s/%s@%s' % (profile, service_name, profile_cfg.link_domain))
             dl.append(defer.maybeDeferred(type_map[service_type], service_name, srv_cfg,
                                           srv_cfg.udp_peers_auto if is_cluster else wlans,
-                                          link_id, ant_sel_f, is_cluster))
+                                          link_id, ant_sel_f, is_cluster, rx_only_wlan_ids))
 
     yield defer.gatherResults(dl, consumeErrors=True).addBoth(_cleanup).addErrback(lambda f: f.trap(defer.FirstError) and f.value.subFailure)
 

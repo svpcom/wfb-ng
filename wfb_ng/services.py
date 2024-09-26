@@ -74,12 +74,12 @@ def parse_services(profile_name, udp_port_allocator):
 
 
 @defer.inlineCallbacks
-def init_udp_direct_tx(service_name, cfg, wlans, link_id, ant_sel_f, is_cluster):
+def init_udp_direct_tx(service_name, cfg, wlans, link_id, ant_sel_f, is_cluster, rx_only_wlan_ids):
     # Direct udp doesn't support TX diversity - only first card will be used.
     # But if mirror mode is enabled it will use all cards.
 
-    if not cfg.mirror and (len(wlans) > 1 or ',' in wlans[0]):
-        raise Exception("udp_direct_tx doesn't supports diversity but multiple cards selected. Use udp_proxy for such case.")
+    if not cfg.mirror and (len(wlans) > 1 or ',' in wlans[0] or rx_only_wlan_ids):
+        raise Exception("udp_direct_tx doesn't supports diversity and/or rx-only wlans. Use udp_proxy for such case.")
 
     if not listen_re.match(cfg.peer):
         raise Exception('%s: unsupported peer address: %s' % (service_name, cfg.peer))
@@ -130,7 +130,7 @@ def init_udp_direct_tx(service_name, cfg, wlans, link_id, ant_sel_f, is_cluster)
     yield df
 
 
-def init_udp_direct_rx(service_name, cfg, wlans, link_id, ant_sel_f, is_cluster):
+def init_udp_direct_rx(service_name, cfg, wlans, link_id, ant_sel_f, is_cluster, rx_only_wlan_ids):
     if not connect_re.match(cfg.peer):
         raise Exception('%s: unsupported peer address: %s' % (service_name, cfg.peer))
 
@@ -156,7 +156,7 @@ def init_udp_direct_rx(service_name, cfg, wlans, link_id, ant_sel_f, is_cluster)
 
 
 @defer.inlineCallbacks
-def init_mavlink(service_name, cfg, wlans, link_id, ant_sel_f, is_cluster):
+def init_mavlink(service_name, cfg, wlans, link_id, ant_sel_f, is_cluster, rx_only_wlan_ids):
     listen = None
     connect = None
     serial = None
@@ -281,7 +281,7 @@ def init_mavlink(service_name, cfg, wlans, link_id, ant_sel_f, is_cluster):
 
     log.msg('%s use wfb_tx ports %s, control_port %d' % (service_name, tx_ports, control_port))
 
-    p_tx_map = dict((wlan_id, UDPProxyProtocol(('127.0.0.1', port))) for wlan_id, port in tx_ports.items())
+    p_tx_map = dict((wlan_id, UDPProxyProtocol(('127.0.0.1', port))) for wlan_id, port in tx_ports.items() if wlan_id not in rx_only_wlan_ids)
 
     if serial:
         serial_port = SerialPort(p_in, os.path.join('/dev', serial[0]), reactor, baudrate=serial[1])
@@ -298,7 +298,8 @@ def init_mavlink(service_name, cfg, wlans, link_id, ant_sel_f, is_cluster):
             if wlan_id is not None \
                else list(p_tx_map.values())[0]
 
-    ant_sel_f.add_ant_sel_cb(ant_sel_cb)
+    if p_tx_map:
+        ant_sel_f.add_ant_sel_cb(ant_sel_cb)
 
     # Report RSSI to OSD
     ant_sel_f.add_rssi_cb(p_in.send_rssi)
@@ -320,7 +321,7 @@ def init_mavlink(service_name, cfg, wlans, link_id, ant_sel_f, is_cluster):
 
 
 @defer.inlineCallbacks
-def init_tunnel(service_name, cfg, wlans, link_id, ant_sel_f, is_cluster):
+def init_tunnel(service_name, cfg, wlans, link_id, ant_sel_f, is_cluster, rx_only_wlan_ids):
     p_in = TUNTAPProtocol(mtu=settings.common.radio_mtu,
                           agg_timeout=settings.common.tunnel_agg_timeout)
 
@@ -383,7 +384,7 @@ def init_tunnel(service_name, cfg, wlans, link_id, ant_sel_f, is_cluster):
         control_port = yield control_port_df
 
     log.msg('%s use wfb_tx ports %s, control_port %d' % (service_name, tx_ports, control_port))
-    p_tx_map = dict((wlan_id, UDPProxyProtocol(('127.0.0.1', port))) for wlan_id, port in tx_ports.items())
+    p_tx_map = dict((wlan_id, UDPProxyProtocol(('127.0.0.1', port))) for wlan_id, port in tx_ports.items() if wlan_id not in rx_only_wlan_ids)
 
     tun_ep = TUNTAPTransport(reactor, p_in, cfg.ifname, cfg.ifaddr, mtu=settings.common.radio_mtu, default_route=cfg.default_route)
     sockets += [ reactor.listenUDP(0, p_tx) for p_tx in p_tx_map.values() ]
@@ -402,7 +403,8 @@ def init_tunnel(service_name, cfg, wlans, link_id, ant_sel_f, is_cluster):
     else:
         p_in.all_peers = list(p_tx_map.values())
 
-    ant_sel_f.add_ant_sel_cb(ant_sel_cb)
+    if p_tx_map:
+        ant_sel_f.add_ant_sel_cb(ant_sel_cb)
 
     dl.append(RXProtocol(ant_sel_f, cmd_rx, '%s rx' % (service_name,)).start())
 
@@ -417,7 +419,7 @@ def init_tunnel(service_name, cfg, wlans, link_id, ant_sel_f, is_cluster):
 
 
 @defer.inlineCallbacks
-def init_udp_proxy(service_name, cfg, wlans, link_id, ant_sel_f, is_cluster):
+def init_udp_proxy(service_name, cfg, wlans, link_id, ant_sel_f, is_cluster, rx_only_wlan_ids):
     listen = None
     connect = None
 
@@ -500,7 +502,7 @@ def init_udp_proxy(service_name, cfg, wlans, link_id, ant_sel_f, is_cluster):
 
         log.msg('%s use wfb_tx ports %s, control_port %d' % (service_name, tx_ports, control_port))
 
-        p_tx_map = dict((wlan_id, UDPProxyProtocol(('127.0.0.1', port))) for wlan_id, port in tx_ports.items())
+        p_tx_map = dict((wlan_id, UDPProxyProtocol(('127.0.0.1', port))) for wlan_id, port in tx_ports.items() if wlan_id not in rx_only_wlan_ids)
         sockets += [ reactor.listenUDP(0, p_tx) for p_tx in p_tx_map.values() ]
 
         def ant_sel_cb(wlan_id):
@@ -508,7 +510,8 @@ def init_udp_proxy(service_name, cfg, wlans, link_id, ant_sel_f, is_cluster):
                 if wlan_id is not None \
                    else list(p_tx_map.values())[0]
 
-        ant_sel_f.add_ant_sel_cb(ant_sel_cb)
+        if p_tx_map:
+            ant_sel_f.add_ant_sel_cb(ant_sel_cb)
 
     def _cleanup(x):
         for s in sockets:
