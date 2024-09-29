@@ -141,6 +141,8 @@ def format_ant(ant_id):
 class AntennaStat(Int32StringReceiver):
     MAX_LENGTH = 1024 * 1024
     is_cluster = False
+    log_interval = settings.common.log_interval
+    temp_overheat_warning = settings.common.temp_overheat_warning
 
     def stringReceived(self, string):
         attrs = msgpack.unpackb(string, strict_map_key=False, use_list=False)
@@ -150,7 +152,10 @@ class AntennaStat(Int32StringReceiver):
         elif attrs['type'] == 'tx':
             self.draw_tx(attrs)
         elif attrs['type'] == 'cli_title':
-            self.is_cluster = attrs['is_cluster']
+            # Fallbacks added for compatibility with old server versions
+            self.is_cluster = attrs.get('is_cluster', False)
+            self.log_interval = attrs.get('log_interval', settings.common.log_interval)
+            self.temp_overheat_warning = attrs.get('temp_overheat_warning', settings.common.temp_overheat_warning)
             set_window_title(attrs['cli_title'])
 
     def draw_rx(self, attrs):
@@ -167,12 +172,15 @@ class AntennaStat(Int32StringReceiver):
         window.erase()
         addstr_markup(window, 0, 0, '     {pkt/s pkt}')
 
-        msg_l = (('{recv}  %4d$ (%d)' % tuple(p['all']),     0),
-                 ('{udp}   %4d$ (%d)' % tuple(p['out']),     0),
-                 ('fec_r %4d$ (%d)' % tuple(p['fec_rec']), curses.A_REVERSE if p['fec_rec'][0] else 0),
-                 ('lost  %4d$ (%d)' % tuple(p['lost']),    curses.A_REVERSE if p['lost'][0] else 0),
-                 ('d_err %4d$ (%d)' % tuple(p['dec_err']), curses.A_REVERSE if p['dec_err'][0] else 0),
-                 ('bad   %4d$ (%d)' % tuple(p['bad']),     curses.A_REVERSE if p['bad'][0] else 0))
+        def _norm(l):
+            return (1000 * l[0] // self.log_interval, l[1])
+
+        msg_l = (('{recv}  %4d$ (%d)' % _norm(p['all']),     0),
+                 ('{udp}   %4d$ (%d)' % _norm(p['out']),     0),
+                 ('fec_r %4d$ (%d)' % _norm(p['fec_rec']), curses.A_REVERSE if p['fec_rec'][0] else 0),
+                 ('lost  %4d$ (%d)' % _norm(p['lost']),    curses.A_REVERSE if p['lost'][0] else 0),
+                 ('d_err %4d$ (%d)' % _norm(p['dec_err']), curses.A_REVERSE if p['dec_err'][0] else 0),
+                 ('bad   %4d$ (%d)' % _norm(p['bad']),     curses.A_REVERSE if p['bad'][0] else 0))
 
         ymax = window.getmaxyx()[0]
         for y, (msg, attr) in enumerate(msg_l, 1):
@@ -181,8 +189,8 @@ class AntennaStat(Int32StringReceiver):
 
 
         flow_str = '{Flow:} %s -> %s  ' % \
-             (human_rate(p['all_bytes'][0]),
-              human_rate(p['out_bytes'][0]))
+             (human_rate(1000 * p['all_bytes'][0] / self.log_interval),
+              human_rate(1000 * p['out_bytes'][0] / self.log_interval))
 
         if session_d:
             flow_str += '{FEC:} %(fec_k)d/%(fec_n)d' % (session_d)
@@ -205,7 +213,7 @@ class AntennaStat(Int32StringReceiver):
                     addstr_markup(window, y, 20, '%04d %3d %2d %s%s%s  %4d  %3d < {%3d} < %3d  %3d < {%3d} < %3d' % \
                            (freq, mcs_index, bandwith,
                             '{' if active_tx else '', format_ant(ant_id), '}' if active_tx else '',
-                            pkt_s,
+                            1000 * pkt_s // self.log_interval,
                             rssi_min, rssi_avg, rssi_max,
                             snr_min, snr_avg, snr_max), 0 if active_tx else curses.A_DIM)
         else:
@@ -226,11 +234,14 @@ class AntennaStat(Int32StringReceiver):
         window.erase()
         addstr_noerr(window, 0, 0, '     pkt/s pkt', curses.A_BOLD)
 
-        msg_l = (('{sent}  %4d$ (%d)' % tuple(p['injected']),     0),
-                 ('{udp}   %4d$ (%d)' % tuple(p['incoming']),     0),
-                 ('fec_t %4d$ (%d)' % tuple(p['fec_timeouts']), 0),
-                 ('drop  %4d$ (%d)' % tuple(p['dropped']),    curses.A_REVERSE if p['dropped'][0] else 0),
-                 ('trunc %4d$ (%d)' % tuple(p['truncated']), curses.A_REVERSE if p['truncated'][0] else 0))
+        def _norm(l):
+            return (1000 * l[0] // self.log_interval, l[1])
+
+        msg_l = (('{sent}  %4d$ (%d)' % _norm(p['injected']),     0),
+                 ('{udp}   %4d$ (%d)' % _norm(p['incoming']),     0),
+                 ('fec_t %4d$ (%d)' % _norm(p['fec_timeouts']), 0),
+                 ('drop  %4d$ (%d)' % _norm(p['dropped']),    curses.A_REVERSE if p['dropped'][0] else 0),
+                 ('trunc %4d$ (%d)' % _norm(p['truncated']), curses.A_REVERSE if p['truncated'][0] else 0))
 
         ymax = window.getmaxyx()[0]
         for y, (msg, attr) in enumerate(msg_l, 1):
@@ -239,8 +250,8 @@ class AntennaStat(Int32StringReceiver):
 
         addstr_markup(window, 0, 20,
                  '{Flow:} %s -> %s' % \
-                 (human_rate(p['incoming_bytes'][0]),
-                  human_rate(p['injected_bytes'][0])))
+                 (human_rate(1000 * p['incoming_bytes'][0] / self.log_interval),
+                  human_rate(1000 * p['injected_bytes'][0] / self.log_interval)))
 
         if latency_d:
             if self.is_cluster:
@@ -252,21 +263,21 @@ class AntennaStat(Int32StringReceiver):
 
             addstr_markup(window, 2, 20, '{%s[ANT]%s pkt/s}   {\u00b0C}    {Injection} [us]' % (lpad, rpad))
             for y, (k, v) in enumerate(sorted(latency_d.items()), 3):
-                k = int(k) # json doesn't support int keys
                 injected, dropped, lat_min, lat_avg, lat_max = v
 
                 # Show max temperature from all RF paths
                 temp = max((_v for _k, _v in rf_temperature.items() if (_k >> 8) == (k >> 8)), default=None)
                 if temp is not None:
-                    if temp >= settings.common.temp_overheat_warning:
-                        temp = '{%d}' % (temp,)
+                    if self.temp_overheat_warning is not None and temp >= self.temp_overheat_warning:
+                        temp = '^%d$' % (temp,)
                     else:
                         temp = str(temp)
                 else:
                     temp = ' (--)'
 
                 if y < ymax:
-                    addstr_markup(window, y, 20, '{%s}  %4d  %3s %4d < {%4d} < %4d' % (format_ant(k), injected, temp, lat_min, lat_avg, lat_max))
+                    addstr_markup(window, y, 20, '{%s}  %4d  %3s %4d < {%4d} < %4d' % \
+                                  (format_ant(k), 1000 * injected // self.log_interval, temp, lat_min, lat_avg, lat_max))
         else:
             addstr_noerr(window, 2, 20, '[No data]', curses.A_REVERSE)
 

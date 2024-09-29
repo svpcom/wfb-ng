@@ -46,9 +46,16 @@ class StatisticsProtocol(Int32StringReceiver):
     MAX_LENGTH = 1024 * 1024
 
     def connectionMade(self):
+        # Push all config values for CLI into session
+        # to allow CLI run without config file
+        # (for example for access from remote host)
+
         self.sendString(msgpack.packb(dict(type='cli_title',
                                            cli_title=self.factory.cli_title or "",
-                                           is_cluster=self.factory.is_cluster)))
+                                           is_cluster=self.factory.is_cluster,
+                                           log_interval=settings.common.log_interval,
+                                           temp_overheat_warning=settings.common.temp_overheat_warning)))
+
         self.factory.ui_sessions.append(self)
 
     def stringReceived(self, string):
@@ -346,17 +353,16 @@ class RXAntennaProtocol(LineReceiver):
                 if len(cols) != 3:
                     raise BadTelemetry()
 
-                p_all, b_all, p_dec_err, p_dec_ok, p_fec_rec, p_lost, p_bad, p_outgoing, b_outgoing = list(int(i) for i in cols[2].split(':'))
+                k_tuple = ('all', 'all_bytes', 'dec_err', 'dec_ok', 'fec_rec', 'lost', 'bad', 'out', 'out_bytes')
+                counters = tuple(int(i) for i in cols[2].split(':'))
+                assert len(counters) == len(k_tuple)
 
                 if not self.count_all:
-                    self.count_all = (p_all, b_all, p_dec_ok, p_fec_rec, p_lost, p_dec_err, p_bad, p_outgoing, b_outgoing)
+                    self.count_all = counters
                 else:
-                    self.count_all = tuple((a + b) for a, b in zip((p_all, b_all, p_dec_ok, p_fec_rec, p_lost, p_dec_err, p_bad, p_outgoing, b_outgoing),
-                                                                   self.count_all))
+                    self.count_all = tuple((a + b) for a, b in zip(counters, self.count_all))
 
-                stats = dict(zip(('all', 'all_bytes', 'dec_ok', 'fec_rec', 'lost', 'dec_err', 'bad', 'out', 'out_bytes'),
-                                 zip((p_all, b_all, p_dec_ok, p_fec_rec, p_lost, p_dec_err, p_bad, p_outgoing, b_outgoing),
-                                     self.count_all)))
+                stats = dict(zip(k_tuple, zip(counters, self.count_all)))
 
                 # Send stats to aggregators
                 if self.ant_stat_cb is not None:
@@ -437,17 +443,16 @@ class TXAntennaProtocol(LineReceiver):
             if len(cols) != 3:
                 raise BadTelemetry()
 
-            p_fec_timeouts, p_incoming, b_incoming, p_injected, b_injected, p_dropped, p_truncated = list(int(i) for i in cols[2].split(':'))
+            k_tuple = ('fec_timeouts', 'incoming', 'incoming_bytes', 'injected', 'injected_bytes', 'dropped', 'truncated')
+            counters = tuple(int(i) for i in cols[2].split(':'))
+            assert len(counters) == len(k_tuple)
 
             if not self.count_all:
-                self.count_all = (p_fec_timeouts, p_incoming, b_incoming, p_injected, b_injected, p_dropped, p_truncated)
+                self.count_all = counters
             else:
-                self.count_all = tuple((a + b) for a, b in zip((p_fec_timeouts, p_incoming, b_incoming, p_injected, b_injected, p_dropped, p_truncated),
-                                                               self.count_all))
+                self.count_all = tuple((a + b) for a, b in zip(counters, self.count_all))
 
-            stats = dict(zip(('fec_timeouts', 'incoming', 'incoming_bytes', 'injected', 'injected_bytes', 'dropped', 'truncated'),
-                             zip((p_fec_timeouts, p_incoming, b_incoming, p_injected, b_injected, p_dropped, p_truncated),
-                                 self.count_all)))
+            stats = dict(zip(k_tuple, zip(counters, self.count_all)))
 
             # Send stats to aggregators
             if self.ant_stat_cb is not None:
