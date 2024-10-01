@@ -76,7 +76,7 @@ class BinLogger(ErrorSafeLogFile):
     log_cls = BinLogFile
 
     def send_stats(self, data):
-        data = msgpack.packb(data)
+        data = msgpack.packb(data, use_bin_type=True)
         self.write(b''.join((struct.pack('!I', len(data)), data)))
 
 
@@ -84,7 +84,7 @@ class StatisticsProtocol(Int32StringReceiver):
     MAX_LENGTH = 1024 * 1024
 
     def connectionMade(self):
-        self.sendString(msgpack.packb(dict(type='cli_title', cli_title=self.factory.cli_title)))
+        self.sendString(msgpack.packb(dict(type='cli_title', cli_title=self.factory.cli_title), use_bin_type=True))
         self.factory.ui_sessions.append(self)
 
     def stringReceived(self, string):
@@ -94,7 +94,7 @@ class StatisticsProtocol(Int32StringReceiver):
         self.factory.ui_sessions.remove(self)
 
     def send_stats(self, data):
-        self.sendString(msgpack.packb(data))
+        self.sendString(msgpack.packb(data, use_bin_type=True))
 
 
 class StatsAndSelectorFactory(Factory):

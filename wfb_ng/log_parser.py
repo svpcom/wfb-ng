@@ -24,7 +24,7 @@ def main():
                 if len(data) < data_len:
                     break
 
-                msg =  msgpack.unpackb(data, strict_map_key=False, use_list=False)
+                msg =  msgpack.unpackb(data, strict_map_key=False, use_list=False, raw=False)
                 ts = msg.pop('timestamp')
                 mtype = msg.pop('type')
 
