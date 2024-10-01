@@ -145,7 +145,7 @@ class AntennaStat(Int32StringReceiver):
     temp_overheat_warning = settings.common.temp_overheat_warning
 
     def stringReceived(self, string):
-        attrs = msgpack.unpackb(string, strict_map_key=False, use_list=False)
+        attrs = msgpack.unpackb(string, strict_map_key=False, use_list=False, raw=False)
 
         if attrs['type'] == 'rx':
             self.draw_rx(attrs)

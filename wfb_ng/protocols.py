@@ -54,7 +54,8 @@ class StatisticsProtocol(Int32StringReceiver):
                                            cli_title=self.factory.cli_title or "",
                                            is_cluster=self.factory.is_cluster,
                                            log_interval=settings.common.log_interval,
-                                           temp_overheat_warning=settings.common.temp_overheat_warning)))
+                                           temp_overheat_warning=settings.common.temp_overheat_warning),
+                                      use_bin_type=True))
 
         self.factory.ui_sessions.append(self)
 
@@ -65,7 +66,7 @@ class StatisticsProtocol(Int32StringReceiver):
         self.factory.ui_sessions.remove(self)
 
     def send_stats(self, data):
-        self.sendString(msgpack.packb(data))
+        self.sendString(msgpack.packb(data, use_bin_type=True))
 
 
 class RFTempMeter(object):

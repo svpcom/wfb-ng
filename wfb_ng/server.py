@@ -55,7 +55,7 @@ class BinLogger(ErrorSafeLogFile):
     log_cls = BinLogFile
 
     def send_stats(self, data):
-        data = msgpack.packb(data)
+        data = msgpack.packb(data, use_bin_type=True)
         self.write(b''.join((struct.pack('!I', len(data)), data)))
 
 
