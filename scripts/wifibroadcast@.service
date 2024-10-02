@@ -1,6 +1,6 @@
 [Unit]
-Description=WFB profile %i
-PartOf=wifibroadcast.service
+Description=WFB-ng standalone server, profile %i
+Requires=wifibroadcast.service
 ReloadPropagatedFrom=wifibroadcast.service
 
 [Service]
@@ -10,10 +10,11 @@ EnvironmentFile=/etc/default/wifibroadcast
 # per-profile environment
 EnvironmentFile=-/etc/default/wifibroadcast.%i
 ExecStart=/bin/bash -c "exec /usr/bin/wfb-server --profiles $(echo %i | tr : ' ') --wlans ${WFB_NICS}"
+KillMode=mixed
 TimeoutStopSec=5s
 Restart=on-failure
 RestartSec=5s
-# Set logging to file in wifibroadcast.cfg
+# Set logging to file in /etc/wifibroadcast.cfg
 StandardError=inherit
 
 [Install]

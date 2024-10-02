@@ -1,0 +1,6 @@
+#!/bin/bash
+if [ "$1" == "remove" ]
+then
+    systemctl stop wifibroadcast
+    systemctl stop wfb-cluster
+fi

@@ -2,8 +2,9 @@
 # to propagate to all wifibroadcast@ service instances.
 
 [Unit]
-Description=Wifibroadcast server
+Description=WFB-ng standalone server
 After=network.target
+Conflicts=wfb-cluster.service
 #After=network.target sys-subsystem-net-devices-wlx00c0caa578a9.device
 #Requires=sys-subsystem-net-devices-wlx00c0caa578a9.device
 

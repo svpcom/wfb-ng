@@ -1,0 +1,17 @@
+# This is a mostly empty service, but allows commands like stop, start, reload
+# to propagate to all wfb-cluster services instances.
+
+[Unit]
+Description=WFB-ng cluster
+After=network.target
+Conflicts=wifibroadcast.service
+
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/bin/true
+ExecReload=/bin/true
+
+[Install]
+WantedBy=multi-user.target

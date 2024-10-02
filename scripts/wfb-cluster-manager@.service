@@ -1,0 +1,17 @@
+[Unit]
+Description=WFB-ng cluster manager, profile %i
+Requires=wfb-cluster.service
+ReloadPropagatedFrom=wfb-cluster.service
+
+[Service]
+Type=simple
+ExecStart=/bin/bash -c "exec /usr/bin/wfb-server --profiles $(echo %i | tr : ' ') --cluster manual"
+TimeoutStopSec=5s
+KillMode=mixed
+Restart=on-failure
+RestartSec=5s
+# Set logging to file in wifibroadcast.cfg
+StandardError=inherit
+
+[Install]
+WantedBy=wfb-cluster.service

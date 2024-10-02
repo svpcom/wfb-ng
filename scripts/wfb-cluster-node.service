@@ -1,0 +1,16 @@
+[Unit]
+Description=WFB-ng cluster node
+Requires=wfb-cluster.service
+ReloadPropagatedFrom=wfb-cluster.service
+
+[Service]
+Type=simple
+ExecStart=/usr/sbin/wfb-ng.sh
+TimeoutStopSec=5s
+Restart=on-failure
+KillMode=mixed
+RestartSec=5s
+StandardError=inherit
+
+[Install]
+WantedBy=wfb-cluster.service
