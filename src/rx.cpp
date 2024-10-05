@@ -336,8 +336,8 @@ void Aggregator::init_fec(int k, int n)
         {
             rx_ring[ring_idx].fragments[i] = new uint8_t[MAX_FEC_PAYLOAD];
         }
-        rx_ring[ring_idx].fragment_map = new uint8_t[fec_n];
-        memset(rx_ring[ring_idx].fragment_map, '\0', fec_n * sizeof(uint8_t));
+        rx_ring[ring_idx].fragment_map = new size_t[fec_n];
+        memset(rx_ring[ring_idx].fragment_map, '\0', fec_n * sizeof(size_t));
     }
 }
 
@@ -475,7 +475,7 @@ int Aggregator::get_block_ring_idx(uint64_t block_idx)
         rx_ring[ring_idx].block_idx = block_idx + i + 1 - new_blocks;
         rx_ring[ring_idx].fragment_to_send_idx = 0;
         rx_ring[ring_idx].has_fragments = 0;
-        memset(rx_ring[ring_idx].fragment_map, '\0', fec_n * sizeof(uint8_t));
+        memset(rx_ring[ring_idx].fragment_map, '\0', fec_n * sizeof(size_t));
     }
     return ring_idx;
 }
@@ -579,7 +579,7 @@ void Aggregator::process_packet(const uint8_t *buf, size_t size, uint8_t wlan_id
     switch(buf[0])
     {
     case WFB_PACKET_DATA:
-        if(size < sizeof(wblock_hdr_t) + sizeof(wpacket_hdr_t))
+        if(size < sizeof(wblock_hdr_t) + crypto_aead_chacha20poly1305_ABYTES + sizeof(wpacket_hdr_t))
         {
             fprintf(stderr, "Short packet (fec header)\n");
             count_p_bad += 1;
@@ -693,6 +693,7 @@ void Aggregator::process_packet(const uint8_t *buf, size_t size, uint8_t wlan_id
     count_p_dec_ok += 1;
     log_rssi(sockaddr, wlan_idx, antenna, rssi, noise, freq, mcs_index, bandwidth);
 
+    assert(decrypted_len >= sizeof(wpacket_hdr_t));
     assert(decrypted_len <= MAX_FEC_PAYLOAD);
 
     uint64_t block_idx = be64toh(block_hdr->data_nonce) >> 8;
@@ -726,7 +727,7 @@ void Aggregator::process_packet(const uint8_t *buf, size_t size, uint8_t wlan_id
     memset(p->fragments[fragment_idx], '\0', MAX_FEC_PAYLOAD);
     memcpy(p->fragments[fragment_idx], decrypted, decrypted_len);
 
-    p->fragment_map[fragment_idx] = 1;
+    p->fragment_map[fragment_idx] = decrypted_len;
     p->has_fragments += 1;
 
     // Check if we use current (oldest) block
@@ -849,6 +850,7 @@ void Aggregator::apply_fec(int ring_idx)
     uint8_t *out_blocks[fec_n - fec_k];
     int j = fec_k;
     int ob_idx = 0;
+    size_t max_packet_size = 0;
 
     for(int i=0; i < fec_k; i++)
     {
@@ -856,22 +858,26 @@ void Aggregator::apply_fec(int ring_idx)
         {
             in_blocks[i] = rx_ring[ring_idx].fragments[i];
             index[i] = i;
-        }else
+        }
+        else
         {
-            for(;j < fec_n; j++)
+            while(j < fec_n && ! rx_ring[ring_idx].fragment_map[j])
             {
-                if(rx_ring[ring_idx].fragment_map[j])
-                {
-                    in_blocks[i] = rx_ring[ring_idx].fragments[j];
-                    out_blocks[ob_idx++] = rx_ring[ring_idx].fragments[i];
-                    index[i] = j;
-                    j++;
-                    break;
-                }
+                j++;
             }
+
+            assert(j < fec_n);
+            // FEC packets always have max size between packets in block
+            max_packet_size = max(max_packet_size, rx_ring[ring_idx].fragment_map[j]);
+            in_blocks[i] = rx_ring[ring_idx].fragments[j];
+            out_blocks[ob_idx++] = rx_ring[ring_idx].fragments[i];
+            index[i] = j++;
         }
     }
-    fec_decode(fec_p, (const uint8_t**)in_blocks, out_blocks, index, MAX_FEC_PAYLOAD);
+
+    assert(max_packet_size > 0);
+    assert(max_packet_size <= MAX_FEC_PAYLOAD);
+    fec_decode(fec_p, (const uint8_t**)in_blocks, out_blocks, index, max_packet_size);
 }
 
 void radio_loop(int argc, char* const *argv, int optind, uint32_t channel_id, unique_ptr<BaseAggregator> &agg, int log_interval, int rcv_buf_size)
