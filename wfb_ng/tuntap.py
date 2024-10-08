@@ -42,7 +42,7 @@ class TUNTAPTransport(abstract.FileDescriptor):
     def __init__(self, reactor, protocol, name, addr, dev=b'/dev/net/tun', mtu=1400, mode=TUN, default_route=False):
         abstract.FileDescriptor.__init__(self, reactor)
         self.queue = deque()
-        self.mtu = mtu - 2
+        self.mtu = mtu - 2  # reserve two bytes for packet header
         self.name = name
         self.fd = os.open(dev, os.O_RDWR | os.O_NONBLOCK)
 
