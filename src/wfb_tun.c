@@ -53,11 +53,16 @@ static unsigned int agg_timeout_ms = 5;
 typedef struct
 {
     char data[MTU * 2];
-    size_t data_size;
-    size_t batch_size;
-    size_t offset;
-} packet_buffer_t;
+    size_t data_size;  // size of packet buffer
+    size_t batch_size; // size of current ready-to-send batch <= MTU
+} in_packet_buffer_t;
 
+typedef struct
+{
+    char data[MTU];
+    size_t data_size;  // size of packet buffer
+    size_t offset; // offset of current packet for injection into tun
+} out_packet_buffer_t;
 
 // TUN packet header
 typedef struct {
@@ -71,7 +76,7 @@ typedef struct {
 #define dbg_log(...)  ((void)0)
 #endif
 
-void event_sig_cb (evutil_socket_t sig, short flags, void *cls)
+void event_sig_cb(evutil_socket_t sig, short flags, void *arg)
 {
     switch (sig)
     {
@@ -87,7 +92,7 @@ void event_sig_cb (evutil_socket_t sig, short flags, void *cls)
     event_base_loopexit (ev_base, NULL);
 }
 
-void ev_ping_cb (evutil_socket_t fd, short flags, void *arg)
+void ev_ping_cb(evutil_socket_t fd, short flags, void *arg)
 {
     assert(fd >= 0);
     assert((EV_TIMEOUT & flags) != 0);
@@ -101,25 +106,26 @@ void ev_ping_cb (evutil_socket_t fd, short flags, void *arg)
     if(pkt_sem > 0) pkt_sem--;
 }
 
-void ev_tun_read_cb (evutil_socket_t fd, short flags, void *cls)
+void ev_tun_read_cb(evutil_socket_t fd, short flags, void *arg)
 {
-    packet_buffer_t *buf = cls;
+    in_packet_buffer_t *buf = arg;
 
     assert(buf != NULL);
     assert((EV_TIMEOUT & flags) == 0);
     assert((EV_READ & flags) != 0);
+    assert(ev_tun_read != NULL);
     assert(ev_socket_write != NULL);
     assert(buf->data_size < MTU);
 
-    bool is_new_buffer = (buf->offset == 0);
+    bool is_new_buffer = (buf->data_size == 0);
     int nread = read(fd,
-                     buf->data + buf->offset + sizeof(tun_packet_hdr_t),
+                     buf->data + buf->data_size + sizeof(tun_packet_hdr_t),
                      MTU - sizeof(tun_packet_hdr_t));
 
     assert(nread > 0);
     assert(nread <= MTU - sizeof(tun_packet_hdr_t));
 
-    ((tun_packet_hdr_t*)(buf->data + buf->offset))->packet_size = htons(nread);
+    ((tun_packet_hdr_t*)(buf->data + buf->data_size))->packet_size = htons(nread);
 
     buf->data_size += (sizeof(tun_packet_hdr_t) + nread);
 
@@ -128,9 +134,7 @@ void ev_tun_read_cb (evutil_socket_t fd, short flags, void *cls)
         buf->batch_size = buf->data_size;
     }
 
-    dbg_log("tun_read: off=%zu, packet_size=%d, batch_size=%zu, data_size=%zu\n", buf->offset, nread, buf->batch_size, buf->data_size);
-
-    buf->offset += (sizeof(tun_packet_hdr_t) + nread);
+    dbg_log("tun_read: packet_size=%d, batch_size=%zu, data_size=%zu\n", nread, buf->batch_size, buf->data_size);
 
     if(buf->data_size >= MTU || agg_timeout_ms == 0)
     {
@@ -153,12 +157,13 @@ void ev_tun_read_cb (evutil_socket_t fd, short flags, void *cls)
     }
 }
 
-void ev_socket_write_cb (evutil_socket_t fd, short flags, void *cls)
+void ev_socket_write_cb(evutil_socket_t fd, short flags, void *arg)
 {
-    packet_buffer_t *buf = cls;
+    in_packet_buffer_t *buf = arg;
 
     assert(buf != NULL);
     assert(ev_tun_read != NULL);
+    assert(ev_socket_write != NULL);
 
     // reset ping semaphore
     pkt_sem = 1;
@@ -184,12 +189,11 @@ void ev_socket_write_cb (evutil_socket_t fd, short flags, void *cls)
     {
         memmove(buf->data, buf->data + buf->batch_size, buf->data_size - buf->batch_size);
         buf->data_size -= buf->batch_size;
-        buf->offset = buf->data_size;
         buf->batch_size = buf->data_size;
     }
     else
     {
-        memset(buf, 0, sizeof(packet_buffer_t));
+        memset(buf, 0, sizeof(in_packet_buffer_t));
     }
 
     assert(buf->data_size <= MTU);
@@ -202,7 +206,7 @@ void ev_socket_write_cb (evutil_socket_t fd, short flags, void *cls)
     {
         event_add(ev_tun_read, NULL);
 
-        if(buf->offset > 0 && agg_timeout_ms > 0)
+        if(buf->data_size > 0 && agg_timeout_ms > 0)
         {
             // Set aggregation timeout for non-empty buffer
             struct timeval tv = { .tv_sec = agg_timeout_ms / 1000,
@@ -214,57 +218,58 @@ void ev_socket_write_cb (evutil_socket_t fd, short flags, void *cls)
 }
 
 
-void ev_tun_write_cb (evutil_socket_t fd, short flags, void *cls)
+void ev_tun_write_cb(evutil_socket_t fd, short flags, void *arg)
 {
-    packet_buffer_t *buf = cls;
+    out_packet_buffer_t *buf = arg;
     int nwrote;
 
     assert(buf != NULL);
     assert((EV_TIMEOUT & flags) == 0);
     assert((EV_WRITE & flags) != 0);
+    assert(ev_tun_write != NULL);
     assert(ev_socket_read != NULL);
-    assert(buf->data_size == buf->batch_size);
 
-    assert(buf->offset + sizeof(tun_packet_hdr_t) <= buf->batch_size);
+    assert(buf->offset + sizeof(tun_packet_hdr_t) <= buf->data_size);
     uint16_t packet_size = ntohs(((tun_packet_hdr_t*)(buf->data + buf->offset))->packet_size);
 
-    dbg_log("tun_write: off=%zu, psize=%zu + %d, batch_size=%zu, data_size=%zu\n", buf->offset, sizeof(tun_packet_hdr_t), packet_size, buf->batch_size, buf->data_size);
-    assert(buf->offset + sizeof(tun_packet_hdr_t) + packet_size <= buf->batch_size);
+    dbg_log("tun_write: off=%zu, psize=%zu + %d, data_size=%zu\n", buf->offset, sizeof(tun_packet_hdr_t), packet_size, buf->data_size);
+    assert(buf->offset + sizeof(tun_packet_hdr_t) + packet_size <= buf->data_size);
 
     nwrote = write(fd, buf->data + buf->offset + sizeof(tun_packet_hdr_t), packet_size);
     assert(nwrote == packet_size);
 
     buf->offset += (sizeof(tun_packet_hdr_t) + packet_size);
 
-    if (buf->offset < buf->batch_size)
+    if (buf->offset < buf->data_size)
     {
         event_add(ev_tun_write, NULL);
     }
     else
     {
-        memset(buf, 0, sizeof(packet_buffer_t));
+        memset(buf, 0, sizeof(out_packet_buffer_t));
         event_add(ev_socket_read, NULL);
     }
 }
 
 
-void ev_socket_read_cb (evutil_socket_t fd, short flags, void *cls)
+void ev_socket_read_cb(evutil_socket_t fd, short flags, void *arg)
 {
-    packet_buffer_t *buf = cls;
+    out_packet_buffer_t *buf = arg;
     int nread;
 
-    assert (buf != NULL);
-    assert ((EV_TIMEOUT & flags) == 0);
-    assert ((EV_READ & flags) != 0);
-    assert (ev_tun_write != NULL);
+    assert(buf != NULL);
+    assert((EV_TIMEOUT & flags) == 0);
+    assert((EV_READ & flags) != 0);
+    assert(ev_socket_read != NULL);
+    assert(ev_tun_write != NULL);
 
     nread = recv(fd,
                  buf->data,
                  MTU,
                  MSG_DONTWAIT);
 
-    assert (nread >= 0);
-    assert (nread <= MTU);
+    assert(nread >= 0);
+    assert(nread <= MTU);
 
     if(nread == 0)
     {
@@ -276,9 +281,8 @@ void ev_socket_read_cb (evutil_socket_t fd, short flags, void *cls)
 
     buf->offset = 0;
     buf->data_size = nread;
-    buf->batch_size = nread;
 
-    dbg_log("socket_read: off=%zu, batch_size=%zu, data_size=%zu\n", buf->offset, buf->batch_size, buf->data_size);
+    dbg_log("socket_read: off=%zu, data_size=%zu\n", buf->offset, buf->data_size);
 
     event_add(ev_tun_write, NULL);
 }
@@ -385,10 +389,10 @@ int main (int argc, char *argv[])
     int sock_fd = -1;
 
     // buffer TUN -> socket
-    packet_buffer_t in_buf;
+    in_packet_buffer_t in_buf;
 
     // buffer socket -> TUN
-    packet_buffer_t out_buf;
+    out_packet_buffer_t out_buf;
 
     uint16_t bind_port = 5800;
     char *tun_name = "wfb-tun";
