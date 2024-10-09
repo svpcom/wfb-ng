@@ -1,12 +1,12 @@
 include $(TOPDIR)/rules.mk
 
 PKG_NAME:=wfb-ng
-PKG_VERSION:=24.9.6
+PKG_VERSION:=24.9.7
 PKG_RELEASE:=1
 
 PKG_SOURCE_PROTO:=git
 PKG_SOURCE_URL:=https://github.com/svpcom/wfb-ng.git
-PKG_SOURCE_VERSION:=126e4be76e25bce9ed8a6ac65c499bf975fb11e9
+PKG_SOURCE_VERSION:=3a053040442174e6c1ce76866c6da4b12c19dbb4
 #PKG_MIRROR_HASH:=afa8bd06d3119e3fa8edc10d4a205e8b9ad21d0157e151aecba4dc24329a0d76
 
 PKG_LICENSE:=GPL-3.0-only
@@ -25,7 +25,7 @@ define Package/wfb-ng
   SUBMENU:=Wireless
   TITLE:=Long-range packet radio link using raw WiFi
   URL:=https://github.com/svpcom/wfb-ng
-  DEPENDS:=+libpcap +libsodium +libstdcpp
+  DEPENDS:=+libpcap +libsodium +libstdcpp +libevent2-core
 endef
 
 define Package/wfb-ng/description
@@ -38,6 +38,12 @@ define Package/wfb-ng/conffiles
 /usr/sbin/wfb-ng.sh
 endef
 
+define Package/wfb-ng-tun
+$(call Package/wfb-ng)
+  TITLE:=Long-range packet radio link using raw WiFi (tunnel)
+  DEPENDS:=+libevent2-core +kmod-tun
+endef
+
 define Package/wfb-ng/install
 	$(INSTALL_DIR) $(1)/usr/bin
 	$(INSTALL_BIN) $(PKG_BUILD_DIR)/wfb_rx $(1)/usr/bin/
@@ -46,4 +52,10 @@ define Package/wfb-ng/install
 	$(INSTALL_BIN) ./files/wfb-ng.init $(1)/etc/init.d/wfb-ng
 endef
 
+define Package/wfb-ng-tun/install
+	$(INSTALL_DIR) $(1)/usr/bin
+	$(INSTALL_BIN) $(PKG_BUILD_DIR)/wfb_tun $(1)/usr/bin/
+endef
+
 $(eval $(call BuildPackage,wfb-ng))
+$(eval $(call BuildPackage,wfb-ng-tun))
