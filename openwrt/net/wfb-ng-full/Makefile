@@ -2,11 +2,11 @@ include $(TOPDIR)/rules.mk
 
 PKG_NAME:=wfb-ng-full
 PKG_VERSION:=24.9.7
-PKG_RELEASE:=1
+PKG_RELEASE:=2
 
 PKG_SOURCE_PROTO:=git
 PKG_SOURCE_URL:=https://github.com/svpcom/wfb-ng.git
-PKG_SOURCE_VERSION:=b9ba1b69d86b2620150d46acb926e1beb6a06906
+PKG_SOURCE_VERSION:=3a053040442174e6c1ce76866c6da4b12c19dbb4
 #PKG_MIRROR_HASH:=2451a64be61a5052c2625c859548adcea141afece7ad297e0043bb911035dcdd
 
 PKG_LICENSE:=GPL-3.0-only
@@ -15,6 +15,7 @@ PKG_MAINTAINER:=Vasily Evseenko <svpcom@p2ptech.org>
 
 PKG_BUILD_PARALLEL:=1
 PYPI_SOURCE_NAME:=wfb_ng
+PKG_BUILD_DEPENDS:=libevent2
 
 include $(INCLUDE_DIR)/package.mk
 include $(TOPDIR)/feeds/packages/lang/python/python3-package.mk

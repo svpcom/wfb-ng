@@ -2,7 +2,7 @@ include $(TOPDIR)/rules.mk
 
 PKG_NAME:=wfb-ng
 PKG_VERSION:=24.9.7
-PKG_RELEASE:=1
+PKG_RELEASE:=2
 
 PKG_SOURCE_PROTO:=git
 PKG_SOURCE_URL:=https://github.com/svpcom/wfb-ng.git
@@ -14,6 +14,7 @@ PKG_LICENSE_FILES:=LICENSE
 PKG_MAINTAINER:=Vasily Evseenko <svpcom@p2ptech.org>
 
 PKG_BUILD_PARALLEL:=1
+PKG_BUILD_DEPENDS:=libevent2
 
 include $(INCLUDE_DIR)/package.mk
 
@@ -25,7 +26,7 @@ define Package/wfb-ng
   SUBMENU:=Wireless
   TITLE:=Long-range packet radio link using raw WiFi
   URL:=https://github.com/svpcom/wfb-ng
-  DEPENDS:=+libpcap +libsodium +libstdcpp +libevent2-core
+  DEPENDS:=+libpcap +libsodium +libstdcpp
 endef
 
 define Package/wfb-ng/description
