@@ -18,7 +18,7 @@ apt install python3-all python3-all-dev libpcap-dev libsodium-dev libevent-dev p
   python3-future python3-twisted python3-serial python3-jinja2 iw virtualenv debhelper dh-python fakeroot build-essential -y
 
 # Build
-make deb
+sudo make deb
 
 # Create key and copy to right location
 ./wfb_keygen
