@@ -21,8 +21,10 @@ import sys
 import msgpack
 import os
 import time
+import json
 
 from itertools import groupby
+from copy import deepcopy
 from twisted.python import log, failure
 from twisted.internet import reactor, defer, threads, task
 from twisted.internet.protocol import ProcessProtocol, Factory
@@ -42,9 +44,7 @@ class WFBFlags(object):
 
 fec_types = {1: 'VDM_RS'}
 
-class StatisticsProtocol(Int32StringReceiver):
-    MAX_LENGTH = 1024 * 1024
-
+class StatisticsMsgPackProtocol(Int32StringReceiver):
     def connectionMade(self):
         # Push all config values for CLI into session
         # to allow CLI run without config file
@@ -67,6 +67,43 @@ class StatisticsProtocol(Int32StringReceiver):
 
     def send_stats(self, data):
         self.sendString(msgpack.packb(data, use_bin_type=True))
+
+
+class StatisticsJSONProtocol(LineReceiver):
+    delimiter = b'\n'
+
+    def connectionMade(self):
+        # Push all config values on the start
+        msg = json.dumps(dict(type='settings',
+                              profile=self.factory.profile,
+                              is_cluster=self.factory.is_cluster,
+                              settings = deepcopy(settings)))
+
+        self.sendLine(msg.encode('utf-8'))
+        self.factory.ui_sessions.append(self)
+
+    def lineReceived(self, line):
+        pass
+
+    def connectionLost(self, reason):
+        self.factory.ui_sessions.remove(self)
+
+    def send_stats(self, data):
+        data = dict(data)
+
+        if data['type'] == 'rx':
+            ka = ('ant', 'freq', 'mcs', 'bw')
+            va = ('pkt_recv', 'rssi_min', 'rssi_avg', 'rssi_max', 'snr_min', 'snr_avg', 'snr_max')
+            data['rx_ant_stats'] = list((dict(zip(ka, (ant_id,) + k)), dict(zip(va, v)))
+                                        for (k, ant_id), v in data.pop('rx_ant_stats').items())
+        elif data['type'] == 'tx':
+            ka = 'ant'
+            va = ('pkt_sent', 'pkt_drop', 'lat_min', 'lat_avg', 'lat_max')
+            data['tx_ant_stats'] = list(({ka : k}, dict(zip(va, v)))
+                                        for k, v in data.pop('latency').items())
+
+        msg = json.dumps(data)
+        self.sendLine(msg.encode('utf-8'))
 
 
 class RFTempMeter(object):
@@ -112,16 +149,33 @@ class RFTempMeter(object):
         return threads.deferToThread(_read_temperature).addCallback(_got_temp)
 
 
-class StatsAndSelectorFactory(Factory):
-    noisy = False
-    protocol = StatisticsProtocol
 
+class MsgPackAPIFactory(Factory):
+    noisy = False
+    protocol = StatisticsMsgPackProtocol
+
+    def __init__(self, ui_sessions, is_cluster=False, cli_title=None):
+        self.ui_sessions = ui_sessions
+        self.is_cluster = is_cluster
+        self.cli_title = cli_title
+
+
+class JSONAPIFactory(Factory):
+    noisy = False
+    protocol = StatisticsJSONProtocol
+
+    def __init__(self, ui_sessions, is_cluster=False, profile=None):
+        self.ui_sessions = ui_sessions
+        self.is_cluster = is_cluster
+        self.profile = profile
+
+
+class AntStatsAndSelector(object):
     """
     Aggregate RX stats and select TX antenna
     """
 
-    def __init__(self, logger, cli_title=None, rf_temp_meter=None, is_cluster=False, rx_only_wlan_ids=None):
-        self.is_cluster = is_cluster
+    def __init__(self, logger, rx_only_wlan_ids=None, rf_temp_meter=None):
         self.rx_only_wlan_ids = rx_only_wlan_ids or set()
         self.ant_sel_cb_list = []
         self.rssi_cb_l = []
@@ -141,7 +195,6 @@ class StatsAndSelectorFactory(Factory):
         if logger is not None:
             self.ui_sessions.append(logger)
 
-        self.cli_title = cli_title
         self.rf_temp_meter = rf_temp_meter
 
         self.lc = task.LoopingCall(self.aggregate_stats)

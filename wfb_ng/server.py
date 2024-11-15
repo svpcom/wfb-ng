@@ -32,7 +32,7 @@ from twisted.internet import reactor, defer
 
 from . import _log_msg, ConsoleObserver, ErrorSafeLogFile, call_and_check_rc, ExecError, version_msg
 from .common import abort_on_crash, exit_status, df_sleep, search_attr
-from .protocols import StatsAndSelectorFactory, RFTempMeter, SSHClientProtocol
+from .protocols import AntStatsAndSelector, RFTempMeter, SSHClientProtocol, MsgPackAPIFactory, JSONAPIFactory
 from .services import parse_services, init_udp_direct_tx, init_udp_direct_rx, init_mavlink, init_tunnel, init_udp_proxy, hash_link_domain, bandwidth_map
 from .cluster import parse_cluster_services, gen_cluster_scripts
 from .conf import settings, cfg_files
@@ -216,13 +216,18 @@ def init(profiles, wlans, cluster_mode):
                                                'cluster' if is_cluster else ', '.join(wlans),
                                                profile_cfg.link_domain)
 
-        ant_sel_f = StatsAndSelectorFactory(logger, cli_title, rf_temp_meter, is_cluster, rx_only_wlan_ids)
+        ant_sel_f = AntStatsAndSelector(logger, rx_only_wlan_ids, rf_temp_meter)
         cleanup_l.append(ant_sel_f)
 
         link_id = hash_link_domain(profile_cfg.link_domain)
 
         if profile_cfg.stats_port:
-            sockets.append(reactor.listenTCP(profile_cfg.stats_port, ant_sel_f))
+            p_f = MsgPackAPIFactory(ant_sel_f.ui_sessions, is_cluster, cli_title)
+            sockets.append(reactor.listenTCP(profile_cfg.stats_port, p_f))
+
+        if profile_cfg.api_port:
+            p_f = JSONAPIFactory(ant_sel_f.ui_sessions, is_cluster, profile)
+            sockets.append(reactor.listenTCP(profile_cfg.api_port, p_f))
 
         for service_name, service_type, srv_cfg in service_list:
             log.msg('Starting %s/%s@%s' % (profile, service_name, profile_cfg.link_domain))
