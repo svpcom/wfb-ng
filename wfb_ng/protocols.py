@@ -94,12 +94,12 @@ class StatisticsJSONProtocol(LineReceiver):
         if data['type'] == 'rx':
             ka = ('ant', 'freq', 'mcs', 'bw')
             va = ('pkt_recv', 'rssi_min', 'rssi_avg', 'rssi_max', 'snr_min', 'snr_avg', 'snr_max')
-            data['rx_ant_stats'] = list((dict(zip(ka, (ant_id,) + k)), dict(zip(va, v)))
+            data['rx_ant_stats'] = list(dict(zip(ka + va, (ant_id,) + k + v))
                                         for (k, ant_id), v in data.pop('rx_ant_stats').items())
         elif data['type'] == 'tx':
-            ka = 'ant'
+            ka = ('ant',)
             va = ('pkt_sent', 'pkt_drop', 'lat_min', 'lat_avg', 'lat_max')
-            data['tx_ant_stats'] = list(({ka : k}, dict(zip(va, v)))
+            data['tx_ant_stats'] = list(dict(zip(ka + va, (k,) + v))
                                         for k, v in data.pop('latency').items())
 
         msg = json.dumps(data)
