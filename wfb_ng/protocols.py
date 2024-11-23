@@ -77,6 +77,7 @@ class StatisticsJSONProtocol(LineReceiver):
         msg = json.dumps(dict(type='settings',
                               profile=self.factory.profile,
                               is_cluster=self.factory.is_cluster,
+                              wlans=self.factory.wlans,
                               settings = deepcopy(settings)))
 
         self.sendLine(msg.encode('utf-8'))
@@ -164,10 +165,11 @@ class JSONAPIFactory(Factory):
     noisy = False
     protocol = StatisticsJSONProtocol
 
-    def __init__(self, ui_sessions, is_cluster=False, profile=None):
+    def __init__(self, ui_sessions, is_cluster=False, profile=None, wlans=None):
         self.ui_sessions = ui_sessions
         self.is_cluster = is_cluster
         self.profile = profile
+        self.wlans = wlans
 
 
 class AntStatsAndSelector(object):

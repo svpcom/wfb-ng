@@ -226,7 +226,7 @@ def init(profiles, wlans, cluster_mode):
             sockets.append(reactor.listenTCP(profile_cfg.stats_port, p_f))
 
         if profile_cfg.api_port:
-            p_f = JSONAPIFactory(ant_sel_f.ui_sessions, is_cluster, profile)
+            p_f = JSONAPIFactory(ant_sel_f.ui_sessions, is_cluster, profile, wlans)
             sockets.append(reactor.listenTCP(profile_cfg.api_port, p_f))
 
         for service_name, service_type, srv_cfg in service_list:
