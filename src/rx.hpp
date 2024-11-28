@@ -28,6 +28,7 @@
 #include <string.h>
 #include <stdexcept>
 
+#include "logger.hpp"
 #include "wifibroadcast.hpp"
 
 
@@ -52,7 +53,8 @@ public:
 class Forwarder : public BaseAggregator
 {
 public:
-    Forwarder(const std::string &client_addr, int client_port);
+    Forwarder(const std::string &client_addr, int client_port,
+              std::shared_ptr<wfb::Logger> logger = std::make_shared<wfb::StdErrLogger>());
     virtual ~Forwarder();
     virtual void process_packet(const uint8_t *buf, size_t size, uint8_t wlan_idx, const uint8_t *antenna,
                                 const int8_t *rssi, const int8_t *noise, uint16_t freq, uint8_t mcs_index,
@@ -61,6 +63,7 @@ public:
 private:
     int sockfd;
     struct sockaddr_in saddr;
+    std::shared_ptr<wfb::Logger> logger;
 };
 
 
@@ -158,7 +161,8 @@ typedef std::unordered_map<rxAntennaKey, rxAntennaItem> rx_antenna_stat_t;
 class Aggregator : public BaseAggregator
 {
 public:
-    Aggregator(const std::string &client_addr, int client_port, const std::string &keypair, uint64_t epoch, uint32_t channel_id);
+    Aggregator(const std::string &client_addr, int client_port, const std::string &keypair, uint64_t epoch, uint32_t channel_id,
+               std::shared_ptr<wfb::Logger> logger = std::make_shared<wfb::StdErrLogger>());
     virtual ~Aggregator();
     virtual void process_packet(const uint8_t *buf, size_t size, uint8_t wlan_idx, const uint8_t *antenna,
                                 const int8_t *rssi, const int8_t *noise, uint16_t freq, uint8_t mcs_index,
@@ -220,6 +224,7 @@ private:
     uint64_t last_known_block;  //id of last known block
     uint64_t epoch; // current epoch
     const uint32_t channel_id; // (link_id << 8) + port_number
+    std::shared_ptr<wfb::Logger> logger;
 
     // rx->tx keypair
     uint8_t rx_secretkey[crypto_box_SECRETKEYBYTES];
@@ -230,7 +235,8 @@ private:
 class Receiver
 {
 public:
-    Receiver(const char* wlan, int wlan_idx, uint32_t channel_id, BaseAggregator* agg, int rcv_buf_size);
+    Receiver(const char* wlan, int wlan_idx, uint32_t channel_id, BaseAggregator* agg, int rcv_buf_size,
+             std::shared_ptr<wfb::Logger> logger = std::make_shared<wfb::StdErrLogger>());
     ~Receiver();
     void loop_iter(void);
     int getfd(void){ return fd; }
@@ -239,4 +245,5 @@ private:
     BaseAggregator *agg;
     int fd;
     pcap_t *ppcap;
+    std::shared_ptr<wfb::Logger> logger;
 };
