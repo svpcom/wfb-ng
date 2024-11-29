@@ -37,6 +37,10 @@
 #include <string>
 #include <vector>
 
+#if defined (PREINCLUDE_FILE)
+#include PREINCLUDE_FILE
+#endif
+
 extern std::string string_format(const char *format, ...);
 
 /* this is the template radiotap header we send packets out with */
