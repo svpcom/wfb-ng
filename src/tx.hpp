@@ -78,7 +78,7 @@ public:
     void init_session(int k, int n);
     void get_fec(int &k, int &n) { k = fec_k; n = fec_n; }
     virtual void select_output(int idx) = 0;
-    virtual void dump_stats(FILE *fp, uint64_t ts, uint32_t &injected_packets, uint32_t &dropped_packets, uint32_t &injected_bytes) = 0;
+    virtual void dump_stats(uint64_t ts, uint32_t &injected_packets, uint32_t &dropped_packets, uint32_t &injected_bytes) = 0;
     virtual void update_radiotap_header(radiotap_header_t &radiotap_header) = 0;
     virtual radiotap_header_t get_radiotap_header(void) = 0;
 protected:
@@ -165,7 +165,7 @@ public:
         current_output = idx;
     }
 
-    virtual void dump_stats(FILE *fp, uint64_t ts, uint32_t &injected_packets, uint32_t &dropped_packets, uint32_t &injected_bytes);
+    virtual void dump_stats(uint64_t ts, uint32_t &injected_packets, uint32_t &dropped_packets, uint32_t &injected_bytes);
     virtual void update_radiotap_header(radiotap_header_t &radiotap_header)
     {
         this->radiotap_header = radiotap_header;
@@ -214,7 +214,7 @@ public:
         saddr.sin_port = htons((unsigned short)base_port);
     }
 
-    virtual void dump_stats(FILE *fp, uint64_t ts, uint32_t &injected_packets, uint32_t &dropped_packets, uint32_t &injected_bytes) {}
+    virtual void dump_stats(uint64_t ts, uint32_t &injected_packets, uint32_t &dropped_packets, uint32_t &injected_bytes) {}
 
     virtual ~UdpTransmitter()
     {
@@ -310,7 +310,7 @@ public:
         current_output = idx;
     }
 
-    virtual void dump_stats(FILE *fp, uint64_t ts, uint32_t &injected_packets, uint32_t &dropped_packets, uint32_t &injected_bytes);
+    virtual void dump_stats(uint64_t ts, uint32_t &injected_packets, uint32_t &dropped_packets, uint32_t &injected_bytes);
     virtual void update_radiotap_header(radiotap_header_t &radiotap_header)
     {
         this->radiotap_header = radiotap_header;

@@ -70,11 +70,17 @@ typedef struct {
 }  __attribute__ ((packed)) tun_packet_hdr_t;
 
 
-#ifdef __DEBUG__
-#define dbg_log(...)  fprintf(stderr, __VA_ARGS__)
-#else
-#define dbg_log(...)  ((void)0)
+// Don't use possible C++ loggers
+#ifdef WFB_DBG
+#undef WFB_DBG
 #endif
+
+#ifdef __DEBUG__
+#define WFB_DBG(...)  fprintf(stderr, __VA_ARGS__)
+#else
+#define WFB_DBG(...)  ((void)0)
+#endif
+
 
 void event_sig_cb(evutil_socket_t sig, short flags, void *arg)
 {
@@ -88,7 +94,7 @@ void event_sig_cb(evutil_socket_t sig, short flags, void *arg)
         assert(0);
     }
 
-    dbg_log("Exiting...\n");
+    WFB_DBG("Exiting...\n");
     event_base_loopexit (ev_base, NULL);
 }
 
@@ -99,7 +105,7 @@ void ev_ping_cb(evutil_socket_t fd, short flags, void *arg)
 
     if(pkt_sem == 0)
     {
-        dbg_log("send ping\n");
+        WFB_DBG("send ping\n");
         sendto(fd, "", 0, MSG_DONTWAIT, (struct sockaddr*)&peer_addr, sizeof(peer_addr));
     }
 
@@ -134,7 +140,7 @@ void ev_tun_read_cb(evutil_socket_t fd, short flags, void *arg)
         buf->batch_size = buf->data_size;
     }
 
-    dbg_log("tun_read: packet_size=%d, batch_size=%zu, data_size=%zu\n", nread, buf->batch_size, buf->data_size);
+    WFB_DBG("tun_read: packet_size=%d, batch_size=%zu, data_size=%zu\n", nread, buf->batch_size, buf->data_size);
 
     if(buf->data_size >= MTU || agg_timeout_ms == 0)
     {
@@ -183,7 +189,7 @@ void ev_socket_write_cb(evutil_socket_t fd, short flags, void *arg)
     assert(buf->batch_size <= MTU);
     sendto(fd, buf->data, buf->batch_size, MSG_DONTWAIT, (struct sockaddr*)&peer_addr, sizeof(peer_addr));
 
-    dbg_log("socket_write: batch_size=%zu, data_size=%zu\n", buf->batch_size, buf->data_size);
+    WFB_DBG("socket_write: batch_size=%zu, data_size=%zu\n", buf->batch_size, buf->data_size);
 
     if(buf->data_size > buf->batch_size)
     {
@@ -232,7 +238,7 @@ void ev_tun_write_cb(evutil_socket_t fd, short flags, void *arg)
     assert(buf->offset + sizeof(tun_packet_hdr_t) <= buf->data_size);
     uint16_t packet_size = ntohs(((tun_packet_hdr_t*)(buf->data + buf->offset))->packet_size);
 
-    dbg_log("tun_write: off=%zu, psize=%zu + %d, data_size=%zu\n", buf->offset, sizeof(tun_packet_hdr_t), packet_size, buf->data_size);
+    WFB_DBG("tun_write: off=%zu, psize=%zu + %d, data_size=%zu\n", buf->offset, sizeof(tun_packet_hdr_t), packet_size, buf->data_size);
     assert(buf->offset + sizeof(tun_packet_hdr_t) + packet_size <= buf->data_size);
 
     nwrote = write(fd, buf->data + buf->offset + sizeof(tun_packet_hdr_t), packet_size);
@@ -275,14 +281,14 @@ void ev_socket_read_cb(evutil_socket_t fd, short flags, void *arg)
     {
         // skip ping packet
         event_add (ev_socket_read, NULL);
-        dbg_log("got ping\n");
+        WFB_DBG("got ping\n");
         return;
     }
 
     buf->offset = 0;
     buf->data_size = nread;
 
-    dbg_log("socket_read: off=%zu, data_size=%zu\n", buf->offset, buf->data_size);
+    WFB_DBG("socket_read: off=%zu, data_size=%zu\n", buf->offset, buf->data_size);
 
     event_add(ev_tun_write, NULL);
 }
