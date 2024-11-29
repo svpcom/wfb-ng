@@ -795,7 +795,7 @@ void Aggregator::process_packet(const uint8_t *buf, size_t size, uint8_t wlan_id
                 if(fec_count)
                 {
                     count_p_fec_recovered += fec_count;
-                    ANDROID_IPC_MSG("PKT_RECOVERED\t%d", fec_count);
+                    WFB_DBG("FEC recovered %d packets\n", fec_count);
                 }
                 break;
             }
