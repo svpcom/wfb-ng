@@ -45,7 +45,7 @@ public:
                                 const int8_t *rssi, const int8_t *noise, uint16_t freq, uint8_t mcs_index,
                                 uint8_t bandwidth, sockaddr_in *sockaddr) = 0;
 
-    virtual void dump_stats(FILE *fp) = 0;
+    virtual void dump_stats(void) = 0;
 };
 
 
@@ -57,7 +57,7 @@ public:
     virtual void process_packet(const uint8_t *buf, size_t size, uint8_t wlan_idx, const uint8_t *antenna,
                                 const int8_t *rssi, const int8_t *noise, uint16_t freq, uint8_t mcs_index,
                                 uint8_t bandwidth,sockaddr_in *sockaddr);
-    virtual void dump_stats(FILE *) {}
+    virtual void dump_stats(void) {}
 private:
     int sockfd;
     struct sockaddr_in saddr;
@@ -163,7 +163,7 @@ public:
     virtual void process_packet(const uint8_t *buf, size_t size, uint8_t wlan_idx, const uint8_t *antenna,
                                 const int8_t *rssi, const int8_t *noise, uint16_t freq, uint8_t mcs_index,
                                 uint8_t bandwidth, sockaddr_in *sockaddr);
-    virtual void dump_stats(FILE *fp);
+    virtual void dump_stats(void);
 
     // Make stats public for android userspace receiver
     void clear_stats(void)

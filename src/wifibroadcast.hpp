@@ -257,6 +257,23 @@ typedef struct {
 #define MAX_DISTRIBUTION_PACKET_SIZE (sizeof(uint32_t) + sizeof(radiotap_header_vht) + WIFI_MTU)
 #define MAX_PCAP_PACKET_SIZE (WIFI_MTU + 256)  // radiotap header is variable but 8812au/eu has max rtap buffer size 256
 
+#ifndef WFB_DBG
+#ifdef __DEBUG__
+#define WFB_DBG(...)  fprintf(stderr, __VA_ARGS__)
+#else
+#define WFB_DBG(...)  ((void)0)
+#endif
+#endif
+
+#ifndef WFB_LOG
+#define WFB_LOG(...) fprintf(stderr, __VA_ARGS__)
+#endif
+
+#ifndef IPC_MSG
+#define IPC_MSG(...) fprintf(stdout, __VA_ARGS__)
+#define IPC_MSG_SEND()  fflush(stdout)
+#endif
+
 int open_udp_socket_for_rx(int port, int rcv_buf_size, uint32_t bind_addr = INADDR_ANY, int socket_type = SOCK_DGRAM, int socket_protocol = 0);
 uint64_t get_time_ms(void);
 uint64_t get_time_us(void);
