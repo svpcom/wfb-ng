@@ -227,7 +227,7 @@ void Receiver::loop_iter(void)
         }  /* while more rt headers */
 
         if (ret != -ENOENT && ant_idx < RX_ANT_MAX){
-            WFB_LOG("Error parsing radiotap header!\n");
+            WFB_ERR("Error parsing radiotap header!\n");
             continue;
         }
 
@@ -244,7 +244,7 @@ void Receiver::loop_iter(void)
 
         if (flags & IEEE80211_RADIOTAP_F_BADFCS)
         {
-            WFB_LOG("Got packet with bad fsc\n");
+            WFB_ERR("Got packet with bad fsc\n");
             continue;
         }
 
@@ -257,7 +257,7 @@ void Receiver::loop_iter(void)
             agg->process_packet(pkt + sizeof(ieee80211_header), pktlen - sizeof(ieee80211_header),
                                 wlan_idx, antenna, rssi, noise, freq, mcs_index, bandwidth, NULL);
         } else {
-            WFB_LOG("Short packet (ieee header)\n");
+            WFB_ERR("Short packet (ieee header)\n");
             continue;
         }
     }
@@ -496,12 +496,12 @@ void Aggregator::dump_stats(void)
 
     if(count_p_override)
     {
-        WFB_LOG("%u block overrides\n", count_p_override);
+        WFB_ERR("%u block overrides\n", count_p_override);
     }
 
     if(count_p_lost)
     {
-        WFB_LOG("%u packets lost\n", count_p_lost);
+        WFB_ERR("%u packets lost\n", count_p_lost);
     }
 
     clear_stats();
@@ -568,7 +568,7 @@ void Aggregator::process_packet(const uint8_t *buf, size_t size, uint8_t wlan_id
 
     if (size > MAX_FORWARDER_PACKET_SIZE)
     {
-        WFB_LOG("Long packet (fec payload)\n");
+        WFB_ERR("Long packet (fec payload)\n");
         count_p_bad += 1;
         return;
     }
@@ -578,7 +578,7 @@ void Aggregator::process_packet(const uint8_t *buf, size_t size, uint8_t wlan_id
     case WFB_PACKET_DATA:
         if(size < sizeof(wblock_hdr_t) + crypto_aead_chacha20poly1305_ABYTES + sizeof(wpacket_hdr_t))
         {
-            WFB_LOG("Short packet (fec header)\n");
+            WFB_ERR("Short packet (fec header)\n");
             count_p_bad += 1;
             return;
         }
@@ -590,7 +590,7 @@ void Aggregator::process_packet(const uint8_t *buf, size_t size, uint8_t wlan_id
         if(size < sizeof(wsession_hdr_t) + sizeof(wsession_data_t) + crypto_box_MACBYTES || \
            size > MAX_SESSION_PACKET_SIZE)
         {
-            WFB_LOG("Invalid session key packet\n");
+            WFB_ERR("Invalid session key packet\n");
             count_p_bad += 1;
             return;
         }
@@ -601,7 +601,7 @@ void Aggregator::process_packet(const uint8_t *buf, size_t size, uint8_t wlan_id
                                 ((wsession_hdr_t*)buf)->session_nonce,
                                 tx_publickey, rx_secretkey) != 0)
         {
-            WFB_LOG("Unable to decrypt session key\n");
+            WFB_ERR("Unable to decrypt session key\n");
             count_p_dec_err += 1;
             return;
         }
@@ -610,35 +610,35 @@ void Aggregator::process_packet(const uint8_t *buf, size_t size, uint8_t wlan_id
 
         if (be64toh(new_session_data->epoch) < epoch)
         {
-            WFB_LOG("Session epoch doesn't match: %" PRIu64 " < %" PRIu64 "\n", be64toh(new_session_data->epoch), epoch);
+            WFB_ERR("Session epoch doesn't match: %" PRIu64 " < %" PRIu64 "\n", be64toh(new_session_data->epoch), epoch);
             count_p_dec_err += 1;
             return;
         }
 
         if (be32toh(new_session_data->channel_id) != channel_id)
         {
-            WFB_LOG("Session channel_id doesn't match: %u != %u\n", be32toh(new_session_data->channel_id), channel_id);
+            WFB_ERR("Session channel_id doesn't match: %u != %u\n", be32toh(new_session_data->channel_id), channel_id);
             count_p_dec_err += 1;
             return;
         }
 
         if (new_session_data->fec_type != WFB_FEC_VDM_RS)
         {
-            WFB_LOG("Unsupported FEC codec type: %d\n", new_session_data->fec_type);
+            WFB_ERR("Unsupported FEC codec type: %d\n", new_session_data->fec_type);
             count_p_dec_err += 1;
             return;
         }
 
         if (new_session_data->n < 1)
         {
-            WFB_LOG("Invalid FEC N: %d\n", new_session_data->n);
+            WFB_ERR("Invalid FEC N: %d\n", new_session_data->n);
             count_p_dec_err += 1;
             return;
         }
 
         if (new_session_data->k < 1 || new_session_data->k > new_session_data->n)
         {
-            WFB_LOG("Invalid FEC K: %d\n", new_session_data->k);
+            WFB_ERR("Invalid FEC K: %d\n", new_session_data->k);
             count_p_dec_err += 1;
             return;
         }
@@ -665,7 +665,7 @@ void Aggregator::process_packet(const uint8_t *buf, size_t size, uint8_t wlan_id
         return;
 
     default:
-        WFB_LOG("Unknown packet type 0x%x\n", buf[0]);
+        WFB_ERR("Unknown packet type 0x%x\n", buf[0]);
         count_p_bad += 1;
         return;
     }
@@ -681,7 +681,7 @@ void Aggregator::process_packet(const uint8_t *buf, size_t size, uint8_t wlan_id
                                              sizeof(wblock_hdr_t),
                                              (uint8_t*)(&(block_hdr->data_nonce)), session_key) != 0)
     {
-        WFB_LOG("Unable to decrypt packet #0x%" PRIx64 "\n", be64toh(block_hdr->data_nonce));
+        WFB_ERR("Unable to decrypt packet #0x%" PRIx64 "\n", be64toh(block_hdr->data_nonce));
         count_p_dec_err += 1;
         return;
     }
@@ -698,14 +698,14 @@ void Aggregator::process_packet(const uint8_t *buf, size_t size, uint8_t wlan_id
     // Should never happend due to generating new session key on tx side
     if (block_idx > MAX_BLOCK_IDX)
     {
-        WFB_LOG("block_idx overflow\n");
+        WFB_ERR("block_idx overflow\n");
         count_p_bad += 1;
         return;
     }
 
     if (fragment_idx >= fec_n)
     {
-        WFB_LOG("Invalid fragment_idx: %d\n", fragment_idx);
+        WFB_ERR("Invalid fragment_idx: %d\n", fragment_idx);
         count_p_bad += 1;
         return;
     }
@@ -778,6 +778,8 @@ void Aggregator::process_packet(const uint8_t *buf, size_t size, uint8_t wlan_id
         {
             if(! p->fragment_map[f_idx])
             {
+                uint32_t fec_count = 0;
+
                 //Recover missed fragments using FEC
                 apply_fec(ring_idx);
 
@@ -786,8 +788,14 @@ void Aggregator::process_packet(const uint8_t *buf, size_t size, uint8_t wlan_id
                 {
                     if(! p->fragment_map[f_idx])
                     {
-                        count_p_fec_recovered += 1;
+                        fec_count += 1;
                     }
+                }
+
+                if(fec_count)
+                {
+                    count_p_fec_recovered += fec_count;
+                    ANDROID_IPC_MSG("PKT_RECOVERED\t%d", fec_count);
                 }
                 break;
             }
@@ -816,7 +824,7 @@ void Aggregator::send_packet(int ring_idx, int fragment_idx)
 
     if (packet_seq > seq + 1 && seq > 0)
     {
-        WFB_DBG("AGG: Lost %u packets", (packet_seq - seq - 1));
+        ANDROID_IPC_MSG("PKT_LOST\t%d", (packet_seq - seq - 1));
         count_p_lost += (packet_seq - seq - 1);
     }
 
@@ -824,7 +832,7 @@ void Aggregator::send_packet(int ring_idx, int fragment_idx)
 
     if(packet_size > MAX_PAYLOAD_SIZE)
     {
-        WFB_LOG("Corrupted packet %u\n", seq);
+        WFB_ERR("Corrupted packet %u\n", seq);
         count_p_bad += 1;
     }
     else if(!(flags & WFB_PACKET_FEC_ONLY))
@@ -1061,12 +1069,12 @@ int main(int argc, char* const *argv)
             break;
         default: /* '?' */
         show_usage:
-            WFB_LOG("Local receiver: %s [-K rx_key] [-c client_addr] [-u client_port] [-p radio_port] [-R rcv_buf] [-l log_interval] [-e epoch] [-i link_id] interface1 [interface2] ...\n", argv[0]);
-            WFB_LOG("Remote (forwarder): %s -f [-c client_addr] [-u client_port] [-p radio_port]  [-R rcv_buf] [-i link_id] interface1 [interface2] ...\n", argv[0]);
-            WFB_LOG("Remote (aggregator): %s -a server_port [-K rx_key] [-c client_addr] [-R rcv_buf] [-u client_port] [-l log_interval] [-p radio_port] [-e epoch] [-i link_id]\n", argv[0]);
-            WFB_LOG("Default: K='%s', connect=%s:%d, link_id=0x%06x, radio_port=%u, epoch=%" PRIu64 ", log_interval=%d, rcv_buf=system_default\n", keypair.c_str(), client_addr.c_str(), client_port, link_id, radio_port, epoch, log_interval);
-            WFB_LOG("WFB-ng version %s\n", WFB_VERSION);
-            WFB_LOG("WFB-ng home page: <http://wfb-ng.org>\n");
+            WFB_INFO("Local receiver: %s [-K rx_key] [-c client_addr] [-u client_port] [-p radio_port] [-R rcv_buf] [-l log_interval] [-e epoch] [-i link_id] interface1 [interface2] ...\n", argv[0]);
+            WFB_INFO("Remote (forwarder): %s -f [-c client_addr] [-u client_port] [-p radio_port]  [-R rcv_buf] [-i link_id] interface1 [interface2] ...\n", argv[0]);
+            WFB_INFO("Remote (aggregator): %s -a server_port [-K rx_key] [-c client_addr] [-R rcv_buf] [-u client_port] [-l log_interval] [-p radio_port] [-e epoch] [-i link_id]\n", argv[0]);
+            WFB_INFO("Default: K='%s', connect=%s:%d, link_id=0x%06x, radio_port=%u, epoch=%" PRIu64 ", log_interval=%d, rcv_buf=system_default\n", keypair.c_str(), client_addr.c_str(), client_port, link_id, radio_port, epoch, log_interval);
+            WFB_INFO("WFB-ng version %s\n", WFB_VERSION);
+            WFB_INFO("WFB-ng home page: <http://wfb-ng.org>\n");
             exit(1);
         }
     }
@@ -1077,7 +1085,7 @@ int main(int argc, char* const *argv)
 
         if ((fd = open("/dev/random", O_RDONLY)) != -1) {
             if (ioctl(fd, RNDGETENTCNT, &c) == 0 && c < 160) {
-                WFB_LOG("This system doesn't provide enough entropy to quickly generate high-quality random numbers.\n"
+                WFB_ERR("This system doesn't provide enough entropy to quickly generate high-quality random numbers.\n"
                         "Installing the rng-utils/rng-tools, jitterentropy or haveged packages may help.\n"
                         "On virtualized Linux environments, also consider using virtio-rng.\n"
                         "The service will not start until enough entropy has been collected.\n");
@@ -1088,7 +1096,7 @@ int main(int argc, char* const *argv)
 
     if (sodium_init() < 0)
     {
-        WFB_LOG("Libsodium init failed\n");
+        WFB_ERR("Libsodium init failed\n");
         return 1;
     }
 
@@ -1118,7 +1126,7 @@ int main(int argc, char* const *argv)
         }
     }catch(runtime_error &e)
     {
-        WFB_LOG("Error: %s\n", e.what());
+        WFB_ERR("Error: %s\n", e.what());
         exit(1);
     }
     return 0;

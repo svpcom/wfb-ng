@@ -265,8 +265,16 @@ typedef struct {
 #endif
 #endif
 
-#ifndef WFB_LOG
-#define WFB_LOG(...) fprintf(stderr, __VA_ARGS__)
+#ifndef WFB_ERR
+#define WFB_ERR(...) fprintf(stderr, __VA_ARGS__)
+#endif
+
+#ifndef WFB_INFO
+#define WFB_INFO(...) fprintf(stderr, __VA_ARGS__)
+#endif
+
+#ifndef ANDROID_IPC_MSG
+#define ANDROID_IPC_MSG(...) ((void)0)
 #endif
 
 #ifndef IPC_MSG

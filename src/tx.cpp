@@ -565,7 +565,7 @@ void Transmitter::send_block_fragment(size_t packet_size)
 
 void Transmitter::send_session_key(void)
 {
-    //WFB_LOG("Announce session key\n");
+    WFB_DBG("Announce session key\n");
     inject_packet((uint8_t*)session_packet, session_packet_size);
 }
 
@@ -719,12 +719,12 @@ void data_source(unique_ptr<Transmitter> &t, vector<int> &rx_fd, int control_fd,
 
             if(count_p_dropped)
             {
-                WFB_LOG("%u packets dropped\n", count_p_dropped);
+                WFB_ERR("%u packets dropped\n", count_p_dropped);
             }
 
             if(count_p_truncated)
             {
-                WFB_LOG("%u packets truncated\n", count_p_truncated);
+                WFB_ERR("%u packets truncated\n", count_p_truncated);
             }
 
             count_p_fec_timeouts = 0;
@@ -786,7 +786,7 @@ void data_source(unique_ptr<Transmitter> &t, vector<int> &rx_fd, int control_fd,
                     {
                         resp.rc = htonl(EINVAL);
                         sendto(fd, &resp, offsetof(cmd_resp_t, u), MSG_DONTWAIT, (sockaddr*)&from_addr, addr_size);
-                        WFB_LOG("Rejecting new FEC settings");
+                        WFB_ERR("Rejecting new FEC settings");
                         continue;
                     }
 
@@ -802,7 +802,7 @@ void data_source(unique_ptr<Transmitter> &t, vector<int> &rx_fd, int control_fd,
                     }
 
                     sendto(fd, &resp, offsetof(cmd_resp_t, u), MSG_DONTWAIT, (sockaddr*)&from_addr, addr_size);
-                    WFB_LOG("Session restarted with FEC %d/%d\n", fec_k, fec_n);
+                    WFB_INFO("Session restarted with FEC %d/%d\n", fec_k, fec_n);
                 }
                 break;
 
@@ -830,12 +830,12 @@ void data_source(unique_ptr<Transmitter> &t, vector<int> &rx_fd, int control_fd,
                     {
                         resp.rc = htonl(EINVAL);
                         sendto(fd, &resp, offsetof(cmd_resp_t, u), MSG_DONTWAIT, (sockaddr*)&from_addr, addr_size);
-                        WFB_LOG("Rejecting new radiotap header: %s\n", e.what());
+                        WFB_ERR("Rejecting new radiotap header: %s\n", e.what());
                         continue;
                     }
 
                     sendto(fd, &resp, offsetof(cmd_resp_t, u), MSG_DONTWAIT, (sockaddr*)&from_addr, addr_size);
-                    WFB_LOG("Radiotap updated with stbc=%d, ldpc=%d, short_gi=%d, bandwidth=%d, mcs_index=%d, vht_mode=%d, vht_nss=%d\n",
+                    WFB_INFO("Radiotap updated with stbc=%d, ldpc=%d, short_gi=%d, bandwidth=%d, mcs_index=%d, vht_mode=%d, vht_nss=%d\n",
                             req.u.cmd_set_radio.stbc,
                             req.u.cmd_set_radio.ldpc,
                             req.u.cmd_set_radio.short_gi,
@@ -1173,12 +1173,12 @@ void packet_injector(RawSocketInjector &t, vector<int> &rx_fd, int log_interval)
         {
             if(count_p_dropped)
             {
-                WFB_LOG("%u packets dropped\n", count_p_dropped);
+                WFB_ERR("%u packets dropped\n", count_p_dropped);
             }
 
             if(count_p_bad)
             {
-                WFB_LOG("%u packets bad\n", count_p_bad);
+                WFB_ERR("%u packets bad\n", count_p_bad);
             }
 
             count_p_incoming = 0;
@@ -1307,7 +1307,7 @@ void injector_loop(int argc, char* const* argv, int optind, int srv_port, int rc
             bind_port = ntohs(saddr.sin_port);
             IPC_MSG("%" PRIu64 "\tLISTEN_UDP\t%d:%x\n", get_time_ms(), bind_port, i);
         }
-        WFB_LOG("Listen on %d for %s\n", bind_port, argv[optind + i]);
+        WFB_INFO("Listen on %d for %s\n", bind_port, argv[optind + i]);
         rx_fd.push_back(fd);
         wlans.push_back(string(argv[optind + i]));
     }
@@ -1340,7 +1340,7 @@ int open_control_fd(int control_port)
         IPC_MSG("%" PRIu64 "\tLISTEN_UDP_CONTROL\t%d\n", get_time_ms(), control_port);
     }
 
-    WFB_LOG("Listen on %d for management commands\n", control_port);
+    WFB_INFO("Listen on %d for management commands\n", control_port);
     return control_fd;
 }
 
@@ -1371,7 +1371,7 @@ void local_loop(int argc, char* const* argv, int optind, int srv_port, int rcv_b
             bind_port = ntohs(saddr.sin_port);
             IPC_MSG("%" PRIu64 "\tLISTEN_UDP\t%d:%x\n", get_time_ms(), bind_port, i);
         }
-        WFB_LOG("Listen on %d for %s\n", bind_port, argv[optind + i]);
+        WFB_INFO("Listen on %d for %s\n", bind_port, argv[optind + i]);
         rx_fd.push_back(fd);
         wlans.push_back(string(argv[optind + i]));
     }
@@ -1384,7 +1384,7 @@ void local_loop(int argc, char* const* argv, int optind, int srv_port, int rcv_b
 
     if (debug_port)
     {
-        WFB_LOG("Using %zu ports from %d for wlan emulation\n", wlans.size(), debug_port);
+        WFB_INFO("Using %zu ports from %d for wlan emulation\n", wlans.size(), debug_port);
         t = unique_ptr<UdpTransmitter>(new UdpTransmitter(k, n, keypair, "127.0.0.1", debug_port, epoch, channel_id,
                                                           fec_delay, tags, use_qdisc, fwmark));
     }
@@ -1448,7 +1448,7 @@ void distributor_loop(int argc, char* const* argv, int optind, int srv_port, int
                 IPC_MSG("%" PRIu64 "\tLISTEN_UDP\t%d:%" PRIx64 "\n", get_time_ms(), bind_port, wlan_id);
             }
 
-            WFB_LOG("Listen on %d for %s:%d\n", bind_port, remote_host.c_str(), remote_port);
+            WFB_INFO("Listen on %d for %s:%d\n", bind_port, remote_host.c_str(), remote_port);
 
             rx_fd.push_back(fd);
             remote_ports.push_back(remote_port);
@@ -1576,17 +1576,17 @@ int main(int argc, char * const *argv)
         case 'f':
             if (strcmp(optarg, "data") == 0)
             {
-                WFB_LOG("Using data frames\n");
+                WFB_INFO("Using data frames\n");
                 frame_type = FRAME_TYPE_DATA;
             }
             else if (strcmp(optarg, "rts") == 0)
             {
-                WFB_LOG("Using rts frames\n");
+                WFB_INFO("Using rts frames\n");
                 frame_type = FRAME_TYPE_RTS;
             }
             else
             {
-                WFB_LOG("Invalid frame type: %s\n", optarg);
+                WFB_ERR("Invalid frame type: %s\n", optarg);
                 exit(1);
             }
             break;
@@ -1601,19 +1601,19 @@ int main(int argc, char * const *argv)
             break;
         default: /* '?' */
         show_usage:
-            WFB_LOG("Local TX: %s [-K tx_key] [-k RS_K] [-n RS_N] [-u udp_port] [-R rcv_buf] [-p radio_port] [-F fec_delay] [-B bandwidth] [-G guard_interval] [-S stbc] [-L ldpc] [-M mcs_index] [-N VHT_NSS]\n"
+            WFB_INFO("Local TX: %s [-K tx_key] [-k RS_K] [-n RS_N] [-u udp_port] [-R rcv_buf] [-p radio_port] [-F fec_delay] [-B bandwidth] [-G guard_interval] [-S stbc] [-L ldpc] [-M mcs_index] [-N VHT_NSS]\n"
                             "             [-T fec_timeout] [-l log_interval] [-e epoch] [-i link_id] [-f { data | rts }] [-m] [-V] [-Q] [-P fwmark] [-C control_port] interface1 [interface2] ...\n",
                     argv[0]);
-            WFB_LOG("TX distributor: %s -d [-K tx_key] [-k RS_K] [-n RS_N] [-u udp_port] [-R rcv_buf] [-p radio_port] [-F fec_delay] [-B bandwidth] [-G guard_interval] [-S stbc] [-L ldpc] [-M mcs_index] [-N VHT_NSS]\n"
+            WFB_INFO("TX distributor: %s -d [-K tx_key] [-k RS_K] [-n RS_N] [-u udp_port] [-R rcv_buf] [-p radio_port] [-F fec_delay] [-B bandwidth] [-G guard_interval] [-S stbc] [-L ldpc] [-M mcs_index] [-N VHT_NSS]\n"
                             "                      [-T fec_timeout] [-l log_interval] [-e epoch] [-i link_id] [-f { data | rts }] [-m] [-V] [-Q] [-P fwmark] [-C control_port] host1:port1,port2,... [host2:port1,port2,...] ...\n",
                     argv[0]);
-            WFB_LOG("TX injector: %s -I port [-Q] [-R rcv_buf] [-l log_interval] interface1 [interface2] ...\n",
+            WFB_INFO("TX injector: %s -I port [-Q] [-R rcv_buf] [-l log_interval] interface1 [interface2] ...\n",
                     argv[0]);
-            WFB_LOG("Default: K='%s', k=%d, n=%d, fec_delay=%u [us], udp_port=%d, link_id=0x%06x, radio_port=%u, epoch=%" PRIu64 ", bandwidth=%d guard_interval=%s stbc=%d ldpc=%d mcs_index=%d vht_nss=%d, vht_mode=%d, fec_timeout=%d, log_interval=%d, rcv_buf=system_default, frame_type=data, mirror=false, use_qdisc=false, fwmark=%u, control_port=%d\n",
+            WFB_INFO("Default: K='%s', k=%d, n=%d, fec_delay=%u [us], udp_port=%d, link_id=0x%06x, radio_port=%u, epoch=%" PRIu64 ", bandwidth=%d guard_interval=%s stbc=%d ldpc=%d mcs_index=%d vht_nss=%d, vht_mode=%d, fec_timeout=%d, log_interval=%d, rcv_buf=system_default, frame_type=data, mirror=false, use_qdisc=false, fwmark=%u, control_port=%d\n",
                     keypair.c_str(), k, n, fec_delay, udp_port, link_id, radio_port, epoch, bandwidth, short_gi ? "short" : "long", stbc, ldpc, mcs_index, vht_nss, vht_mode, fec_timeout, log_interval, fwmark, control_port);
-            WFB_LOG("Radio MTU: %lu\n", (unsigned long)MAX_PAYLOAD_SIZE);
-            WFB_LOG("WFB-ng version %s\n", WFB_VERSION);
-            WFB_LOG("WFB-ng home page: <http://wfb-ng.org>\n");
+            WFB_INFO("Radio MTU: %lu\n", (unsigned long)MAX_PAYLOAD_SIZE);
+            WFB_INFO("WFB-ng version %s\n", WFB_VERSION);
+            WFB_INFO("WFB-ng home page: <http://wfb-ng.org>\n");
             exit(1);
         }
     }
@@ -1628,7 +1628,7 @@ int main(int argc, char * const *argv)
 
         if ((fd = open("/dev/random", O_RDONLY)) != -1) {
             if (ioctl(fd, RNDGETENTCNT, &c) == 0 && c < 160) {
-                WFB_LOG("This system doesn't provide enough entropy to quickly generate high-quality random numbers.\n"
+                WFB_ERR("This system doesn't provide enough entropy to quickly generate high-quality random numbers.\n"
                         "Installing the rng-utils/rng-tools, jitterentropy or haveged packages may help.\n"
                         "On virtualized Linux environments, also consider using virtio-rng.\n"
                         "The service will not start until enough entropy has been collected.\n");
@@ -1639,7 +1639,7 @@ int main(int argc, char * const *argv)
 
     if (sodium_init() < 0)
     {
-        WFB_LOG("Libsodium init failed\n");
+        WFB_ERR("Libsodium init failed\n");
         return 1;
     }
 
@@ -1675,7 +1675,7 @@ int main(int argc, char * const *argv)
     }
     catch(runtime_error &e)
     {
-        WFB_LOG("Error: %s\n", e.what());
+        WFB_ERR("Error: %s\n", e.what());
         exit(1);
     }
     return 0;
