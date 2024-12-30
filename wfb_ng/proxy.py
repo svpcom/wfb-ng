@@ -60,7 +60,7 @@ class ProxyProtocol:
 
     def messageReceived(self, data):
         # send message to local transport
-        if self.agg_max_size is None or self.agg_timeout is None:
+        if self.agg_max_size is None or not self.agg_timeout:
             return self._send_to_peer(data)
 
         if len(data) > self.agg_max_size:
@@ -188,7 +188,7 @@ class MavlinkUDPProxyProtocol(DatagramProtocol, MavlinkProxyProtocol):
             self.transport.write(msg, self.mirror)
 
         # Send non-aggregated packets directly
-        if self.agg_max_size is None or self.agg_timeout is None:
+        if self.agg_max_size is None or not self.agg_timeout:
             self.transport.write(msg, self.reply_addr)
             return
 
