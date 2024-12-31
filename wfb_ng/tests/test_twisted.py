@@ -25,7 +25,7 @@ class ClockTestCase(unittest.TestCase):
 
         for i in range(iters):
             ts = time.time_ns()
-            yield task.deferLater(reactor, delay)
+            yield task.deferLater(reactor, delay, lambda: None)
             latency = time.time_ns() - ts - delay * 1e9
             sum += latency
             sqsum += latency**2
