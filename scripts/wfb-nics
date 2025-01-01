@@ -1,0 +1,11 @@
+#!/bin/bash
+
+# Autodetect 8812au and 8812eu cards
+
+for i in $(find /sys/class/net/ -maxdepth 1 -type l | sort)
+do
+   if udevadm info $i | grep -qE 'ID_NET_DRIVER=(rtl88xxau_wfb|rtl88x2eu)'
+   then
+         echo $(basename $i)
+   fi
+done
