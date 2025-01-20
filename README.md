@@ -10,7 +10,7 @@ Main features:
  - **IPv4 tunnel for generic usage.** You can transmit ordinary ip packets over WFB link. Note, don't use ip tunnel for high-bandwidth transfers like video or mavlink because it has more overhead than raw udp streams.
  - **Automatic TX diversity** (select TX card based on RX RSSI)
  - **Stream encryption and authentication** ([libsodium](https://download.libsodium.org/doc/))
- - **Distributed operation.** It can gather data from cards on different hosts. So you don't limited to bandwidth of single USB bus.
+ - **Distributed operation.** It can gather data from cards on different hosts. So you aren't limited to bandwidth of single USB bus.
  - **Aggregation of mavlink and tunnel packets.** Doesn't send wifi packet for every mavlink or tunnel packet.
  - **Dynamic FEC and radio modulation.** You can change channel capacity/reliability without link interruption.
  - **Full channel state logging including mavlink parser.** You can log all telemetry and link state for future offline debug.
