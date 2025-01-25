@@ -4,6 +4,7 @@
 #define CMD_SET_RADIO 2
 #define CMD_GET_FEC   3
 #define CMD_GET_RADIO 4
+#define CMD_BIND_KEY  5
 
 typedef struct {
     uint32_t req_id;
@@ -25,6 +26,11 @@ typedef struct {
             bool vht_mode;
             uint8_t vht_nss;
         } __attribute__ ((packed)) cmd_set_radio;
+
+        struct
+        {
+            char keypair[1024];
+        } __attribute__ ((packed)) cmd_bind;        
     } __attribute__ ((packed)) u;
 } __attribute__ ((packed)) cmd_req_t;
 

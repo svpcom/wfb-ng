@@ -190,6 +190,7 @@ static const uint8_t ieee80211_header[] __attribute__((unused)) = {
 // packet types
 #define WFB_PACKET_DATA    0x1
 #define WFB_PACKET_SESSION 0x2
+#define WFB_PACKET_BIND_KEY 0x03
 
 // FEC types
 #define WFB_FEC_VDM_RS  0x1  //Reed-Solomon on Vandermonde matrix
@@ -257,6 +258,7 @@ typedef struct {
 #define MAX_FEC_PAYLOAD  (WIFI_MTU - sizeof(ieee80211_header) - sizeof(wblock_hdr_t) - crypto_aead_chacha20poly1305_ABYTES)
 #define MAX_FORWARDER_PACKET_SIZE (WIFI_MTU - sizeof(ieee80211_header))
 #define MAX_SESSION_PACKET_SIZE (WIFI_MTU - sizeof(ieee80211_header))
+#define MAX_BIND_KEY_SIZE (WIFI_MTU - sizeof(ieee80211_header))
 #define MIN_DISTRIBUTION_PACKET_SIZE (sizeof(uint32_t) + sizeof(radiotap_header_ht) + sizeof(ieee80211_header))   // ht hdr < vht hdr
 #define MAX_DISTRIBUTION_PACKET_SIZE (sizeof(uint32_t) + sizeof(radiotap_header_vht) + WIFI_MTU)
 #define MAX_PCAP_PACKET_SIZE (WIFI_MTU + 256)  // radiotap header is variable but 8812au/eu has max rtap buffer size 256

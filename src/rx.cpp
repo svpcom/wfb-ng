@@ -47,6 +47,14 @@ extern "C"
 #include "wifibroadcast.hpp"
 #include "rx.hpp"
 
+// Signal handler function to activate binding mode
+// we have no rx_cmd currently
+bool bind_mode = false;
+void handle_sigusr1(int sig) {
+    bind_mode = !bind_mode;
+    WFB_INFO("Bind mode: %d\n", bind_mode);
+}
+
 using namespace std;
 
 
@@ -268,7 +276,7 @@ Aggregator::Aggregator(const string &client_addr, int client_port, const string 
     count_p_all(0), count_b_all(0), count_p_dec_err(0), count_p_dec_ok(0), count_p_fec_recovered(0),
     count_p_lost(0), count_p_bad(0), count_p_override(0), count_p_outgoing(0), count_b_outgoing(0),
     fec_p(NULL), fec_k(-1), fec_n(-1), seq(0), rx_ring{}, rx_ring_front(0), rx_ring_alloc(0),
-    last_known_block((uint64_t)-1), epoch(epoch), channel_id(channel_id)
+    last_known_block((uint64_t)-1), epoch(epoch), channel_id(channel_id), keyfile(keypair)
 {
     sockfd = socket(AF_INET, SOCK_DGRAM, 0);
     if (sockfd < 0) throw std::runtime_error(string_format("Error opening socket: %s", strerror(errno)));
@@ -663,6 +671,59 @@ void Aggregator::process_packet(const uint8_t *buf, size_t size, uint8_t wlan_id
         }
 
         return;
+
+    case WFB_PACKET_BIND_KEY: {
+
+        if (! bind_mode ) {
+            WFB_ERR("Ignoreing bind packet\n");
+            return;
+        }
+
+        if (size < sizeof(wblock_hdr_t)) {
+            WFB_ERR("Short BIND_KEY packet\n");
+            count_p_bad += 1;
+            return;
+        }
+
+        // Extract the key
+        const uint8_t *key = buf + sizeof(wblock_hdr_t);
+        size_t key_size = size - sizeof(wblock_hdr_t);
+
+        if (key_size != crypto_box_SECRETKEYBYTES + crypto_box_PUBLICKEYBYTES) {
+            WFB_ERR("Invalid BIND_KEY size: expected %u, got %u\n",
+                    crypto_box_SECRETKEYBYTES + crypto_box_PUBLICKEYBYTES, 
+                    (unsigned int)key_size);
+            count_p_bad += 1;
+            return;
+        }
+
+        // Parse and store the secret and public keys
+        memcpy(rx_secretkey, key, crypto_box_SECRETKEYBYTES);
+        memcpy(tx_publickey, key + crypto_box_SECRETKEYBYTES, crypto_box_PUBLICKEYBYTES);
+
+        WFB_INFO("Received BIND_KEY, rx_secretkey and tx_publickey updated\n");
+
+        // Save the key to the file specified by keypair
+        FILE *fp = fopen(keyfile.c_str(), "wb"); // Use the keypair file path
+        if (!fp) {
+            WFB_ERR("Failed to open keypair file '%s' to save drone_key: %s\n", keyfile.c_str(), strerror(errno));
+            return;
+        }
+
+        if (fwrite(key, 1, key_size, fp) != key_size) {
+            WFB_ERR("Failed to write key to keypair file\n");
+            fclose(fp);
+            return;
+        }
+        fclose(fp);
+
+        bind_mode = !bind_mode;
+
+        WFB_INFO("Key saved to file '%s' successfully\n", keyfile.c_str());
+
+        count_p_dec_ok += 1;
+        return;
+    }
 
     default:
         WFB_ERR("Unknown packet type 0x%x\n", buf[0]);
@@ -1092,6 +1153,12 @@ int main(int argc, char* const *argv)
             }
             (void) close(fd);
         }
+    }
+
+    // Register the signal handler for SIGUSR1
+    if (signal(SIGUSR1, handle_sigusr1) == SIG_ERR) {
+        WFB_ERR("Error setting signal handler!\n");
+        return 1;
     }
 
     if (sodium_init() < 0)

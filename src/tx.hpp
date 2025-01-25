@@ -76,6 +76,7 @@ public:
     bool send_packet(const uint8_t *buf, size_t size, uint8_t flags);
     void send_session_key(void);
     void init_session(int k, int n);
+    void send_bind_key(const uint8_t *key, size_t key_size);
     void get_fec(int &k, int &n) { k = fec_k; n = fec_n; }
     virtual void select_output(int idx) = 0;
     virtual void dump_stats(uint64_t ts, uint32_t &injected_packets, uint32_t &dropped_packets, uint32_t &injected_bytes) = 0;

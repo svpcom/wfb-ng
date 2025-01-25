@@ -189,6 +189,21 @@ void Transmitter::init_session(int k, int n)
     assert(session_packet_size <= MAX_SESSION_PACKET_SIZE);
 }
 
+void Transmitter::send_bind_key(const uint8_t *key, size_t key_size)
+{
+    assert(key_size == crypto_box_SECRETKEYBYTES + crypto_box_PUBLICKEYBYTES);
+
+    uint8_t bind_key_packet[sizeof(wblock_hdr_t) + key_size];
+    wblock_hdr_t *hdr = (wblock_hdr_t *)bind_key_packet;
+
+    hdr->packet_type = WFB_PACKET_BIND_KEY;
+    hdr->data_nonce = htobe64(0);  // No nonce needed for this type
+
+    memcpy(bind_key_packet + sizeof(wblock_hdr_t), key, key_size);
+
+    inject_packet(bind_key_packet, sizeof(wblock_hdr_t) + key_size);
+    WFB_INFO("Sent BIND_KEY packet with key\n");
+}
 
 RawSocketTransmitter::RawSocketTransmitter(int k, int n, const string &keypair, uint64_t epoch, uint32_t channel_id, uint32_t fec_delay,
                                            vector<tags_item_t> &tags, const vector<string> &wlans, radiotap_header_t &radiotap_header,
@@ -888,6 +903,37 @@ void data_source(unique_ptr<Transmitter> &t, vector<int> &rx_fd, int control_fd,
                     sendto(fd, &resp, offsetof(cmd_resp_t, u) + sizeof(resp.u.cmd_get_radio), MSG_DONTWAIT, (sockaddr*)&from_addr, addr_size);
                 }
                 break;
+
+                case CMD_BIND_KEY:
+                {
+
+                    if (rsize != offsetof(cmd_req_t, u) + sizeof(req.u.cmd_bind))
+                    {
+                        resp.rc = htonl(EINVAL);
+                        sendto(fd, &resp, offsetof(cmd_resp_t, u), MSG_DONTWAIT, (sockaddr*)&from_addr, addr_size);
+                        continue;
+                    }
+                    uint8_t drone_key[crypto_box_SECRETKEYBYTES + crypto_box_PUBLICKEYBYTES];
+                    
+                    WFB_DBG("Sending %s\n",req.u.cmd_bind.keypair);
+                    
+                    FILE *fp = fopen(req.u.cmd_bind.keypair, "rb");
+                    if (!fp || fread(drone_key, 1, crypto_box_SECRETKEYBYTES + crypto_box_PUBLICKEYBYTES, fp) != crypto_box_SECRETKEYBYTES + crypto_box_PUBLICKEYBYTES) {
+                        resp.rc = htonl(EINVAL);
+                        sendto(fd, &resp, offsetof(cmd_resp_t, u), MSG_DONTWAIT, (sockaddr *)&from_addr, addr_size);
+                        fclose(fp);
+                        continue;
+                    }
+                    fclose(fp);
+
+                    // Send the key to the receiver
+                    t->send_bind_key(drone_key, crypto_box_SECRETKEYBYTES + crypto_box_PUBLICKEYBYTES);
+
+                    resp.rc = 0;
+                    sendto(fd, &resp, offsetof(cmd_resp_t, u), MSG_DONTWAIT, (sockaddr *)&from_addr, addr_size);
+                    WFB_INFO("BIND_KEY command executed\n");
+                }
+                break;                
 
                 default:
                 {

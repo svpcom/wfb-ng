@@ -79,6 +79,7 @@ int send_command(int port, cmd_req_t req, size_t req_size, cmd_resp_t *resp)
     {
     case CMD_SET_FEC:
     case CMD_SET_RADIO:
+    case CMD_BIND_KEY:
         resp_payload_size = 0;
         break;
 
@@ -268,6 +269,46 @@ int get_radio(char *progname, int port, int argc, char **argv)
     return rc;
 }
 
+int send_bind(char *progname, int port, int argc, char **argv) {
+    int opt;
+    char* keypair = "drone.key";  // Default keypair
+
+    while ((opt = getopt(argc, argv, "K:")) != -1) {
+        switch (opt) {
+            case 'K':
+                keypair = optarg;
+                break;
+            default: /* '?' */
+                fprintf(stderr, "Usage: %s [-K drone.key]\n", progname);
+                return 1;
+        }
+    }
+
+    cmd_req_t req = { .req_id = htonl(rand()), .cmd_id = CMD_BIND_KEY };
+
+    // Ensure the keypair fits in the buffer
+    if (strlen(keypair) >= sizeof(req.u.cmd_bind.keypair)) {
+        fprintf(stderr, "Keypair is too large for the buffer\n");
+        return 1; // Handle error
+    }
+
+    // Safely copy keypair to req.u.cmd_bind.keypair with null-termination
+    strncpy(req.u.cmd_bind.keypair, keypair, sizeof(req.u.cmd_bind.keypair) - 1);
+    req.u.cmd_bind.keypair[sizeof(req.u.cmd_bind.keypair) - 1] = '\0';
+
+    cmd_resp_t resp;
+
+    // Send the command and capture the response
+    int rc = send_command(port, req, offsetof(cmd_req_t, u) + sizeof(req.u.cmd_bind), &resp);
+
+    if (rc == 0) {
+        printf("bind send\n");
+    } else {
+        fprintf(stderr, "Error sending bind command\n");
+    }
+
+    return rc;  // Return the result of send_command
+}
 
 int main(int argc, char **argv)
 {
@@ -285,7 +326,7 @@ int main(int argc, char **argv)
 
     if (argc < 3)
     {
-        fprintf(stderr, "Usage: %s <port> {set_fec | set_radio | get_fec | get_radio } ...\n", argv[0]);
+        fprintf(stderr, "Usage: %s <port> {set_fec | set_radio | get_fec | get_radio | bind } ...\n", argv[0]);
         fprintf(stderr, "WFB-ng version %s\n", WFB_VERSION);
         fprintf(stderr, "WFB-ng home page: <http://wfb-ng.org>\n");
         return 1;
@@ -310,6 +351,10 @@ int main(int argc, char **argv)
     else if (strcmp(command, "get_radio") == 0)
     {
         return get_radio(argv[0], port, argc - 2, argv + 2);
+    }
+    else if (strcmp(command, "bind") == 0)
+    {
+        return send_bind(argv[0], port, argc - 2, argv + 2);
     }
     else
     {
