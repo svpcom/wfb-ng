@@ -1,14 +1,21 @@
 #!/bin/bash
 set -e
 
-nics="$($(dirname $0)/wfb-nics)"
+nics="$*"
+auto_nics=0
 
 if [ -z "$nics" ]
 then
-echo "No supported wifi adapters found, please connect them and setup drivers first"
-echo "For 8812au: https://github.com/svpcom/rtl8812au"
-echo "For 8812eu: https://github.com/svpcom/rtl8812eu"
-exit 1
+    nics="$($(dirname $0)/wfb-nics)"
+    auto_nics=1
+fi
+
+if [ -z "$nics" ]
+then
+    echo "No supported wifi adapters found, please connect them and setup drivers first"
+    echo "For 8812au: https://github.com/svpcom/rtl8812au"
+    echo "For 8812eu: https://github.com/svpcom/rtl8812eu"
+    exit 1
 fi
 
 # Install required packages
@@ -27,6 +34,14 @@ apt -y install ./deb_dist/*.deb
 # Create key and copy to right location
 ./wfb_keygen
 mv gs.key /etc/gs.key
+
+if [ $auto_nics -eq 0 ]
+then
+    echo "Saving WFB_NICS=\"$nics\" to /etc/default/wifibroadcast"
+    echo "WFB_NICS=\"$nics\"" > /etc/default/wifibroadcast
+else
+    echo "Using wifi autodetection"
+fi
 
 # Setup config
 cat <<EOF >> /etc/wifibroadcast.cfg

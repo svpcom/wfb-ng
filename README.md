@@ -116,7 +116,7 @@ wlan0: flags=4163<UP,BROADCAST,RUNNING,MULTICAST>  mtu 2312
 ```
 git clone -b stable https://github.com/svpcom/wfb-ng.git
 cd wfb-ng
-sudo ./scripts/install_gs.sh wlan0
+sudo ./scripts/install_gs.sh
 ```
 - Done! To monitor the link use the following command on the ground station:
 ```
