@@ -1,0 +1,16 @@
+/var/log/wifibroadcast.log {
+    rotate 4
+    weekly 1
+    compress
+    missingok
+    notifempty
+}
+
+/var/log/wfb_telemetry_*.log {
+    rotate 4
+    daily
+    compress
+    missingok
+    notifempty
+}
+

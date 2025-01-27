@@ -1,7 +1,0 @@
-/var/log/wifibroadcast.log {
-    rotate 4
-    weekly 1
-    compress
-    missingok
-    notifempty
-}
