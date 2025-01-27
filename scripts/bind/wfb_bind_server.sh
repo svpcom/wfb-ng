@@ -4,7 +4,7 @@ IFS=$'\t'
 
 show_version()
 {
-    echo $'OK\t$(wfb-server --version | head -n1)'
+    echo $'OK\t'"$(wfb-server --version | head -n1)"
 }
 
 report_err()
