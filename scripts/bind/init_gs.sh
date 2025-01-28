@@ -41,6 +41,11 @@ peer = 'connect://127.0.0.1:5600'  # outgoing connection for
 EOF
 fi
 
+if ! [ -f /etc/bind.yaml ]
+then
+    wfb-server --gen-bind-yaml --profiles drone drone_bind > /etc/bind.yaml
+fi
+
 trap _cleanup EXIT
 
 systemctl stop wifibroadcast@gs
