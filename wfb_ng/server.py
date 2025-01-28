@@ -26,6 +26,7 @@ import socket
 import struct
 import gzip
 import argparse
+import yaml
 
 from twisted.python import log, failure
 from twisted.internet import reactor, defer
@@ -57,6 +58,30 @@ class BinLogger(ErrorSafeLogFile):
     def send_stats(self, data):
         data = msgpack.packb(data, use_bin_type=True)
         self.write(b''.join((struct.pack('!I', len(data)), data)))
+
+
+def gen_bind_yaml(profiles):
+    pd = {}
+    max_bw = 0
+
+    for profile in profiles:
+        tmp = {}
+        for service_name, service_type, cfg in parse_services(profile, None):
+            max_bw = max(cfg.bandwidth, max_bw)
+            tmp[service_name] = dict(type=service_type,
+                                     cfg=cfg.__dict__)
+        if tmp:
+            link_domain=getattr(settings, profile).link_domain
+            link_id = hash_link_domain(link_domain)
+            pd[profile] = dict(link_domain=link_domain,
+                               link_id=link_id,
+                               services=tmp)
+
+    res = dict(wifi_channel=settings.common.wifi_channel,
+               max_bw=max_bw,
+               profiles=pd)
+
+    return yaml.dump(res)
 
 
 @defer.inlineCallbacks
@@ -251,6 +276,7 @@ def main():
     group = parser.add_mutually_exclusive_group(required=True)
     group.add_argument('--cluster', type=str, choices=('ssh', 'manual'), help='Distributed mode')
     group.add_argument('--gen-init', type=str, metavar='node', help='Generate init script for cluster node')
+    group.add_argument('--gen-bind-yaml', action='store_true', help='Generate binding info for custom links')
     group.add_argument('--wlans', type=str, nargs='+', metavar='wlan', help='WiFi interfaces for local mode')
 
     args = parser.parse_args()
@@ -259,6 +285,10 @@ def main():
     if args.gen_init:
         _, cluster_nodes = parse_cluster_services(profiles)
         print(gen_cluster_scripts(cluster_nodes)[args.gen_init])
+        return
+
+    if args.gen_bind_yaml:
+        print(gen_bind_yaml(args.profiles))
         return
 
     log.msg = _log_msg

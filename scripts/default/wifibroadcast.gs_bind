@@ -1,0 +1,2 @@
+# Use real file if you need to override some bind defaults
+WIFIBROADCAST_CFG=/dev/null
