@@ -362,7 +362,7 @@ class AntennaStatClientFactory(ReconnectingClientFactory):
 
         for window in self.windows.values():
             window.erase()
-            addstr_centered(window, 'Connecting...', curses.A_DIM)
+            addstr_centered(window, 'Connecting to wifibroadcast@%s.service ...' % (self.profile,), curses.A_DIM)
             window.refresh()
 
     def buildProtocol(self, addr):
@@ -379,21 +379,21 @@ class AntennaStatClientFactory(ReconnectingClientFactory):
         return p
 
     def clientConnectionLost(self, connector, reason):
-        set_window_title('Connection lost: %s' % (reason.value,))
+        set_window_title('Disconnected from wifibroadcast@%s.service: %s' % (self.profile, reason.value))
 
         for window in self.windows.values():
             window.erase()
-            addstr_centered(window, '[Connection lost]', curses.A_REVERSE)
+            addstr_centered(window, '[wifibroadcast@%s.service disconnected]' % (self.profile,), curses.A_REVERSE)
             window.refresh()
 
         ReconnectingClientFactory.clientConnectionLost(self, connector, reason)
 
     def clientConnectionFailed(self, connector, reason):
-        set_window_title('Connection failed: %s' % (reason.value,))
+        set_window_title('Unable to connect to wifibroadcast@%s.service: %s' % (self.profile, reason.value))
 
         for window in self.windows.values():
             window.erase()
-            addstr_centered(window, '[Connection failed]', curses.A_REVERSE)
+            addstr_centered(window, '[wifibroadcast@%s.service failed]' % (self.profile,), curses.A_REVERSE)
             window.refresh()
 
         ReconnectingClientFactory.clientConnectionFailed(self, connector, reason)
