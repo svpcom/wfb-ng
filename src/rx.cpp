@@ -278,12 +278,12 @@ Aggregator::Aggregator(const string &client_addr,
     {
         sockfd = socket(AF_INET, SOCK_DGRAM, 0);
         if (sockfd < 0) throw std::runtime_error(string_format("Error opening socket: %s", strerror(errno)));
-    }
 
-    memset(&saddr, '\0', sizeof(saddr));
-    saddr.sin_family = AF_INET;
-    saddr.sin_addr.s_addr = inet_addr(client_addr.c_str());
-    saddr.sin_port = htons((unsigned short)client_port);
+        memset(&saddr, '\0', sizeof(saddr));
+        saddr.sin_family = AF_INET;
+        saddr.sin_addr.s_addr = inet_addr(client_addr.c_str());
+        saddr.sin_port = htons((unsigned short)client_port);
+    }
 
     memset(session_key, '\0', sizeof(session_key));
 
