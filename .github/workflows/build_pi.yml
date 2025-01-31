@@ -28,10 +28,12 @@ jobs:
           make deb_docker DOCKER_SRC_IMAGE=p2ptech/cross-build:${{ matrix.docker-images }}
       - name: Archive production artifacts
         uses: actions/upload-artifact@v4
+        if: github.event_name != 'pull_request'
         id: artifact-upload-step
         with:
           name: wfb-ng-${{ github.ref_name }}-${{ matrix.docker-images }}
           path: |
             deb_dist/*.deb
       - name: Output artifact URL
+        if: github.event_name != 'pull_request'
         run:  echo 'wfb-ng-${{ github.ref_name }}-${{ matrix.docker-images }} ${{ steps.artifact-upload-step.outputs.artifact-url }}'
