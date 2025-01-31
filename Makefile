@@ -1,6 +1,7 @@
 SHELL = /bin/bash
 ARCH ?= $(shell uname -m)
 PYTHON ?= /usr/bin/python3
+OS_CODENAME ?= $(shell grep VERSION_CODENAME= /etc/os-release | cut -f2 -d=)
 
 ifneq ("$(wildcard .git)","")
     COMMIT ?= $(or $(shell git rev-parse HEAD), local)
@@ -67,7 +68,7 @@ rpm:  all_bin $(ENV)
 
 deb:  all_bin $(ENV)
 	rm -rf deb_dist
-	$$(PATH=$(ENV)/bin:$(ENV)/local/bin:$(PATH) which python3) ./setup.py --command-packages=stdeb.command bdist_deb
+	$$(PATH=$(ENV)/bin:$(ENV)/local/bin:$(PATH) which python3) ./setup.py --command-packages=stdeb.command sdist_dsc --debian-version 0~$(OS_CODENAME) bdist_deb
 	rm -rf wfb_ng.egg-info/ wfb-ng-$(VERSION).tar.gz
 
 bdist: all_bin
