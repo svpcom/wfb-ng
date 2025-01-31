@@ -263,15 +263,22 @@ void Receiver::loop_iter(void)
     }
 }
 
-
-Aggregator::Aggregator(const string &client_addr, int client_port, const string &keypair, uint64_t epoch, uint32_t channel_id) : \
-    count_p_all(0), count_b_all(0), count_p_dec_err(0), count_p_dec_ok(0), count_p_fec_recovered(0),
-    count_p_lost(0), count_p_bad(0), count_p_override(0), count_p_outgoing(0), count_b_outgoing(0),
-    fec_p(NULL), fec_k(-1), fec_n(-1), seq(0), rx_ring{}, rx_ring_front(0), rx_ring_alloc(0),
-    last_known_block((uint64_t)-1), epoch(epoch), channel_id(channel_id)
+Aggregator::Aggregator(const string &client_addr,
+                       int client_port,
+                       const string &keypair,
+                       uint64_t epoch,
+                       uint32_t channel_id,
+                       std::optional<std::function<void(uint8_t*, uint16_t)>> callback)
+        : count_p_all(0), count_b_all(0), count_p_dec_err(0), count_p_dec_ok(0), count_p_fec_recovered(0),
+          count_p_lost(0), count_p_bad(0), count_p_override(0), count_p_outgoing(0), count_b_outgoing(0), fec_p(NULL),
+          fec_k(-1), fec_n(-1), seq(0), rx_ring{}, rx_ring_front(0), rx_ring_alloc(0), last_known_block((uint64_t)-1),
+          epoch(epoch), channel_id(channel_id), callback(callback)
 {
-    sockfd = socket(AF_INET, SOCK_DGRAM, 0);
-    if (sockfd < 0) throw std::runtime_error(string_format("Error opening socket: %s", strerror(errno)));
+    if (!callback)
+    {
+        sockfd = socket(AF_INET, SOCK_DGRAM, 0);
+        if (sockfd < 0) throw std::runtime_error(string_format("Error opening socket: %s", strerror(errno)));
+    }
 
     memset(&saddr, '\0', sizeof(saddr));
     saddr.sin_family = AF_INET;
@@ -305,7 +312,10 @@ Aggregator::~Aggregator()
     {
         deinit_fec();
     }
-    close(sockfd);
+    if (sockfd >= 0)
+    {
+        close(sockfd);
+    }
 }
 
 void Aggregator::init_fec(int k, int n)
@@ -837,7 +847,16 @@ void Aggregator::send_packet(int ring_idx, int fragment_idx)
     }
     else if(!(flags & WFB_PACKET_FEC_ONLY))
     {
-        sendto(sockfd, payload, packet_size, MSG_DONTWAIT, (sockaddr*)&saddr, sizeof(saddr));
+        if (callback)
+        {
+            assert(sockfd == -1);
+            (*callback)(payload, packet_size);
+        }
+        else
+        {
+            assert(sockfd >= 0);
+            sendto(sockfd, payload, packet_size, MSG_DONTWAIT, (sockaddr*)&saddr, sizeof(saddr));
+        }
         count_p_outgoing += 1;
         count_b_outgoing += packet_size;
     }
@@ -884,6 +903,7 @@ void Aggregator::apply_fec(int ring_idx)
     assert(max_packet_size <= MAX_FEC_PAYLOAD);
     fec_decode(fec_p, (const uint8_t**)in_blocks, out_blocks, index, max_packet_size);
 }
+
 
 void radio_loop(int argc, char* const *argv, int optind, uint32_t channel_id, unique_ptr<BaseAggregator> &agg, int log_interval, int rcv_buf_size)
 {

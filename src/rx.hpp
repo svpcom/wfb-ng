@@ -27,6 +27,8 @@
 #include <string>
 #include <string.h>
 #include <stdexcept>
+#include <optional>
+#include <functional>
 
 #include "wifibroadcast.hpp"
 
@@ -157,8 +159,14 @@ typedef std::unordered_map<rxAntennaKey, rxAntennaItem> rx_antenna_stat_t;
 
 class Aggregator : public BaseAggregator
 {
+
 public:
-    Aggregator(const std::string &client_addr, int client_port, const std::string &keypair, uint64_t epoch, uint32_t channel_id);
+    Aggregator(const std::string &client_addr,
+               int client_port,
+               const std::string &keypair,
+               uint64_t epoch,
+               uint32_t channel_id,
+               std::optional<std::function<void(uint8_t*, uint16_t)>> callback = std::nullopt);
     virtual ~Aggregator();
     virtual void process_packet(const uint8_t *buf, size_t size, uint8_t wlan_idx, const uint8_t *antenna,
                                 const int8_t *rssi, const int8_t *noise, uint16_t freq, uint8_t mcs_index,
@@ -211,7 +219,7 @@ private:
     fec_t* fec_p;
     int fec_k;  // RS number of primary fragments in block
     int fec_n;  // RS total number of fragments in block
-    int sockfd;
+    int sockfd{-1};
     struct sockaddr_in saddr;
     uint32_t seq;
     rx_ring_item_t rx_ring[RX_RING_SIZE];
@@ -220,6 +228,7 @@ private:
     uint64_t last_known_block;  //id of last known block
     uint64_t epoch; // current epoch
     const uint32_t channel_id; // (link_id << 8) + port_number
+    std::optional<std::function<void(uint8_t*, uint16_t)>> callback;
 
     // rx->tx keypair
     uint8_t rx_secretkey[crypto_box_SECRETKEYBYTES];
