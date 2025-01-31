@@ -37,7 +37,7 @@ src/%.o: src/%.c src/*.h
 	$(CC) $(_CFLAGS) -std=gnu99 -c -o $@ $<
 
 src/%.o: src/%.cpp src/*.hpp src/*.h
-	$(CXX) $(_CFLAGS) -std=gnu++17 -c -o $@ $<
+	$(CXX) $(_CFLAGS) -std=gnu++11 -c -o $@ $<
 
 wfb_rx: src/rx.o src/radiotap.o src/fec.o src/wifibroadcast.o
 	$(CXX) -o $@ $^ $(_LDFLAGS) -lpcap

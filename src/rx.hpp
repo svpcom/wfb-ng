@@ -27,7 +27,7 @@
 #include <string>
 #include <string.h>
 #include <stdexcept>
-#include <optional>
+#include <memory>
 #include <functional>
 
 #include "wifibroadcast.hpp"
@@ -166,7 +166,7 @@ public:
                const std::string &keypair,
                uint64_t epoch,
                uint32_t channel_id,
-               std::optional<std::function<void(uint8_t*, uint16_t)>> callback = std::nullopt);
+               std::unique_ptr<std::function<void(uint8_t*, uint16_t)>> callback = nullptr);
     virtual ~Aggregator();
     virtual void process_packet(const uint8_t *buf, size_t size, uint8_t wlan_idx, const uint8_t *antenna,
                                 const int8_t *rssi, const int8_t *noise, uint16_t freq, uint8_t mcs_index,
@@ -228,7 +228,7 @@ private:
     uint64_t last_known_block;  //id of last known block
     uint64_t epoch; // current epoch
     const uint32_t channel_id; // (link_id << 8) + port_number
-    std::optional<std::function<void(uint8_t*, uint16_t)>> callback;
+    std::unique_ptr<std::function<void(uint8_t*, uint16_t)>> callback;
 
     // rx->tx keypair
     uint8_t rx_secretkey[crypto_box_SECRETKEYBYTES];

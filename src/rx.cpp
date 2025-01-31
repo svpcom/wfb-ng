@@ -268,11 +268,11 @@ Aggregator::Aggregator(const string &client_addr,
                        const string &keypair,
                        uint64_t epoch,
                        uint32_t channel_id,
-                       std::optional<std::function<void(uint8_t*, uint16_t)>> callback)
+                       std::unique_ptr<std::function<void(uint8_t*, uint16_t)>> callback)
         : count_p_all(0), count_b_all(0), count_p_dec_err(0), count_p_dec_ok(0), count_p_fec_recovered(0),
           count_p_lost(0), count_p_bad(0), count_p_override(0), count_p_outgoing(0), count_b_outgoing(0), fec_p(NULL),
           fec_k(-1), fec_n(-1), seq(0), rx_ring{}, rx_ring_front(0), rx_ring_alloc(0), last_known_block((uint64_t)-1),
-          epoch(epoch), channel_id(channel_id), callback(callback)
+          epoch(epoch), channel_id(channel_id), callback(std::move(callback))
 {
     if (!callback)
     {
