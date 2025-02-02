@@ -2,14 +2,17 @@
 set -e
 IFS=$'\t'
 
-show_version()
-{
-    echo $'OK\t'"$(wfb-server --version | head -n1)"
-}
-
 report_err()
 {
     echo $'ERR\tInternal error'
+}
+
+show_version()
+{
+    set -e
+    trap report_err ERR
+
+    echo $'OK\t'"$(wfb-server --version | head -n1)"
 }
 
 do_bind()
@@ -40,6 +43,15 @@ do_bind()
     echo "OK"
 }
 
+do_unbind()
+{
+    set -e
+    trap report_err ERR
+
+    rm -f /etc/drone.key
+    echo "OK"
+}
+
 while read cmd arg
 do
     case $cmd in
@@ -48,6 +60,12 @@ do
             ;;
         "BIND")
             do_bind "$arg"
+            ;;
+        "UNBIND")
+            do_unbind
+            ;;
+        *)
+            echo $'ERR\tUnsupported command'
             ;;
     esac
 done
