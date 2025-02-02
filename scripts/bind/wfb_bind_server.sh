@@ -21,9 +21,9 @@ do_bind()
     trap report_err ERR
 
     tmpdir=$(mktemp -d)
-    echo "$1" | base64 -d | tar xz -C $tmpdir
+    echo "$1" | base64 -d | tar xz -C "$tmpdir"
 
-    cd $tmpdir
+    cd "$tmpdir"
 
     if ! [ -f checksum.txt ] || ! sha1sum --quiet --status --strict -c checksum.txt
     then
@@ -39,7 +39,7 @@ do_bind()
         fi
     done
 
-    rm -r $tmpdir
+    rm -r "$tmpdir"
     echo "OK"
 }
 
@@ -52,7 +52,7 @@ do_unbind()
     echo "OK"
 }
 
-while read cmd arg
+while read -r cmd arg
 do
     case $cmd in
         "VERSION")

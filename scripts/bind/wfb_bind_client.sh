@@ -4,7 +4,7 @@ set -e
 IFS=$'\t'
 
 echo "VERSION"
-read status version
+read -r status version
 
 if [ "$status" != "OK" ]
 then
@@ -24,16 +24,16 @@ for i in /etc/wifibroadcast.cfg /etc/drone.key /etc/bind.yaml
 do
     if [ -f $i ]
     then
-        cp $i ${tmpdir}/
-        (cd $tmpdir && sha1sum $(basename $i) >> checksum.txt)
+        cp $i "${tmpdir}/"
+        (cd "$tmpdir" && sha1sum "$(basename $i)" >> checksum.txt)
     fi
 done
 
-echo $'BIND\t'"$(tar czS -C $tmpdir . | base64 -w0)"
+echo $'BIND\t'"$(tar czS -C "$tmpdir" . | base64 -w0)"
 
-rm -r $tmpdir
+rm -r "$tmpdir"
 
-read status msg
+read -r status msg
 
 if [ "$status" != "OK" ]
 then
