@@ -1,6 +1,8 @@
 ARG SRC_IMAGE
-
 FROM $SRC_IMAGE
+
+ARG QEMU_CPU
+ENV QEMU_CPU=$QEMU_CPU
 
 RUN apt-get update && \
     DEBIAN_FRONTEND=noninteractive \
