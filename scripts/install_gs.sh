@@ -3,6 +3,7 @@ set -e
 
 nics="$*"
 auto_nics=0
+release=master
 
 if [ -z "$nics" ]
 then
@@ -18,22 +19,28 @@ then
     exit 1
 fi
 
-# Install required packages
-apt update
-apt upgrade
+# Try to install prebuilt packages from wfb-ng apt repository
 
-apt install python3-all python3-all-dev libpcap-dev libsodium-dev libevent-dev python3-pip python3-pyroute2 python3-msgpack \
-  python3-future python3-twisted python3-serial python3-jinja2 iw virtualenv debhelper dh-python fakeroot build-essential -y
+curl -s https://apt.wfb-ng.org/public.asc | sudo gpg --dearmor --yes -o /usr/share/keyrings/wfb-ng.gpg
+echo "deb [signed-by=/usr/share/keyrings/wfb-ng.gpg] https://apt.wfb-ng.org/ $(lsb_release -cs) $release" | sudo tee /etc/apt/sources.list.d/wfb-ng.list
+sudo apt update
 
-# Build
-make deb
+if ! sudo apt -y install wfb-ng
+then
+    # Install required packages for wfb-ng source build
 
-# Install
-apt -y install ./deb_dist/*.deb
+    apt -y install python3-all python3-all-dev libpcap-dev libsodium-dev libevent-dev python3-pip python3-pyroute2 python3-msgpack \
+       python3-future python3-twisted python3-serial python3-jinja2 iw virtualenv debhelper dh-python fakeroot build-essential
+
+    tmpdir="$(mktemp -d)"
+    git clone -b $release --depth 1 https://github.com/svpcom/wfb-ng.git "$tmpdir"
+
+    (cd "$tmpdir" && make deb && sudo apt -y install ./deb_dist/*.deb)
+    rm -rf "$tmpdir"
+fi
 
 # Create key and copy to right location
-./wfb_keygen
-mv gs.key /etc/gs.key
+(cd /etc && wfb_keygen)
 
 if [ $auto_nics -eq 0 ]
 then
