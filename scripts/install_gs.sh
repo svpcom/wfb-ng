@@ -30,7 +30,8 @@ then
     # Install required packages for wfb-ng source build
 
     apt -y install python3-all python3-all-dev libpcap-dev libsodium-dev libevent-dev python3-pip python3-pyroute2 python3-msgpack \
-       python3-future python3-twisted python3-serial python3-jinja2 iw virtualenv debhelper dh-python fakeroot build-essential
+       python3-future python3-twisted python3-serial python3-jinja2 iw virtualenv debhelper dh-python fakeroot build-essential \
+       libgstrtspserver-1.0-dev
 
     tmpdir="$(mktemp -d)"
     git clone -b $release --depth 1 https://github.com/svpcom/wfb-ng.git "$tmpdir"

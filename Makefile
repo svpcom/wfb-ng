@@ -66,7 +66,7 @@ rpm:  all_bin $(ENV)
 	$(PYTHON) ./setup.py bdist_rpm --force-arch $(ARCH)
 	rm -rf wfb_ng.egg-info/
 
-deb:  all_bin $(ENV)
+deb:  all_bin wfb_rtsp $(ENV)
 	rm -rf deb_dist
 	$$(PATH=$(ENV)/bin:$(ENV)/local/bin:$(PATH) which python3) ./setup.py --command-packages=stdeb.command sdist_dsc --debian-version 0~$(OS_CODENAME) bdist_deb
 	rm -rf wfb_ng.egg-info/ wfb-ng-$(VERSION).tar.gz
@@ -86,7 +86,7 @@ pylint:
 	pylint --disable=R,C wfb_ng/*.py
 
 clean:
-	rm -rf env wfb_rx wfb_tx wfb_tx_cmd wfb_tun wfb_keygen dist deb_dist build wfb_ng.egg-info wfb-ng-*.tar.gz _trial_temp *~ src/*.o
+	rm -rf env wfb_rx wfb_tx wfb_tx_cmd wfb_tun wfb_rtsp wfb_keygen dist deb_dist build wfb_ng.egg-info wfb-ng-*.tar.gz _trial_temp *~ src/*.o
 
 deb_docker:  /opt/qemu/bin
 	@if ! [ -d /opt/qemu ]; then echo "Docker cross build requires patched QEMU!\nApply ./scripts/qemu/qemu.patch to qemu-7.2.0 and build it:\n  ./configure --prefix=/opt/qemu --static --disable-system && make && sudo make install"; exit 1; fi
