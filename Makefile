@@ -4,13 +4,14 @@ PYTHON ?= /usr/bin/python3
 OS_CODENAME ?= $(shell grep VERSION_CODENAME= /etc/os-release | cut -f2 -d=)
 
 ifneq ("$(wildcard .git)","")
-    COMMIT ?= $(or $(shell git rev-parse HEAD), local)
-    VERSION ?= $(or $(shell $(PYTHON) ./version.py $(shell git show -s --format="%ct" $(shell git rev-parse HEAD)) $(shell git rev-parse --abbrev-ref HEAD)), 0.0.0)
-    SOURCE_DATE_EPOCH ?= $(or $(shell git show -s --format="%ct" $(shell git rev-parse HEAD)), $(shell date "+%s"))
+    RELEASE ?= $(shell git describe --all --match master --match 'release-*' --abbrev=0 HEAD | sed 's@heads/@@g')
+    COMMIT ?= $(shell git rev-parse HEAD)
+    SOURCE_DATE_EPOCH ?= $(or $(shell git show -s --format="%ct" $(COMMIT)), $(shell date "+%s"))
+    VERSION ?= $(shell $(PYTHON) ./version.py $(SOURCE_DATE_EPOCH) $(RELEASE))
 else
-    COMMIT ?= local
-    VERSION ?= 0.0.0
+    COMMIT ?= release
     SOURCE_DATE_EPOCH ?= $(shell date "+%s")
+    VERSION ?= $(or $(shell basename $(PWD) | grep -E -o '[0-9]+.[0-9]+(.[0-9]+)?$$'), 0.0.0)
 endif
 
 ENV ?= $(PWD)/env
@@ -25,6 +26,9 @@ _LDFLAGS := $(LDFLAGS) -lrt -lsodium
 _CFLAGS := $(CFLAGS) -Wall -O2 -fno-strict-aliasing -DWFB_VERSION='"$(VERSION)-$(shell /bin/bash -c '_tmp=$(COMMIT); echo $${_tmp::8}')"'
 
 all: all_bin gs.key test
+
+version:
+	@echo -e "RELEASE=$(RELEASE)\nCOMMIT=$(COMMIT)\nVERSION=$(VERSION)\nSOURCE_DATE_EPOCH=$(SOURCE_DATE_EPOCH)"
 
 $(ENV):
 	$(PYTHON) -m virtualenv --download $(ENV)
