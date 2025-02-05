@@ -111,12 +111,10 @@ wlan0: flags=4163<UP,BROADCAST,RUNNING,MULTICAST>  mtu 2312
         TX errors 0  dropped 0 overruns 0  carrier 0  collisions 0
 ```
 - Run `$ ethtool -i wlan0` and ensure that it show right driver: `rtl88xxau_wfb` or `rtl8812eu`
-- Copy the name of the RTL8812AU/EU WiFi card.
-- Install wfb-ng. Replace `wlan0` with the previously copied name of the WiFi card.
+- Download and run [install_gs.sh](https://raw.githubusercontent.com/svpcom/wfb-ng/refs/heads/master/scripts/install_gs.sh):
 ```
-git clone -b stable https://github.com/svpcom/wfb-ng.git
-cd wfb-ng
-sudo ./scripts/install_gs.sh
+curl -o install_gs.sh https://raw.githubusercontent.com/svpcom/wfb-ng/refs/heads/master/scripts/install_gs.sh
+sudo bash ./install_gs.sh
 ```
 - Done! To monitor the link use the following command on the ground station:
 ```
