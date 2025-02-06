@@ -34,6 +34,3 @@ jobs:
           name: wfb-ng-${{ github.ref_name }}-${{ matrix.docker-images }}
           path: |
             deb_dist/*.deb
-      - name: Output artifact URL
-        if: github.event_name != 'pull_request'
-        run:  echo 'wfb-ng-${{ github.ref_name }}-${{ matrix.docker-images }} ${{ steps.artifact-upload-step.outputs.artifact-url }}'

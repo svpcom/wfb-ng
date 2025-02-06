@@ -31,6 +31,3 @@ jobs:
           name: wfb-ng-${{ github.ref_name }}-ubuntu${{ matrix.version }}-${{ matrix.arch }}
           path: |
             deb_dist/*.deb
-      - name: Output artifact URL
-        if: github.event_name != 'pull_request'
-        run:  echo 'wfb-ng-${{ github.ref_name }}-ubuntu${{ matrix.version }}-${{ matrix.arch }} ${{ steps.artifact-upload-step.outputs.artifact-url }}'
