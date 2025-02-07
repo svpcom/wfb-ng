@@ -54,7 +54,11 @@ do_unbind()
 
 while read -r cmd arg
 do
-    case $cmd in
+    # Strip possible \r
+    cmd="${cmd%$'\r'}"
+    arg="${arg%$'\r'}"
+
+    case "$cmd" in
         "VERSION")
             show_version
             ;;

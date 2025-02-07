@@ -36,7 +36,7 @@ $(ENV):
 	$(PYTHON) -m virtualenv --download $(ENV)
 	$$(PATH=$(ENV)/bin:$(ENV)/local/bin:$(PATH) which python3) -m pip install --upgrade pip setuptools $(STDEB)
 
-all_bin: wfb_rx wfb_tx wfb_keygen wfb_tx_cmd wfb_tun
+all_bin: wfb_rx wfb_tx wfb_keygen wfb_tx_cmd wfb_tun wfb_bind_server
 
 gs.key: wfb_keygen
 	@if ! [ -f gs.key ]; then ./wfb_keygen; fi
@@ -46,6 +46,9 @@ src/%.o: src/%.c src/*.h
 
 src/%.o: src/%.cpp src/*.hpp src/*.h
 	$(CXX) $(_CFLAGS) -std=gnu++11 -c -o $@ $<
+
+wfb_bind_server: src/wfb_bind_srv.o
+	$(CC) -o $@ $^ $(_LDFLAGS)
 
 wfb_rx: src/rx.o src/radiotap.o src/fec.o src/wifibroadcast.o
 	$(CXX) -o $@ $^ $(_LDFLAGS) -lpcap

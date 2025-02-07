@@ -34,4 +34,4 @@ then
 fi
 
 echo "Waiting for binding request..."
-socat -d TCP4-LISTEN:5555,bind=10.5.99.2,reuseaddr,crlf EXEC:/usr/bin/wfb_bind_server.sh
+wfb_bind_server 5555 10.5.99.2 /usr/bin/wfb_bind_server.sh
