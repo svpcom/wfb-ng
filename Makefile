@@ -4,7 +4,9 @@ PYTHON ?= /usr/bin/python3
 OS_CODENAME ?= $(shell grep VERSION_CODENAME= /etc/os-release | cut -f2 -d=)
 
 ifneq ("$(wildcard .git)","")
-    RELEASE ?= $(or $(shell git describe --all --match master --match 'release-*' --abbrev=0 HEAD 2>/dev/null | sed 's@heads/@@g'), branch)
+    RELEASE ?= $(or $(shell git rev-parse --abbrev-ref HEAD | grep -v '^stable$$'),\
+                    $(shell git describe --all --match 'release-*' --match 'origin/release-*' --abbrev=0 HEAD 2>/dev/null | grep -o '[^/]*$$'),\
+                    unknown)
     COMMIT ?= $(shell git rev-parse HEAD)
     SOURCE_DATE_EPOCH ?= $(or $(shell git show -s --format="%ct" $(COMMIT)), $(shell date "+%s"))
     VERSION ?= $(shell $(PYTHON) ./version.py $(SOURCE_DATE_EPOCH) $(RELEASE))
