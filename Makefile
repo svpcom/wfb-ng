@@ -76,7 +76,7 @@ rpm:  all_bin $(ENV)
 	$(PYTHON) ./setup.py bdist_rpm --force-arch $(ARCH)
 	rm -rf wfb_ng.egg-info/
 
-deb:  all_bin wfb_rtsp $(ENV)
+deb:  all_bin $(ENV)
 	rm -rf deb_dist
 	$$(PATH=$(ENV)/bin:$(ENV)/local/bin:$(PATH) which python3) ./setup.py --command-packages=stdeb.command sdist_dsc --debian-version 0~$(OS_CODENAME) bdist_deb
 	rm -rf wfb_ng.egg-info/ wfb-ng-$(VERSION).tar.gz
