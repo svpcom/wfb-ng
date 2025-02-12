@@ -1,7 +1,7 @@
 SHELL = /bin/bash
 ARCH ?= $(shell uname -m)
 PYTHON ?= /usr/bin/python3
-OS_CODENAME ?= $(shell grep VERSION_CODENAME= /etc/os-release | cut -f2 -d=)
+OS_CODENAME ?= $(shell lsb_release -cs)
 
 ifneq ("$(wildcard .git)","")
     RELEASE ?= $(or $(shell git rev-parse --abbrev-ref HEAD | grep -v '^stable$$'),\

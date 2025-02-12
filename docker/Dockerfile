@@ -6,7 +6,7 @@ ENV QEMU_CPU=$QEMU_CPU
 
 RUN apt-get update && \
     DEBIAN_FRONTEND=noninteractive \
-    apt-get install -y build-essential git wget \
+    apt-get install -y lsb-release build-essential git wget \
     virtualenv fakeroot debhelper \
     libpcap-dev libsodium-dev libevent-dev \
     python3-twisted python3-pyroute2 \
