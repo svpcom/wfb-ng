@@ -19,6 +19,7 @@
 
 
 #include <stdio.h>
+#include <string.h>
 #include <sodium.h>
 #include <fcntl.h>
 #include <unistd.h>
@@ -26,24 +27,39 @@
 #include <sys/ioctl.h>
 #include <linux/random.h>
 
-int main(void)
+int main(int argc, char** argv)
 {
     unsigned char drone_publickey[crypto_box_PUBLICKEYBYTES];
     unsigned char drone_secretkey[crypto_box_SECRETKEYBYTES];
     unsigned char gs_publickey[crypto_box_PUBLICKEYBYTES];
     unsigned char gs_secretkey[crypto_box_SECRETKEYBYTES];
     FILE *fp;
+    char *password = NULL;
 
+    if(argc == 2)
+    {
+        password = argv[1];
+    }
+
+    if(argc > 2)
+    {
+        fprintf(stderr, "Usage: %s [password]\n", argv[0]);
+        return 1;
+    }
+
+    // check for enough entropy and warn if sodium_init() can freeze
     {
         int fd;
         int c;
 
-        if ((fd = open("/dev/random", O_RDONLY)) != -1) {
-            if (ioctl(fd, RNDGETENTCNT, &c) == 0 && c < 160) {
+        if ((fd = open("/dev/random", O_RDONLY)) != -1)
+        {
+            if (ioctl(fd, RNDGETENTCNT, &c) == 0 && c < 160)
+            {
                 fprintf(stderr, "This system doesn't provide enough entropy to quickly generate high-quality random numbers.\n"
                         "Installing the rng-utils/rng-tools, jitterentropy or haveged packages may help.\n"
                         "On virtualized Linux environments, also consider using virtio-rng.\n"
-                        "The service will not start until enough entropy has been collected.\n");
+                        "This command will wait until enough entropy has been collected.\n");
             }
             (void) close(fd);
         }
@@ -55,11 +71,38 @@ int main(void)
         return 1;
     }
 
-    if (crypto_box_keypair(drone_publickey, drone_secretkey) !=0 ||
-        crypto_box_keypair(gs_publickey, gs_secretkey) != 0)
+    if (password != NULL)
     {
-        fprintf(stderr, "Unable to generate keys\n");
-        return 1;
+        unsigned char salt[crypto_pwhash_argon2i_SALTBYTES] = \
+            {'w','i','f','i','b','r','o','a','d','c','a','s','t','k','e','y'};
+
+        unsigned char seed[crypto_box_SEEDBYTES];
+        if (crypto_pwhash_argon2i
+            (seed, sizeof(seed), password, strlen(password), salt,
+             crypto_pwhash_argon2i_OPSLIMIT_INTERACTIVE, // Low CPU usage
+             crypto_pwhash_argon2i_MEMLIMIT_INTERACTIVE, // 64MB or RAM is required
+             crypto_pwhash_ALG_ARGON2I13) != 0)  // Ensure compatibility with old libsodium versions
+        {
+            fprintf(stderr, "Unable to derive seed from password\n");
+            return 1;
+        }
+        if (crypto_box_seed_keypair(drone_publickey, drone_secretkey, seed) !=0 ||
+            crypto_box_seed_keypair(gs_publickey, gs_secretkey, seed) != 0)
+        {
+            fprintf(stderr, "Unable to derive keys\n");
+            return 1;
+        }
+        fprintf(stderr, "Keypair derived from provided password\n");
+    }
+    else
+    {
+        if (crypto_box_keypair(drone_publickey, drone_secretkey) !=0 ||
+            crypto_box_keypair(gs_publickey, gs_secretkey) != 0)
+        {
+            fprintf(stderr, "Unable to generate keys\n");
+            return 1;
+        }
+        fprintf(stderr, "Keypair generated from random seed\n");
     }
 
     if((fp = fopen("drone.key", "w")) == NULL)

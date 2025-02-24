@@ -5,6 +5,7 @@ import time
 import os
 import struct
 import errno
+import hashlib
 
 from twisted.python import log
 from twisted.trial import unittest
@@ -360,3 +361,17 @@ class TXRXTestCase(unittest.TestCase):
 
         yield df_sleep(0.1)
         self.assertEqual([b'm%d' % (i + 1,) for i in range(7)], self.rxp.rxq)
+
+
+class KeyDerivationTestCase(unittest.TestCase):
+    @defer.inlineCallbacks
+    def setUp(self):
+        bindir = os.path.join(os.path.dirname(__file__), '../..')
+        yield call_and_check_rc(os.path.join(bindir, 'wfb_keygen'), 'secret password')
+
+
+    def test_keys(self):
+        keys = [open(k, 'rb').read() for k in ('gs.key', 'drone.key')]
+        self.assertEqual(len(keys), 2)
+        self.assertEqual(keys[0], keys[1])
+        self.assertEqual(hashlib.sha1(keys[0]).hexdigest(), '07d6f6998486d99db626b755e026f80ef17f6e77')
