@@ -2,7 +2,7 @@ name: WFB-ng package builder for ubuntu
 
 on:
   push:
-    branches: [ master, release-24.08 ]
+    branches: [ master, release-24.08, release-25.01 ]
   pull_request:
     # The branches below must be a subset of the branches above
     branches: [ master, stable ]
