@@ -1,6 +1,6 @@
 % WFB-NG Data Transport Standard [Draft]
 % Vasily Evseenko <<svpcom@p2ptech.org>>
-% Aug 1, 2024
+% Feb 25, 2025
 
 ## Introduction
 
@@ -175,6 +175,39 @@ When TX starts, it generates new session key, encrypts it using public key authe
 Session packet encryption and authentication are done using X25519 ECDH key generated from (RX public key, TX secret key) on the TX side and (TX public key, RX secret key) on the RX side.
 Data packets encrypted by crypto_aead_chacha20poly1305_encrypt using session key and packet index as nonce.
 TX can change FEC settings online, but it must generate a new session key to avoid invalid data on the RX side.
+
+### Key derivation from a password (KDF)
+
+For low-risk purposes it is possible to derive keys from a password provided by user.
+#### Reference implementation:
+
+```
+        unsigned char salt[crypto_pwhash_argon2i_SALTBYTES] = \
+            {'w','i','f','i','b','r','o','a','d','c','a','s','t','k','e','y'};
+        unsigned char seed[crypto_box_SEEDBYTES * 2];
+
+        if (crypto_pwhash_argon2i
+            (seed, sizeof(seed), password, strlen(password), salt,
+             crypto_pwhash_argon2i_OPSLIMIT_INTERACTIVE, // Low CPU usage
+             crypto_pwhash_argon2i_MEMLIMIT_INTERACTIVE, // 64MB or RAM is required
+             crypto_pwhash_ALG_ARGON2I13) != 0)  // Ensure compatibility with old libsodium versions
+        {
+            fprintf(stderr, "Unable to derive seed from password\n");
+            return 1;
+        }
+        if (crypto_box_seed_keypair(drone_publickey, drone_secretkey, seed) !=0 ||
+            crypto_box_seed_keypair(gs_publickey, gs_secretkey, seed + crypto_box_SEEDBYTES) != 0)
+        {
+            fprintf(stderr, "Unable to derive keys\n");
+            return 1;
+        }
+
+```
+
+#### Test vectors:
+For 'secret password' as password string resulting keypairs must be be:
+- `gs.key` (gs sec + drone pub) sha1 checksum: `cb8d52ca7602928f67daba6ba1f308f4cfc88aa7`
+- `drone.key` (drone sec + gs pub) sha1 checksum: `7a6ffb44cebc53b4538d20bdcaba8d70c9cf4095`
 
 ### RX-Ring
 Due to multiple RX radios with own internal queues incoming packets can arrive out of order and you need a method to rearrange them.
