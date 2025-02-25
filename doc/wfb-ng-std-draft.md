@@ -205,7 +205,7 @@ For low-risk purposes it is possible to derive keys from a password provided by 
 ```
 
 #### Test vectors:
-For 'secret password' as password string resulting keypairs must be be:
+For 'secret password' as password string resulting keypairs must be:
 - `gs.key` (gs sec + drone pub) sha1 checksum: `cb8d52ca7602928f67daba6ba1f308f4cfc88aa7`
 - `drone.key` (drone sec + gs pub) sha1 checksum: `7a6ffb44cebc53b4538d20bdcaba8d70c9cf4095`
 
