@@ -50,7 +50,9 @@ main (int argc, char *argv[])
 
     if(argc != 2 || (strcmp(argv[1], "h264") != 0 && strcmp(argv[1], "h265") != 0))
     {
-        fprintf(stderr, "Usage: %s (h264 | h265)\n", argv[0]);
+        fprintf(stderr, "Usage: %s { h264 | h265 }\n", argv[0]);
+        fprintf(stderr, "WFB-ng version %s\n", WFB_VERSION);
+        fprintf(stderr, "WFB-ng home page: <http://wfb-ng.org>\n");
         exit(1);
     }
 
