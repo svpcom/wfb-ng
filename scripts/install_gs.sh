@@ -3,7 +3,7 @@ set -e
 
 nics="$*"
 auto_nics=0
-release=master
+release="release-25.01"
 
 if [ $(id -u) != "0" ]
 then
