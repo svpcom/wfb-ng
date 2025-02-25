@@ -147,10 +147,13 @@ class TXCommandClient(DatagramProtocol):
 
 
 class TXRXTestCase(unittest.TestCase):
+    def setup_keys(self, bindir):
+        return  call_and_check_rc(os.path.join(bindir, 'wfb_keygen'))
+
     @defer.inlineCallbacks
     def setUp(self):
         bindir = os.path.join(os.path.dirname(__file__), '../..')
-        yield call_and_check_rc(os.path.join(bindir, 'wfb_keygen'))
+        yield self.setup_keys(bindir)
 
         self.rxp = UDP_TXRX(('127.0.0.1', 10001))
         self.txp = UDP_TXRX(('127.0.0.1', 10003))
@@ -188,6 +191,10 @@ class TXRXTestCase(unittest.TestCase):
         # Wait for tx/rx processes to die
         yield df_sleep(0.1)
 
+    def test_keys(self):
+        keys = [open(k, 'rb').read() for k in ('gs.key', 'drone.key')]
+        self.assertEqual(len(keys), 2)
+        self.assertNotEqual(keys[0], keys[1])
 
     @defer.inlineCallbacks
     def test_txrx(self):
@@ -363,15 +370,13 @@ class TXRXTestCase(unittest.TestCase):
         self.assertEqual([b'm%d' % (i + 1,) for i in range(7)], self.rxp.rxq)
 
 
-class KeyDerivationTestCase(unittest.TestCase):
-    @defer.inlineCallbacks
-    def setUp(self):
-        bindir = os.path.join(os.path.dirname(__file__), '../..')
-        yield call_and_check_rc(os.path.join(bindir, 'wfb_keygen'), 'secret password')
-
+class KeyDerivationTestCase(TXRXTestCase):
+    def setup_keys(self, bindir):
+        return call_and_check_rc(os.path.join(bindir, 'wfb_keygen'), 'secret password')
 
     def test_keys(self):
         keys = [open(k, 'rb').read() for k in ('gs.key', 'drone.key')]
         self.assertEqual(len(keys), 2)
-        self.assertEqual(keys[0], keys[1])
-        self.assertEqual(hashlib.sha1(keys[0]).hexdigest(), '07d6f6998486d99db626b755e026f80ef17f6e77')
+        self.assertNotEqual(keys[0], keys[1])
+        self.assertEqual(hashlib.sha1(keys[0]).hexdigest(), 'cb8d52ca7602928f67daba6ba1f308f4cfc88aa7')
+        self.assertEqual(hashlib.sha1(keys[1]).hexdigest(), '7a6ffb44cebc53b4538d20bdcaba8d70c9cf4095')

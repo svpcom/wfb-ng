@@ -76,7 +76,7 @@ int main(int argc, char** argv)
         unsigned char salt[crypto_pwhash_argon2i_SALTBYTES] = \
             {'w','i','f','i','b','r','o','a','d','c','a','s','t','k','e','y'};
 
-        unsigned char seed[crypto_box_SEEDBYTES];
+        unsigned char seed[crypto_box_SEEDBYTES * 2];
         if (crypto_pwhash_argon2i
             (seed, sizeof(seed), password, strlen(password), salt,
              crypto_pwhash_argon2i_OPSLIMIT_INTERACTIVE, // Low CPU usage
@@ -87,7 +87,7 @@ int main(int argc, char** argv)
             return 1;
         }
         if (crypto_box_seed_keypair(drone_publickey, drone_secretkey, seed) !=0 ||
-            crypto_box_seed_keypair(gs_publickey, gs_secretkey, seed) != 0)
+            crypto_box_seed_keypair(gs_publickey, gs_secretkey, seed + crypto_box_SEEDBYTES) != 0)
         {
             fprintf(stderr, "Unable to derive keys\n");
             return 1;
