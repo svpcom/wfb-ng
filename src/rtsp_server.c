@@ -45,15 +45,21 @@ main (int argc, char *argv[])
     GstRTSPMediaFactory *factory;
     int mode;
     char buf[2048];
+    int latency = 200;
 
     gst_init (&argc, &argv);
 
-    if(argc != 2 || (strcmp(argv[1], "h264") != 0 && strcmp(argv[1], "h265") != 0))
+    if(argc < 2 || (strcmp(argv[1], "h264") != 0 && strcmp(argv[1], "h265") != 0))
     {
-        fprintf(stderr, "Usage: %s { h264 | h265 }\n", argv[0]);
+        fprintf(stderr, "Usage: %s { h264 | h265 } [latency]\n", argv[0]);
         fprintf(stderr, "WFB-ng version %s\n", WFB_VERSION);
         fprintf(stderr, "WFB-ng home page: <http://wfb-ng.org>\n");
         exit(1);
+    }
+
+    if(argc == 3)
+    {
+        latency = atoi(argv[2]);
     }
 
     mode = atoi(argv[1] + 1);
@@ -74,8 +80,8 @@ main (int argc, char *argv[])
     factory = gst_rtsp_media_factory_new ();
 
     snprintf(buf, sizeof(buf),
-             "( udpsrc port=5600 ! application/x-rtp,media=video,clock-rate=90000,encoding-name=H%d ! rtph%ddepay ! rtph%dpay name=pay0 pt=96 )",
-             mode, mode, mode);
+             "( udpsrc port=5600 ! application/x-rtp,media=video,clock-rate=90000,encoding-name=H%d ! rtpjitterbuffer latency=%d ! rtph%ddepay ! rtph%dpay name=pay0 pt=96 )",
+             mode, latency, mode, mode);
 
     gst_rtsp_media_factory_set_launch (factory, buf);
     gst_rtsp_media_factory_set_shared (factory, TRUE);
@@ -94,7 +100,7 @@ main (int argc, char *argv[])
     g_timeout_add_seconds (2, (GSourceFunc) timeout, server);
 
     /* start serving, this never stops */
-    g_print ("H%d stream ready at rtsp://127.0.0.1:8554/wfb\n", mode);
+    g_print ("H%d stream with rtp latency %d ms ready at rtsp://127.0.0.1:8554/wfb\n", mode, latency);
     g_main_loop_run (loop);
 
     return 0;
