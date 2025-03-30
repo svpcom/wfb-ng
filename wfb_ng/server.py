@@ -112,7 +112,10 @@ def init_wlans(max_bw, wlans):
             else:
                 channel = settings.common.wifi_channel
 
-            yield call_and_check_rc('iw', 'dev', wlan, 'set', 'channel', str(channel), ht_mode)
+            if channel>2000:
+                yield call_and_check_rc('iw', 'dev', wlan, 'set', 'freq', str(channel)+ 'M', ht_mode) #set by frequency number in Mhz
+            else:
+                yield call_and_check_rc('iw', 'dev', wlan, 'set', 'channel', str(channel), ht_mode)
 
             txpower = settings.common.wifi_txpower
 
