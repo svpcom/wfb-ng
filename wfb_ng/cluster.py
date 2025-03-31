@@ -125,7 +125,11 @@ fi
 ip link set {{ wlan }} down
 iw dev {{ wlan }} set monitor otherbss
 ip link set {{ wlan }} up
+{% if channel[wlan] > 2000 %}
+iw dev {{ wlan }} set freq {{ channel[wlan] }} {{ ht_mode }}
+{% else %}
 iw dev {{ wlan }} set channel {{ channel[wlan] }} {{ ht_mode }}
+{% endif %}
 {% if txpower[wlan] not in (None, 'off') %}
 iw dev {{ wlan }} set txpower fixed {{ txpower[wlan] }}
 {% endif %}
