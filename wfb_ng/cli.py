@@ -211,13 +211,13 @@ class AntennaStat(Int32StringReceiver):
                 rpad = ''
 
             addstr_markup(window, 2, 20, '{Freq MCS BW %s[ANT]%s pkt/s dloss}     {RSSI} [dBm]        {SNR} [dB]' % (lpad, rpad))
-            for y, (((freq, mcs_index, bandwith), ant_id), v) in enumerate(sorted(stats_d.items()), 3):
+            for y, (((freq, mcs_index, bandwidth), ant_id), v) in enumerate(sorted(stats_d.items()), 3):
                 pkt_s, rssi_min, rssi_avg, rssi_max, snr_min, snr_avg, snr_max = v
                 if y < ymax:
                     active_tx = ((ant_id >> 8) == tx_wlan)
                     diff_loss = max(p['uniq'][0] - pkt_s, 0)
                     addstr_markup(window, y, 20, '%04d %3d %2d %s%s%s  %4d  %s%4d%s  %3d < {%3d} < %3d  %3d < {%3d} < %3d' % \
-                           (freq, mcs_index, bandwith,
+                           (freq, mcs_index, bandwidth,
                             '{' if active_tx else '', format_ant(ant_id), '}' if active_tx else '',
                             1000 * pkt_s // self.log_interval,
                             '{' if diff_loss else '', 1000 * diff_loss // self.log_interval, '}' if diff_loss else '',
