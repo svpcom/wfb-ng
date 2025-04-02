@@ -265,7 +265,7 @@ void Receiver::loop_iter(void)
 
 
 Aggregator::Aggregator(const string &client_addr, int client_port, const string &keypair, uint64_t epoch, uint32_t channel_id) : \
-    count_p_all(0), count_b_all(0), count_p_dec_err(0), count_p_dec_ok(0), count_p_fec_recovered(0),
+    count_p_all(0), count_b_all(0), count_p_dec_err(0), count_p_session(0), count_p_data(0), count_p_fec_recovered(0),
     count_p_lost(0), count_p_bad(0), count_p_override(0), count_p_outgoing(0), count_b_outgoing(0),
     fec_p(NULL), fec_k(-1), fec_n(-1), seq(0), rx_ring{}, rx_ring_front(0), rx_ring_alloc(0),
     last_known_block((uint64_t)-1), epoch(epoch), channel_id(channel_id)
@@ -490,8 +490,14 @@ void Aggregator::dump_stats(void)
                 it->second.snr_min, it->second.snr_sum / it->second.count_all, it->second.snr_max);
     }
 
-    IPC_MSG("%" PRIu64 "\tPKT\t%u:%u:%u:%u:%u:%u:%u:%u:%u\n", ts, count_p_all, count_b_all, count_p_dec_err,
-            count_p_dec_ok, count_p_fec_recovered, count_p_lost, count_p_bad, count_p_outgoing, count_b_outgoing);
+    IPC_MSG("%" PRIu64 "\tPKT\t%u:%u:%u:%u:%u:%u:%u:%u:%u:%u:%u\n", ts,
+            count_p_all, count_b_all,                    // incoming
+            count_p_dec_err,                             // decryption
+            count_p_session, count_p_data,               // classification
+            (uint32_t)count_p_uniq.size(),               // unique check
+            count_p_fec_recovered, count_p_lost,         // fec recovering
+            count_p_bad,                                 // internal errors
+            count_p_outgoing, count_b_outgoing);         // outgoing
     IPC_MSG_SEND();
 
     if(count_p_override)
@@ -643,8 +649,11 @@ void Aggregator::process_packet(const uint8_t *buf, size_t size, uint8_t wlan_id
             return;
         }
 
-        count_p_dec_ok += 1;
-        log_rssi(sockaddr, wlan_idx, antenna, rssi, noise, freq, mcs_index, bandwidth);
+        count_p_session += 1;
+
+        // Ignore RSSI (and per-card rx counters) for session packets to simplify calculation
+        // of lost packets because session packets doesn't have any serial number and it is
+        // too hard to calculate number of unique session packets
 
         if (memcmp(session_key, new_session_data->session_key, sizeof(session_key)) != 0)
         {
@@ -686,7 +695,7 @@ void Aggregator::process_packet(const uint8_t *buf, size_t size, uint8_t wlan_id
         return;
     }
 
-    count_p_dec_ok += 1;
+    count_p_data += 1;
     log_rssi(sockaddr, wlan_idx, antenna, rssi, noise, freq, mcs_index, bandwidth);
 
     assert(decrypted_len >= sizeof(wpacket_hdr_t));
@@ -694,6 +703,8 @@ void Aggregator::process_packet(const uint8_t *buf, size_t size, uint8_t wlan_id
 
     uint64_t block_idx = be64toh(block_hdr->data_nonce) >> 8;
     uint8_t fragment_idx = (uint8_t)(be64toh(block_hdr->data_nonce) & 0xff);
+
+    count_p_uniq.insert(be64toh(block_hdr->data_nonce));
 
     // Should never happend due to generating new session key on tx side
     if (block_idx > MAX_BLOCK_IDX)

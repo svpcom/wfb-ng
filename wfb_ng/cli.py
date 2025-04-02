@@ -175,8 +175,11 @@ class AntennaStat(Int32StringReceiver):
         def _norm(l):
             return (1000 * l[0] // self.log_interval, l[1])
 
+        diversity = p['data'][0] / p['uniq'][0] if p['uniq'][0] > 0 else 0
+
         msg_l = (('{recv}  %4d$ (%d)' % _norm(p['all']),     0),
                  ('{udp}   %4d$ (%d)' % _norm(p['out']),     0),
+                 ('sess  %4d$ (%d)' % _norm(p['session']),  0),
                  ('fec_r %4d$ (%d)' % _norm(p['fec_rec']), curses.A_REVERSE if p['fec_rec'][0] else 0),
                  ('lost  %4d$ (%d)' % _norm(p['lost']),    curses.A_REVERSE if p['lost'][0] else 0),
                  ('d_err %4d$ (%d)' % _norm(p['dec_err']), curses.A_REVERSE if p['dec_err'][0] else 0),
@@ -193,7 +196,9 @@ class AntennaStat(Int32StringReceiver):
               human_rate(1000 * p['out_bytes'][0] / self.log_interval))
 
         if session_d:
-            flow_str += '{FEC:} %(fec_k)d/%(fec_n)d' % (session_d)
+            flow_str += '{FEC:} %(fec_k)d/%(fec_n)d  ' % (session_d)
+
+        flow_str += '{Diversity:} %.2f' % (diversity,)
 
         addstr_markup(window, 0, 20, flow_str)
 
@@ -205,15 +210,17 @@ class AntennaStat(Int32StringReceiver):
                 lpad = ''
                 rpad = ''
 
-            addstr_markup(window, 2, 20, '{Freq MCS BW %s[ANT]%s pkt/s}     {RSSI} [dBm]        {SNR} [dB]' % (lpad, rpad))
+            addstr_markup(window, 2, 20, '{Freq MCS BW %s[ANT]%s pkt/s dloss}     {RSSI} [dBm]        {SNR} [dB]' % (lpad, rpad))
             for y, (((freq, mcs_index, bandwith), ant_id), v) in enumerate(sorted(stats_d.items()), 3):
                 pkt_s, rssi_min, rssi_avg, rssi_max, snr_min, snr_avg, snr_max = v
                 if y < ymax:
                     active_tx = ((ant_id >> 8) == tx_wlan)
-                    addstr_markup(window, y, 20, '%04d %3d %2d %s%s%s  %4d  %3d < {%3d} < %3d  %3d < {%3d} < %3d' % \
+                    diff_loss = max(p['uniq'][0] - pkt_s, 0)
+                    addstr_markup(window, y, 20, '%04d %3d %2d %s%s%s  %4d  %s%4d%s  %3d < {%3d} < %3d  %3d < {%3d} < %3d' % \
                            (freq, mcs_index, bandwith,
                             '{' if active_tx else '', format_ant(ant_id), '}' if active_tx else '',
                             1000 * pkt_s // self.log_interval,
+                            '{' if diff_loss else '', 1000 * diff_loss // self.log_interval, '}' if diff_loss else '',
                             rssi_min, rssi_avg, rssi_max,
                             snr_min, snr_avg, snr_max), 0 if active_tx else curses.A_DIM)
         else:

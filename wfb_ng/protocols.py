@@ -409,7 +409,7 @@ class RXAntennaProtocol(LineReceiver):
                 if len(cols) != 3:
                     raise BadTelemetry()
 
-                k_tuple = ('all', 'all_bytes', 'dec_err', 'dec_ok', 'fec_rec', 'lost', 'bad', 'out', 'out_bytes')
+                k_tuple = ('all', 'all_bytes', 'dec_err', 'session', 'data', 'uniq', 'fec_rec', 'lost', 'bad', 'out', 'out_bytes')
                 counters = tuple(int(i) for i in cols[2].split(':'))
                 assert len(counters) == len(k_tuple)
 

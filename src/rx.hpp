@@ -25,6 +25,7 @@
 #include <stdio.h>
 #include <errno.h>
 #include <string>
+#include <set>
 #include <string.h>
 #include <stdexcept>
 
@@ -172,7 +173,9 @@ public:
         count_p_all = 0;
         count_b_all = 0;
         count_p_dec_err = 0;
-        count_p_dec_ok = 0;
+        count_p_session = 0;
+        count_p_data = 0;
+        count_p_uniq.clear();
         count_p_fec_recovered = 0;
         count_p_lost = 0;
         count_p_bad = 0;
@@ -185,7 +188,9 @@ public:
     uint32_t count_p_all;
     uint32_t count_b_all;
     uint32_t count_p_dec_err;
-    uint32_t count_p_dec_ok;
+    uint32_t count_p_session;
+    uint32_t count_p_data;
+    std::set<uint32_t> count_p_uniq;
     uint32_t count_p_fec_recovered;
     uint32_t count_p_lost;
     uint32_t count_p_bad;
