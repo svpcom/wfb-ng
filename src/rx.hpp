@@ -190,7 +190,7 @@ public:
     uint32_t count_p_dec_err;
     uint32_t count_p_session;
     uint32_t count_p_data;
-    std::set<uint32_t> count_p_uniq;
+    std::set<uint64_t> count_p_uniq;
     uint32_t count_p_fec_recovered;
     uint32_t count_p_lost;
     uint32_t count_p_bad;
