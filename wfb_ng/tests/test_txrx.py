@@ -6,6 +6,8 @@ import os
 import struct
 import errno
 import hashlib
+import random
+import itertools
 
 from twisted.python import log
 from twisted.trial import unittest
@@ -15,6 +17,12 @@ from twisted.internet.protocol import DatagramProtocol
 from ..common import df_sleep
 from ..protocols import RXProtocol, TXProtocol
 from .. import call_and_check_rc
+
+
+def batched(iterable, n):
+    l = len(iterable)
+    for ndx in range(0, l, n):
+        yield iterable[ndx:min(ndx + n, l)]
 
 
 class UDP_TXRX(DatagramProtocol):
@@ -215,6 +223,50 @@ class TXRXTestCase(unittest.TestCase):
         yield df_sleep(1.1)
         self.assertEqual([b'm%d' % (i + 1,) for i in range(16) if i + 1 != 4], self.rxp.rxq)
 
+
+    @defer.inlineCallbacks
+    def test_aggregation(self):
+        self.assertEqual(len(self.txp.rxq), 0)
+
+        for i in range(256):
+            payload = os.urandom(random.randint(0, 1024))
+            self.txp.send_msg(b'%04d%s%s' % (i, payload, hashlib.sha1(payload).digest()))
+            # We have 3ms fec timeout after each fec packet so limit input packet speed
+            yield df_sleep(0.003)
+
+        yield df_sleep(1.1) # wait stats refresh
+        self.assertGreaterEqual(len(self.txp.rxq), 32 * 12 + 1) # session(s) + 32 blocks
+
+        # Always send session packet first
+        session = self.txp.rxq.pop(0)
+        self.rxp.send_msg(session)
+
+        # first packet to open first block
+        self.rxp.send_msg(self.txp.rxq.pop(0))
+
+        for batch in batched(self.txp.rxq, 18): # 1.5 FEC blocks
+            # Reoder packets
+            batch = list(batch)
+            random.shuffle(batch)
+            for pkt in batch:
+                # Drop packet with 1/8 probability
+                if random.random() > 0.125:
+                    self.rxp.send_msg(pkt)
+                    yield df_sleep(0.003)
+
+        yield df_sleep(2.1) # wait stats refresh
+        self.assertGreater(len(self.rxp.rxq), 200)
+        self.assertLessEqual(len(self.rxp.rxq), 256)
+        log.msg('Lost: %d/256' % (256 - len(self.rxp.rxq),))
+
+        prev = -1
+        for pkt in self.rxp.rxq:
+            idx = int(pkt[0:4])
+            payload = pkt[4:-20]
+            checksum = pkt[-20:]
+            self.assertEqual(hashlib.sha1(payload).digest(), checksum)
+            self.assertGreater(idx, prev)
+            prev = idx
 
     @defer.inlineCallbacks
     def test_fec_timeout(self):
