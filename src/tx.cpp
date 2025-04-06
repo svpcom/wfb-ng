@@ -573,6 +573,12 @@ bool Transmitter::send_packet(const uint8_t *buf, size_t size, uint8_t flags)
 {
     assert(size <= MAX_PAYLOAD_SIZE);
 
+    if (buf[0] == WFB_PACKET_OTA)
+    {
+        inject_packet(buf, size);
+        return true;
+    }
+
     // FEC-only packets are only for closing already opened blocks
     if (fragment_idx == 0 && (flags & WFB_PACKET_FEC_ONLY))
     {

@@ -673,6 +673,16 @@ void Aggregator::process_packet(const uint8_t *buf, size_t size, uint8_t wlan_id
 
         return;
 
+    case WFB_PACKET_OTA:
+        if(size < sizeof(ota_hdr_t))
+        {
+            WFB_ERR("Short packet (invalid OTA packet)\n");
+            return;
+        }
+        if (-1 != sockfd)
+            sendto(sockfd, buf, size, MSG_DONTWAIT, (sockaddr*)&saddr, sizeof(saddr));
+        return;
+
     default:
         WFB_ERR("Unknown packet type 0x%x\n", buf[0]);
         count_p_bad += 1;
