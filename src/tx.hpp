@@ -64,6 +64,7 @@ radiotap_header_t init_radiotap_header(uint8_t stbc,
 
 typedef enum {
     LOCAL,
+    LOCAL_UNIX,
     INJECTOR,
     DISTRIBUTOR
 } tx_mode_t;

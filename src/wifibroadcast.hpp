@@ -287,6 +287,7 @@ typedef struct {
 #endif
 
 int open_udp_socket_for_rx(int port, int rcv_buf_size, uint32_t bind_addr = INADDR_ANY, int socket_type = SOCK_DGRAM, int socket_protocol = 0);
+int open_unix_socket_for_rx(const char *socket_path, int rcv_buf_size, int socket_type = SOCK_DGRAM, int socket_protocol = 0);
 uint64_t get_time_ms(void);
 uint64_t get_time_us(void);
 
