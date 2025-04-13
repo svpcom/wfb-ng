@@ -1398,7 +1398,7 @@ void local_loop(int argc, char* const* argv, int optind, int rcv_buf, int log_in
     data_source(t, rx_fd, control_fd, fec_timeout, mirror, log_interval);
 }
 
-void local_loop_unix(const char *wlan, int rcv_buf, int log_interval,
+void local_loop_unix(int argc, char* const* argv, int optind, int rcv_buf, int log_interval,
                      const char *unix_socket, int debug_port, int k, int n, const string &keypair, int fec_timeout,
                      uint64_t epoch, uint32_t channel_id, uint32_t fec_delay, bool use_qdisc, uint32_t fwmark,
                      radiotap_header_t &radiotap_header, uint8_t frame_type, int control_port, bool mirror)
@@ -1410,10 +1410,19 @@ void local_loop_unix(const char *wlan, int rcv_buf, int log_interval,
 
     int fd = open_unix_socket_for_rx(unix_socket, rcv_buf);
 
-    WFB_INFO("Listen on @%s for %s\n", unix_socket, wlan);
-
     rx_fd.push_back(fd);
-    wlans.push_back(string(wlan));
+
+    for(int i = 0; optind + i < argc; i++)
+    {
+	char* wlan = argv[optind + i];
+	WFB_INFO("Listen on @%s for %s\n", unix_socket, wlan);
+	wlans.push_back(string(wlan));
+    }
+
+    if(!mirror && wlans.size() > 1)
+    {
+	throw runtime_error("Multiple cards for unix socket source only supported with mirroring mode!");
+    }
 
     if (debug_port)
     {
@@ -1705,7 +1714,7 @@ int main(int argc, char * const *argv)
             break;
 
         case LOCAL_UNIX:
-            local_loop_unix(argv[optind], rcv_buf, log_interval,
+            local_loop_unix(argc, argv, optind, rcv_buf, log_interval,
                             unix_socket, debug_port, k, n, keypair, fec_timeout,
                             epoch, channel_id, fec_delay, use_qdisc, fwmark,
                             radiotap_header, frame_type, control_port, mirror);
