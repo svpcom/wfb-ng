@@ -30,6 +30,7 @@
 #include <poll.h>
 #include <sys/socket.h>
 #include <netinet/in.h>
+#include <sys/un.h>
 #include <arpa/inet.h>
 #include <limits.h>
 #include <sys/ioctl.h>
@@ -202,7 +203,7 @@ void Receiver::loop_iter(void)
 
             case IEEE80211_RADIOTAP_VHT:
             {
-		/* u16 known, u8 flags, u8 bandwidth, u8 mcs_nss[4], u8 coding, u8 group_id, u16 partial_aid */
+                /* u16 known, u8 flags, u8 bandwidth, u8 mcs_nss[4], u8 coding, u8 group_id, u16 partial_aid */
                 u8 known = iterator.this_arg[0];
 
                 if(known & 0x40)
@@ -264,20 +265,12 @@ void Receiver::loop_iter(void)
 }
 
 
-Aggregator::Aggregator(const string &client_addr, int client_port, const string &keypair, uint64_t epoch, uint32_t channel_id) : \
+Aggregator::Aggregator(const string &keypair, uint64_t epoch, uint32_t channel_id) : \
     count_p_all(0), count_b_all(0), count_p_dec_err(0), count_p_session(0), count_p_data(0), count_p_fec_recovered(0),
     count_p_lost(0), count_p_bad(0), count_p_override(0), count_p_outgoing(0), count_b_outgoing(0),
     fec_p(NULL), fec_k(-1), fec_n(-1), seq(0), rx_ring{}, rx_ring_front(0), rx_ring_alloc(0),
     last_known_block((uint64_t)-1), epoch(epoch), channel_id(channel_id)
 {
-    sockfd = socket(AF_INET, SOCK_DGRAM, 0);
-    if (sockfd < 0) throw std::runtime_error(string_format("Error opening socket: %s", strerror(errno)));
-
-    memset(&saddr, '\0', sizeof(saddr));
-    saddr.sin_family = AF_INET;
-    saddr.sin_addr.s_addr = inet_addr(client_addr.c_str());
-    saddr.sin_port = htons((unsigned short)client_port);
-
     memset(session_key, '\0', sizeof(session_key));
 
     FILE *fp;
@@ -305,7 +298,6 @@ Aggregator::~Aggregator()
     {
         deinit_fec();
     }
-    close(sockfd);
 }
 
 void Aggregator::init_fec(int k, int n)
@@ -363,10 +355,19 @@ void Aggregator::deinit_fec(void)
 }
 
 
-Forwarder::Forwarder(const string &client_addr, int client_port)
+Forwarder::Forwarder(const string &client_addr, int client_port, int snd_buf_size)
 {
     sockfd = socket(AF_INET, SOCK_DGRAM, 0);
     if (sockfd < 0) throw std::runtime_error(string_format("Error opening socket: %s", strerror(errno)));
+
+    if (snd_buf_size > 0)
+    {
+        if(setsockopt(sockfd, SOL_SOCKET, SO_SNDBUF, (const void *)&snd_buf_size , sizeof(snd_buf_size)) !=0)
+        {
+            close(sockfd);
+            throw runtime_error(string_format("Unable to set SO_SNDBUF: %s", strerror(errno)));
+        }
+    }
 
     memset(&saddr, '\0', sizeof(saddr));
     saddr.sin_family = AF_INET;
@@ -848,7 +849,7 @@ void Aggregator::send_packet(int ring_idx, int fragment_idx)
     }
     else if(!(flags & WFB_PACKET_FEC_ONLY))
     {
-        sendto(sockfd, payload, packet_size, MSG_DONTWAIT, (sockaddr*)&saddr, sizeof(saddr));
+        send_to_socket(payload, packet_size);
         count_p_outgoing += 1;
         count_b_outgoing += packet_size;
     }
@@ -896,6 +897,67 @@ void Aggregator::apply_fec(int ring_idx)
     fec_decode(fec_p, (const uint8_t**)in_blocks, out_blocks, index, max_packet_size);
 }
 
+AggregatorUDPv4::AggregatorUDPv4(const std::string &client_addr, int client_port, const std::string &keypair, uint64_t epoch, uint32_t channel_id, int snd_buf_size) : \
+    Aggregator(keypair, epoch, channel_id)
+{
+    sockfd = socket(AF_INET, SOCK_DGRAM, 0);
+    if (sockfd < 0) throw std::runtime_error(string_format("Error opening socket: %s", strerror(errno)));
+
+    if (snd_buf_size > 0)
+    {
+        if(setsockopt(sockfd, SOL_SOCKET, SO_SNDBUF, (const void *)&snd_buf_size , sizeof(snd_buf_size)) !=0)
+        {
+            close(sockfd);
+            throw runtime_error(string_format("Unable to set SO_SNDBUF: %s", strerror(errno)));
+        }
+    }
+
+    memset(&saddr, '\0', sizeof(saddr));
+    saddr.sin_family = AF_INET;
+    saddr.sin_addr.s_addr = inet_addr(client_addr.c_str());
+    saddr.sin_port = htons((unsigned short)client_port);
+}
+
+AggregatorUDPv4::~AggregatorUDPv4()
+{
+    close(sockfd);
+}
+
+void AggregatorUDPv4::send_to_socket(const uint8_t *payload, uint16_t packet_size)
+{
+    sendto(sockfd, payload, packet_size, MSG_DONTWAIT, (sockaddr*)&saddr, sizeof(saddr));
+}
+
+AggregatorUNIX::AggregatorUNIX(const std::string &socket_path, const std::string &keypair, uint64_t epoch, uint32_t channel_id, int snd_buf_size) : \
+    Aggregator(keypair, epoch, channel_id)
+{
+    sockfd = socket(AF_UNIX, SOCK_DGRAM, 0);
+    if (sockfd < 0) throw std::runtime_error(string_format("Error opening socket: %s", strerror(errno)));
+
+    if (snd_buf_size > 0)
+    {
+        if(setsockopt(sockfd, SOL_SOCKET, SO_SNDBUF, (const void *)&snd_buf_size , sizeof(snd_buf_size)) !=0)
+        {
+            close(sockfd);
+            throw runtime_error(string_format("Unable to set SO_SNDBUF: %s", strerror(errno)));
+        }
+    }
+
+    memset(&saddr, '\0', sizeof(saddr));
+    saddr.sun_family = AF_UNIX;
+    strncpy(saddr.sun_path + 1, socket_path.c_str(), sizeof(saddr.sun_path) - 2);
+}
+
+AggregatorUNIX::~AggregatorUNIX()
+{
+    close(sockfd);
+}
+
+void AggregatorUNIX::send_to_socket(const uint8_t *payload, uint16_t packet_size)
+{
+    sendto(sockfd, payload, packet_size, MSG_DONTWAIT, (sockaddr*)&saddr, sizeof(sa_family_t) + strlen(saddr.sun_path + 1) + 1);
+}
+
 void radio_loop(int argc, char* const *argv, int optind, uint32_t channel_id, unique_ptr<BaseAggregator> &agg, int log_interval, int rcv_buf_size)
 {
     int nfds = argc - optind;
@@ -905,7 +967,7 @@ void radio_loop(int argc, char* const *argv, int optind, uint32_t channel_id, un
 
     if (nfds > MAX_RX_INTERFACES)
     {
-        throw runtime_error(string_format("Too many wifi adapters, increase MAX_RX_INTERFACES"));
+        throw runtime_error(string_format("Too many WiFi adapters, increase MAX_RX_INTERFACES"));
     }
 
     memset(fds, '\0', sizeof(fds));
@@ -950,7 +1012,7 @@ void radio_loop(int argc, char* const *argv, int optind, uint32_t channel_id, un
     }
 }
 
-void network_loop(int srv_port, Aggregator &agg, int log_interval, int rcv_buf_size)
+void network_loop(int srv_port, unique_ptr<BaseAggregator> &agg, int log_interval, int rcv_buf_size)
 {
     wrxfwd_t fwd_hdr;
     struct sockaddr_in sockaddr;
@@ -977,7 +1039,7 @@ void network_loop(int srv_port, Aggregator &agg, int log_interval, int rcv_buf_s
         cur_ts = get_time_ms();
         if (cur_ts >= log_send_ts)
         {
-            agg.dump_stats();
+            agg->dump_stats();
             log_send_ts = cur_ts + log_interval - ((cur_ts - log_send_ts) % log_interval);
         }
 
@@ -1018,10 +1080,10 @@ void network_loop(int srv_port, Aggregator &agg, int log_interval, int rcv_buf_s
                 {
                     continue;
                 }
-                agg.process_packet(buf, rsize - sizeof(wrxfwd_t),
-                                   fwd_hdr.wlan_idx, fwd_hdr.antenna,
-                                   fwd_hdr.rssi, fwd_hdr.noise, ntohs(fwd_hdr.freq),
-                                   fwd_hdr.mcs_index, fwd_hdr.bandwidth, &sockaddr);
+                agg->process_packet(buf, rsize - sizeof(wrxfwd_t),
+                                    fwd_hdr.wlan_idx, fwd_hdr.antenna,
+                                    fwd_hdr.rssi, fwd_hdr.noise, ntohs(fwd_hdr.freq),
+                                    fwd_hdr.mcs_index, fwd_hdr.bandwidth, &sockaddr);
             }
             if(errno != EWOULDBLOCK) throw runtime_error(string_format("Error receiving packet: %s", strerror(errno)));
         }
@@ -1042,10 +1104,12 @@ int main(int argc, char* const *argv)
     string client_addr = "127.0.0.1";
     rx_mode_t rx_mode = LOCAL;
     int rcv_buf = 0;
+    int snd_buf = 0;
 
     string keypair = "rx.key";
+    string unix_socket = "";
 
-    while ((opt = getopt(argc, argv, "K:fa:c:u:p:l:i:e:R:")) != -1) {
+    while ((opt = getopt(argc, argv, "K:fa:c:u:U:p:l:i:e:R:s:")) != -1) {
         switch (opt) {
         case 'K':
             keypair = optarg;
@@ -1063,11 +1127,17 @@ int main(int argc, char* const *argv)
         case 'u':
             client_port = atoi(optarg);
             break;
+        case 'U':
+            unix_socket = string(optarg);
+            break;
         case 'p':
             radio_port = atoi(optarg);
             break;
         case 'R':
             rcv_buf = atoi(optarg);
+            break;
+        case 's':
+            snd_buf = atoi(optarg);
             break;
         case 'l':
             log_interval = atoi(optarg);
@@ -1080,10 +1150,10 @@ int main(int argc, char* const *argv)
             break;
         default: /* '?' */
         show_usage:
-            WFB_INFO("Local receiver: %s [-K rx_key] [-c client_addr] [-u client_port] [-p radio_port] [-R rcv_buf] [-l log_interval] [-e epoch] [-i link_id] interface1 [interface2] ...\n", argv[0]);
-            WFB_INFO("Remote (forwarder): %s -f [-c client_addr] [-u client_port] [-p radio_port]  [-R rcv_buf] [-i link_id] interface1 [interface2] ...\n", argv[0]);
-            WFB_INFO("Remote (aggregator): %s -a server_port [-K rx_key] [-c client_addr] [-R rcv_buf] [-u client_port] [-l log_interval] [-p radio_port] [-e epoch] [-i link_id]\n", argv[0]);
-            WFB_INFO("Default: K='%s', connect=%s:%d, link_id=0x%06x, radio_port=%u, epoch=%" PRIu64 ", log_interval=%d, rcv_buf=system_default\n", keypair.c_str(), client_addr.c_str(), client_port, link_id, radio_port, epoch, log_interval);
+            WFB_INFO("Local receiver: %s [-K rx_key] { [-c client_addr] [-u client_port] | [-U unix_socket] } [-p radio_port] [-R rcv_buf] [-s snd_buf] [-l log_interval] [-e epoch] [-i link_id] interface1 [interface2] ...\n", argv[0]);
+            WFB_INFO("Remote (forwarder): %s -f [-c client_addr] [-u client_port] [-p radio_port]  [-R rcv_buf] [-s snd_buf] [-i link_id] interface1 [interface2] ...\n", argv[0]);
+            WFB_INFO("Remote (aggregator): %s -a server_port [-K rx_key] { [-c client_addr] [-u client_port] | [-U unix_socket] } [-R rcv_buf] [-s snd_buf] [-l log_interval] [-p radio_port] [-e epoch] [-i link_id]\n", argv[0]);
+            WFB_INFO("Default: K='%s', connect=%s:%d, link_id=0x%06x, radio_port=%u, epoch=%" PRIu64 ", log_interval=%d, rcv_buf=system_default, snd_buf=system_default\n", keypair.c_str(), client_addr.c_str(), client_port, link_id, radio_port, epoch, log_interval);
             WFB_INFO("WFB-ng version %s\n", WFB_VERSION);
             WFB_INFO("WFB-ng home page: <http://wfb-ng.org>\n");
             exit(1);
@@ -1114,28 +1184,51 @@ int main(int argc, char* const *argv)
     try
     {
         uint32_t channel_id = (link_id << 8) + radio_port;
-        if (rx_mode == LOCAL || rx_mode == FORWARDER)
-        {
-            if (optind >= argc) goto show_usage;
 
-            unique_ptr<BaseAggregator> agg;
-            if(rx_mode == LOCAL){
-                agg = unique_ptr<Aggregator>(new Aggregator(client_addr, client_port, keypair, epoch, channel_id));
-            }else{
-                agg = unique_ptr<Forwarder>(new Forwarder(client_addr, client_port));
-            }
-
-            radio_loop(argc, argv, optind, channel_id, agg, log_interval, rcv_buf);
-        }else if(rx_mode == AGGREGATOR)
+        // WiFi interface(s) are required for all modes except aggregator
+        if(rx_mode == AGGREGATOR)
         {
             if (optind > argc) goto show_usage;
-            Aggregator agg(client_addr, client_port, keypair, epoch, channel_id);
+        }
+        else
+        {
+            if (optind >= argc) goto show_usage;
+        }
 
-            network_loop(srv_port, agg, log_interval, rcv_buf);
-        }else{
+        unique_ptr<BaseAggregator> agg;
+
+        switch(rx_mode)
+        {
+        case LOCAL:
+        case AGGREGATOR:
+            if(unix_socket.length() > 0)
+            {
+                agg = unique_ptr<AggregatorUNIX>(new AggregatorUNIX(unix_socket, keypair, epoch, channel_id, snd_buf));
+            }
+            else
+            {
+                agg = unique_ptr<AggregatorUDPv4>(new AggregatorUDPv4(client_addr, client_port, keypair, epoch, channel_id, snd_buf));
+            }
+            break;
+
+        case FORWARDER:
+            agg = unique_ptr<Forwarder>(new Forwarder(client_addr, client_port, snd_buf));
+            break;
+
+        default:
             throw runtime_error(string_format("Unknown rx_mode=%d", rx_mode));
         }
-    }catch(runtime_error &e)
+
+        if(rx_mode == AGGREGATOR)
+        {
+            network_loop(srv_port, agg, log_interval, rcv_buf);
+        }
+        else
+        {
+            radio_loop(argc, argv, optind, channel_id, agg, log_interval, rcv_buf);
+        }
+    }
+    catch(runtime_error &e)
     {
         WFB_ERR("Error: %s\n", e.what());
         exit(1);

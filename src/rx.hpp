@@ -53,7 +53,7 @@ public:
 class Forwarder : public BaseAggregator
 {
 public:
-    Forwarder(const std::string &client_addr, int client_port);
+    Forwarder(const std::string &client_addr, int client_port, int snd_buf_size);
     virtual ~Forwarder();
     virtual void process_packet(const uint8_t *buf, size_t size, uint8_t wlan_idx, const uint8_t *antenna,
                                 const int8_t *rssi, const int8_t *noise, uint16_t freq, uint8_t mcs_index,
@@ -159,7 +159,7 @@ typedef std::unordered_map<rxAntennaKey, rxAntennaItem> rx_antenna_stat_t;
 class Aggregator : public BaseAggregator
 {
 public:
-    Aggregator(const std::string &client_addr, int client_port, const std::string &keypair, uint64_t epoch, uint32_t channel_id);
+    Aggregator(const std::string &keypair, uint64_t epoch, uint32_t channel_id);
     virtual ~Aggregator();
     virtual void process_packet(const uint8_t *buf, size_t size, uint8_t wlan_idx, const uint8_t *antenna,
                                 const int8_t *rssi, const int8_t *noise, uint16_t freq, uint8_t mcs_index,
@@ -198,6 +198,9 @@ public:
     uint32_t count_p_outgoing;
     uint32_t count_b_outgoing;
 
+protected:
+    virtual void send_to_socket(const uint8_t *payload, uint16_t packet_size) = 0;
+
 private:
     Aggregator(const Aggregator&);
     Aggregator& operator=(const Aggregator&);
@@ -216,8 +219,7 @@ private:
     fec_t* fec_p;
     int fec_k;  // RS number of primary fragments in block
     int fec_n;  // RS total number of fragments in block
-    int sockfd;
-    struct sockaddr_in saddr;
+
     uint32_t seq;
     rx_ring_item_t rx_ring[RX_RING_SIZE];
     int rx_ring_front; // current packet
@@ -231,6 +233,43 @@ private:
     uint8_t tx_publickey[crypto_box_PUBLICKEYBYTES];
     uint8_t session_key[crypto_aead_chacha20poly1305_KEYBYTES];
 };
+
+
+class AggregatorUDPv4 : public Aggregator
+{
+public:
+    AggregatorUDPv4(const std::string &client_addr, int client_port, const std::string &keypair, uint64_t epoch, uint32_t channel_id, int snd_buf_size);
+    virtual ~AggregatorUDPv4();
+
+protected:
+    virtual void send_to_socket(const uint8_t *payload, uint16_t packet_size);
+
+private:
+    AggregatorUDPv4(const AggregatorUDPv4&);
+    AggregatorUDPv4& operator=(const AggregatorUDPv4&);
+
+    int sockfd;
+    struct sockaddr_in saddr;
+};
+
+
+class AggregatorUNIX : public Aggregator
+{
+public:
+    AggregatorUNIX(const std::string &unix_socket, const std::string &keypair, uint64_t epoch, uint32_t channel_id, int snd_buf_size);
+    virtual ~AggregatorUNIX();
+
+protected:
+    virtual void send_to_socket(const uint8_t *payload, uint16_t packet_size);
+
+private:
+    AggregatorUNIX(const AggregatorUNIX&);
+    AggregatorUNIX& operator=(const AggregatorUNIX&);
+
+    int sockfd;
+    struct sockaddr_un saddr;
+};
+
 
 class Receiver
 {

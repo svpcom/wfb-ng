@@ -203,11 +203,20 @@ class UdpTransmitter : public Transmitter
 {
 public:
     UdpTransmitter(int k, int n, const std::string &keypair, const std::string &client_addr, int base_port, uint64_t epoch, uint32_t channel_id,
-                   uint32_t fec_delay, std::vector<tags_item_t> &tags, bool use_qdisc, uint32_t fwmark_base): \
+                   uint32_t fec_delay, std::vector<tags_item_t> &tags, bool use_qdisc, uint32_t fwmark_base, int snd_buf_size): \
         Transmitter(k, n, keypair, epoch, channel_id, fec_delay, tags), radiotap_header({}), base_port(base_port), use_qdisc(use_qdisc), fwmark_base(fwmark_base)
     {
         sockfd = socket(AF_INET, SOCK_DGRAM, 0);
         if (sockfd < 0) throw std::runtime_error(string_format("Error opening socket: %s", strerror(errno)));
+
+        if (snd_buf_size > 0)
+        {
+            if(setsockopt(sockfd, SOL_SOCKET, SO_SNDBUF, (const void *)&snd_buf_size , sizeof(snd_buf_size)) !=0)
+            {
+                close(sockfd);
+                throw runtime_error(string_format("Unable to set SO_SNDBUF: %s", strerror(errno)));
+            }
+        }
 
         memset(&saddr, '\0', sizeof(saddr));
         saddr.sin_family = AF_INET;
@@ -300,7 +309,7 @@ class RemoteTransmitter : public Transmitter
 public:
     RemoteTransmitter(int k, int n, const std::string &keypair, uint64_t epoch, uint32_t channel_id, uint32_t fec_delay, std::vector<tags_item_t> &tags,
                       const std::vector<std::pair<std::string, std::vector<uint16_t>>> &remote_hosts, radiotap_header_t &radiotap_header,
-                      uint8_t frame_type, bool use_qdisc, uint32_t fwmark_base);
+                      uint8_t frame_type, bool use_qdisc, uint32_t fwmark_base, int snd_buf_size);
     virtual ~RemoteTransmitter()
     {
         close(sockfd);
