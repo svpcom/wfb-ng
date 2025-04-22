@@ -12,7 +12,7 @@ RUN apt-get update && \
     python3-twisted python3-pyroute2 \
     python3-all python3-all-dev \
     python3-serial dh-python python3-setuptools python3-msgpack \
-    libgstrtspserver-1.0-dev
+    libgstrtspserver-1.0-dev procps net-tools iproute2 iputils-ping
 
 COPY src/Makefile /tmp
 ENV ENV=/opt/env

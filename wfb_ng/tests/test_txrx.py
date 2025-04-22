@@ -26,17 +26,19 @@ def batched(iterable, n):
 
 
 class UDP_TXRX(DatagramProtocol):
-    def __init__(self, tx_addr, tx_transport=None):
+    def __init__(self, tx_addr, tx_proto=None):
         self.rxq = []
         self.tx_addr = tx_addr
-        self.tx_transport = tx_transport
+        self.tx_proto = tx_proto
 
     def datagramReceived(self, data, addr):
         log.msg("got %r from %s" % (data, addr))
         self.rxq.append(data)
 
     def send_msg(self, data):
-        (self.tx_transport or self.transport).write(data, self.tx_addr)
+        t = (self.tx_proto.transport if self.tx_proto else self.transport)
+        t.write(data, self.tx_addr)
+        log.msg("sent %r to %r" % (data, t,))
 
 
 def gen_req_id(f):
@@ -443,11 +445,11 @@ class UNIXTXRXTestCase(TXRXTestCase):
 
         self.rxp_txp = DatagramProtocol()
         self.rx_tx_ep = reactor.listenUDP(0, self.rxp_txp)
-        self.rxp = UDP_TXRX(('127.0.0.1', 10001), self.rxp_txp.transport)
+        self.rxp = UDP_TXRX(('127.0.0.1', 10001), self.rxp_txp)
 
         self.txp_rxp = DatagramProtocol()
         self.tx_rx_ep = reactor.listenUNIXDatagram(None, self.txp_rxp)
-        self.txp = UDP_TXRX('\0wfb-tx-test', self.txp_rxp.transport)
+        self.txp = UDP_TXRX('\0wfb-tx-test', self.txp_rxp)
 
         self.cmdp = TXCommandClient(('127.0.0.1', 7003))
 
