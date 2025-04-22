@@ -26,16 +26,17 @@ def batched(iterable, n):
 
 
 class UDP_TXRX(DatagramProtocol):
-    def __init__(self, tx_addr):
+    def __init__(self, tx_addr, tx_transport=None):
         self.rxq = []
         self.tx_addr = tx_addr
+        self.tx_transport = tx_transport
 
     def datagramReceived(self, data, addr):
         log.msg("got %r from %s" % (data, addr))
         self.rxq.append(data)
 
     def send_msg(self, data):
-        self.transport.write(data, self.tx_addr)
+        (self.tx_transport or self.transport).write(data, self.tx_addr)
 
 
 def gen_req_id(f):
@@ -432,3 +433,54 @@ class KeyDerivationTestCase(TXRXTestCase):
         self.assertNotEqual(keys[0], keys[1])
         self.assertEqual(hashlib.sha1(keys[0]).hexdigest(), 'cb8d52ca7602928f67daba6ba1f308f4cfc88aa7')
         self.assertEqual(hashlib.sha1(keys[1]).hexdigest(), '7a6ffb44cebc53b4538d20bdcaba8d70c9cf4095')
+
+
+class UNIXTXRXTestCase(TXRXTestCase):
+    @defer.inlineCallbacks
+    def setUp(self):
+        bindir = os.path.join(os.path.dirname(__file__), '../..')
+        yield self.setup_keys(bindir)
+
+        self.rxp_txp = DatagramProtocol()
+        self.rx_tx_ep = reactor.listenUDP(0, self.rxp_txp)
+        self.rxp = UDP_TXRX(('127.0.0.1', 10001), self.rxp_txp.transport)
+
+        self.txp_rxp = DatagramProtocol()
+        self.tx_rx_ep = reactor.listenUNIXDatagram(None, self.txp_rxp)
+        self.txp = UDP_TXRX('\0wfb-tx-test', self.txp_rxp.transport)
+
+        self.cmdp = TXCommandClient(('127.0.0.1', 7003))
+
+        self.rx_ep = reactor.listenUNIXDatagram(b'\0wfb-rx-test', self.rxp)
+        self.tx_ep = reactor.listenUDP(10004, self.txp)
+        self.cmd_ep = reactor.listenUDP(0, self.cmdp)
+
+        link_id = int.from_bytes(os.urandom(3), 'big')
+        epoch = int(time.time())
+        cmd_rx = [os.path.join(bindir, 'wfb_rx'), '-K', 'drone.key', '-a', '10001', '-U', 'wfb-rx-test',
+                  '-i', str(link_id), '-e', str(epoch), '-R', str(512 * 1024), '-s', str(512 * 1024), 'wlan0']
+        cmd_tx = [os.path.join(bindir, 'wfb_tx'), '-K', 'gs.key', '-U', 'wfb-tx-test', '-D', '10004', '-T', '30', '-F', '3000', '-C', '7003',
+                  # '-Q', '-P 1',  ## requires root priv
+                  '-i', str(link_id), '-e', str(epoch), '-R', str(512 * 1024), '-s', str(512 * 1024), 'wlan0']
+
+        ap = FakeAntennaProtocol()
+        self.rx_pp = RXProtocol(ap, cmd_rx, 'debug rx')
+        self.tx_pp = TXProtocol(ap, cmd_tx, 'debug tx')
+
+        self.rx_pp.start().addErrback(lambda f: f.trap('twisted.internet.error.ProcessTerminated'))
+        self.tx_pp.start().addErrback(lambda f: f.trap('twisted.internet.error.ProcessTerminated'))
+
+        # Wait for tx/rx processes to initialize
+        yield df_sleep(0.1)
+
+    @defer.inlineCallbacks
+    def tearDown(self):
+        self.rx_pp.transport.signalProcess('KILL')
+        self.tx_pp.transport.signalProcess('KILL')
+        self.rx_ep.stopListening()
+        self.tx_ep.stopListening()
+        self.rx_tx_ep.stopListening()
+        self.tx_rx_ep.stopListening()
+        self.cmd_ep.stopListening()
+        # Wait for tx/rx processes to die
+        yield df_sleep(0.1)

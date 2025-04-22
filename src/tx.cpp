@@ -1424,10 +1424,15 @@ void local_loop_unix(int argc, char* const* argv, int optind, int rcv_buf, int l
         string tmp = i > 0 ? string_format("%s-%d", unix_socket, i) : string(unix_socket);
         int fd = open_unix_socket_for_rx(tmp.c_str(), rcv_buf);
 
+        IPC_MSG("%" PRIu64 "\tLISTEN_UNIX\t%s:%x\n", get_time_ms(), tmp.c_str(), i);
         WFB_INFO("Listen on @%s for %s\n", tmp.c_str(), wlan);
+
         rx_fd.push_back(fd);
         wlans.push_back(string(wlan));
     }
+
+    IPC_MSG("%" PRIu64 "\tLISTEN_UNIX_END\n", get_time_ms());
+    IPC_MSG_SEND();
 
     if (debug_port)
     {
@@ -1521,6 +1526,69 @@ void distributor_loop(int argc, char* const* argv, int optind, int rcv_buf, int 
     data_source(t, rx_fd, control_fd, fec_timeout, mirror, log_interval);
 }
 
+
+void distributor_loop_unix(int argc, char* const* argv, int optind, int rcv_buf, int log_interval,
+                           const char* unix_socket, int k, int n, const string &keypair, int fec_timeout,
+                           uint64_t epoch, uint32_t channel_id, uint32_t fec_delay, bool use_qdisc, uint32_t fwmark,
+                           radiotap_header_t &radiotap_header, uint8_t frame_type, int control_port, bool mirror,
+                           int snd_buf_size)
+{
+    vector<int> rx_fd;
+    vector<pair<string, vector<uint16_t>>> remote_hosts;
+    int port_idx = 0;
+
+    set<string> hosts;
+
+    for(int i = optind; i < argc; i++)
+    {
+        vector<uint16_t> remote_ports;
+        char *p = argv[i];
+        char *t = NULL;
+
+        t = strsep(&p, ":");
+        if (t == NULL) continue;
+
+        string remote_host = string(t);
+
+        if(hosts.count(remote_host))
+        {
+            throw runtime_error(string_format("Duplicate host %s", remote_host.c_str()));
+        }
+
+        hosts.insert(remote_host);
+
+        for(int j=0; (t=strsep(&p, ",")) != NULL; j++, port_idx++)
+        {
+            uint16_t remote_port = atoi(t);
+
+            string tmp = port_idx > 0 ? string_format("%s-%d", unix_socket, port_idx) : string(unix_socket);
+            int fd = open_unix_socket_for_rx(tmp.c_str(), rcv_buf);
+
+            uint64_t wlan_id = (uint64_t)ntohl(inet_addr(remote_host.c_str())) << 24  | j;
+
+            IPC_MSG("%" PRIu64 "\tLISTEN_UNIX\t%s:%" PRIx64 "\n", get_time_ms(), tmp.c_str(), wlan_id);
+            WFB_INFO("Listen on @%s for %s:%d\n", tmp.c_str(), remote_host.c_str(), remote_port);
+
+            rx_fd.push_back(fd);
+            remote_ports.push_back(remote_port);
+        }
+
+        remote_hosts.push_back(pair<string, vector<uint16_t>>(remote_host, remote_ports));
+    }
+
+    IPC_MSG("%" PRIu64 "\tLISTEN_UNIX_END\n", get_time_ms());
+    IPC_MSG_SEND();
+
+    vector<tags_item_t> tags;
+    unique_ptr<Transmitter> t = unique_ptr<RemoteTransmitter>(new RemoteTransmitter(k, n, keypair, epoch, channel_id, fec_delay, tags,
+                                                                                    remote_hosts, radiotap_header, frame_type, use_qdisc,
+                                                                                    fwmark, snd_buf_size));
+
+    int control_fd = open_control_fd(control_port);
+    data_source(t, rx_fd, control_fd, fec_timeout, mirror, log_interval);
+}
+
+
 int main(int argc, char * const *argv)
 {
     int opt;
@@ -1574,7 +1642,6 @@ int main(int argc, char * const *argv)
             udp_port = atoi(optarg);
             break;
         case 'U':
-            tx_mode = LOCAL_UNIX;
             unix_socket = optarg;
             break;
         case 'p':
@@ -1718,27 +1785,41 @@ int main(int argc, char * const *argv)
             break;
 
         case LOCAL:
-            local_loop_udp(argc, argv, optind, rcv_buf, log_interval,
-                           udp_port, debug_port, k, n, keypair, fec_timeout,
-                           epoch, channel_id, fec_delay, use_qdisc, fwmark,
-                           radiotap_header, frame_type, control_port, mirror,
-                           snd_buf);
-            break;
-
-        case LOCAL_UNIX:
-            local_loop_unix(argc, argv, optind, rcv_buf, log_interval,
-                            unix_socket, debug_port, k, n, keypair, fec_timeout,
-                            epoch, channel_id, fec_delay, use_qdisc, fwmark,
-                            radiotap_header, frame_type, control_port, mirror,
-                            snd_buf);
+            if (unix_socket != NULL)
+            {
+                local_loop_unix(argc, argv, optind, rcv_buf, log_interval,
+                                unix_socket, debug_port, k, n, keypair, fec_timeout,
+                                epoch, channel_id, fec_delay, use_qdisc, fwmark,
+                                radiotap_header, frame_type, control_port, mirror,
+                                snd_buf);
+            }
+            else
+            {
+                local_loop_udp(argc, argv, optind, rcv_buf, log_interval,
+                               udp_port, debug_port, k, n, keypair, fec_timeout,
+                               epoch, channel_id, fec_delay, use_qdisc, fwmark,
+                               radiotap_header, frame_type, control_port, mirror,
+                               snd_buf);
+            }
             break;
 
         case DISTRIBUTOR:
-            distributor_loop(argc, argv, optind, rcv_buf, log_interval,
-                             udp_port, k, n, keypair, fec_timeout,
-                             epoch, channel_id, fec_delay, use_qdisc, fwmark,
-                             radiotap_header, frame_type, control_port, mirror,
-                             snd_buf);
+            if (unix_socket != NULL)
+            {
+                distributor_loop_unix(argc, argv, optind, rcv_buf, log_interval,
+                                      unix_socket, k, n, keypair, fec_timeout,
+                                      epoch, channel_id, fec_delay, use_qdisc, fwmark,
+                                      radiotap_header, frame_type, control_port, mirror,
+                                      snd_buf);
+            }
+            else
+            {
+                distributor_loop(argc, argv, optind, rcv_buf, log_interval,
+                                 udp_port, k, n, keypair, fec_timeout,
+                                 epoch, channel_id, fec_delay, use_qdisc, fwmark,
+                                 radiotap_header, frame_type, control_port, mirror,
+                                 snd_buf);
+            }
             break;
 
         default:

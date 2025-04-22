@@ -466,6 +466,7 @@ class TXAntennaProtocol(LineReceiver):
         self.ports_df = ports_df
         self.control_port_df = control_port_df
         self.ports = {}
+        self.sockets = {}
         self.control_port = None
         self.ant = {}
         self.count_all = None
@@ -484,6 +485,13 @@ class TXAntennaProtocol(LineReceiver):
 
         elif cmd == 'LISTEN_UDP_END' and self.ports_df is not None:
             self.ports_df.callback(self.ports)
+
+        elif cmd == 'LISTEN_UNIX' and len(cols) == 3:
+            unix_socket, wlan_id = cols[2].split(':', 1)
+            self.sockets[int(wlan_id, 16)] = unix_socket
+
+        elif cmd == 'LISTEN_UNIX_END' and self.ports_df is not None:
+            self.ports_df.callback(self.sockets)
 
         elif cmd == 'LISTEN_UDP_CONTROL' and len(cols) == 3 and self.control_port_df is not None:
             port = cols[2]

@@ -239,21 +239,23 @@ def init_mavlink(service_name, cfg, wlans, link_id, ant_sel_f, is_cluster, rx_on
     p_rx = UDPProxyProtocol()
     p_rx.peer = p_in
 
-    rx_socket = reactor.listenUDP(0, p_rx)
+    rx_socket_path = '%s-rx-%s' % (service_name, os.urandom(4).hex())
+    rx_socket = reactor.listenUNIXDatagram(b'\0' + rx_socket_path.encode(), p_rx)
     sockets = [rx_socket]
 
-    cmd_rx = ('%(cmd)s%(cluster)s -p %(stream)d -u %(port)d -K %(key)s -R %(rcv_buf_size)d -s %(snd_buf_size)d -l %(log_interval)d -i %(link_id)d' % \
+    cmd_rx = ('%(cmd)s%(cluster)s -p %(stream)d -U %(unix_socket)s -K %(key)s -R %(rcv_buf_size)d -s %(snd_buf_size)d -l %(log_interval)d -i %(link_id)d' % \
               dict(cmd=os.path.join(settings.path.bin_dir, 'wfb_rx'),
                    cluster=' -a %d' % (cfg.udp_port_auto,) if is_cluster else '',
                    stream=cfg.stream_rx,
-                   port=rx_socket.getHost().port,
+                   unix_socket=rx_socket_path,
                    key=os.path.join(settings.path.conf_dir, cfg.keypair),
                    rcv_buf_size=settings.common.tx_rcv_buf_size,
                    snd_buf_size=settings.common.rx_snd_buf_size,
                    log_interval=settings.common.log_interval,
                    link_id=link_id)).split() + (wlans if not is_cluster else [])
 
-    cmd_tx = ('%(cmd)s%(cluster)s -f %(frame_type)s -p %(stream)d -u %(port)d -K %(key)s -B %(bw)d '\
+    tx_socket_path = '%s-tx-%s' % (service_name, os.urandom(4).hex())
+    cmd_tx = ('%(cmd)s%(cluster)s -f %(frame_type)s -p %(stream)d -U %(unix_socket)s -K %(key)s -B %(bw)d '\
               '-G %(gi)s -S %(stbc)d -L %(ldpc)d -M %(mcs)d'\
               '%(mirror)s%(force_vht)s%(qdisc)s '\
               '-k %(fec_k)d -n %(fec_n)d -T %(fec_timeout)d -F %(fec_delay)d -i %(link_id)d -R %(rcv_buf_size)d -s %(snd_buf_size)d -l %(log_interval)d -C %(control_port)d' % \
@@ -261,7 +263,7 @@ def init_mavlink(service_name, cfg, wlans, link_id, ant_sel_f, is_cluster, rx_on
                    cluster=' -d' if is_cluster else '',
                    frame_type=cfg.frame_type,
                    stream=cfg.stream_tx,
-                   port=0,
+                   unix_socket=tx_socket_path,
                    control_port=cfg.control_port,
                    key=os.path.join(settings.path.conf_dir, cfg.keypair),
                    bw=cfg.bandwidth,
@@ -290,21 +292,21 @@ def init_mavlink(service_name, cfg, wlans, link_id, ant_sel_f, is_cluster, rx_on
         p_in.rx_hooks.append(mav_tcp_f.write)
         reactor.listenTCP(cfg.mavlink_tcp_port, mav_tcp_f)
 
-    tx_ports_df = defer.Deferred()
+    tx_sockets_df = defer.Deferred()
     control_port_df = defer.Deferred() if cfg.control_port == 0 else None
 
-    dl = [TXProtocol(ant_sel_f, cmd_tx, '%s tx' % (service_name,), tx_ports_df, control_port_df).start()]
+    dl = [TXProtocol(ant_sel_f, cmd_tx, '%s tx' % (service_name,), tx_sockets_df, control_port_df).start()]
 
-    # Wait while wfb_tx allocates ephemeral udp ports and reports them back
-    tx_ports = yield tx_ports_df
+    # Wait while wfb_tx allocates unix sockets and reports them back
+    tx_sockets = yield tx_sockets_df
     control_port = cfg.control_port
 
     if control_port == 0:
         control_port = yield control_port_df
 
-    log.msg('%s use wfb_tx ports %s, control_port %d' % (service_name, tx_ports, control_port))
+    log.msg('%s use wfb_tx sockets %s, control_port %d' % (service_name, tx_sockets, control_port))
 
-    p_tx_map = dict((wlan_id, UDPProxyProtocol(('127.0.0.1', port))) for wlan_id, port in tx_ports.items() if wlan_id not in rx_only_wlan_ids)
+    p_tx_map = dict((wlan_id, UDPProxyProtocol(b'\0' + tx_socket.encode())) for wlan_id, tx_socket in tx_sockets.items() if wlan_id not in rx_only_wlan_ids)
 
     if serial:
         serial_port = SerialPort(p_in, os.path.join('/dev', serial[0]), reactor, baudrate=serial[1])
@@ -314,7 +316,7 @@ def init_mavlink(service_name, cfg, wlans, link_id, ant_sel_f, is_cluster, rx_on
         serial_port = None
         sockets += [ reactor.listenUDP(listen[1] if listen else 0, p_in) ]
 
-    sockets += [ reactor.listenUDP(0, p_tx) for p_tx in p_tx_map.values() ]
+    sockets += [ reactor.listenUNIXDatagram(None, p_tx) for p_tx in p_tx_map.values() ]
 
     def ant_sel_cb(wlan_id):
         p_in.peer = p_tx_map[wlan_id] \
@@ -351,21 +353,23 @@ def init_tunnel(service_name, cfg, wlans, link_id, ant_sel_f, is_cluster, rx_onl
     p_rx = UDPProxyProtocol()
     p_rx.peer = p_in
 
-    rx_socket = reactor.listenUDP(0, p_rx)
+    rx_socket_path = '%s-rx-%s' % (service_name, os.urandom(4).hex())
+    rx_socket = reactor.listenUNIXDatagram(b'\0' + rx_socket_path.encode(), p_rx)
     sockets = [rx_socket]
 
-    cmd_rx = ('%(cmd)s%(cluster)s -p %(stream)d -u %(port)d -K %(key)s -R %(rcv_buf_size)d -s %(snd_buf_size)d -l %(log_interval)d -i %(link_id)d' % \
+    cmd_rx = ('%(cmd)s%(cluster)s -p %(stream)d -U %(unix_socket)s -K %(key)s -R %(rcv_buf_size)d -s %(snd_buf_size)d -l %(log_interval)d -i %(link_id)d' % \
               dict(cmd=os.path.join(settings.path.bin_dir, 'wfb_rx'),
                    cluster=' -a %d' % (cfg.udp_port_auto,) if is_cluster else '',
                    stream=cfg.stream_rx,
-                   port=rx_socket.getHost().port,
+                   unix_socket=rx_socket_path,
                    key=os.path.join(settings.path.conf_dir, cfg.keypair),
                    rcv_buf_size=settings.common.tx_rcv_buf_size,
                    snd_buf_size=settings.common.rx_snd_buf_size,
                    log_interval=settings.common.log_interval,
                    link_id=link_id)).split() + (wlans if not is_cluster else [])
 
-    cmd_tx = ('%(cmd)s%(cluster)s -f %(frame_type)s -p %(stream)d -u %(port)d -K %(key)s -B %(bw)d -G %(gi)s '\
+    tx_socket_path = '%s-tx-%s' % (service_name, os.urandom(4).hex())
+    cmd_tx = ('%(cmd)s%(cluster)s -f %(frame_type)s -p %(stream)d -U %(unix_socket)s -K %(key)s -B %(bw)d -G %(gi)s '\
               '-S %(stbc)d -L %(ldpc)d -M %(mcs)d'\
               '%(mirror)s%(force_vht)s%(qdisc)s '\
               '-k %(fec_k)d -n %(fec_n)d -T %(fec_timeout)d -F %(fec_delay)d -i %(link_id)d -R %(rcv_buf_size)d -s %(snd_buf_size)d -l %(log_interval)d -C %(control_port)d' % \
@@ -373,7 +377,7 @@ def init_tunnel(service_name, cfg, wlans, link_id, ant_sel_f, is_cluster, rx_onl
                    cluster=' -d' if is_cluster else '',
                    frame_type=cfg.frame_type,
                    stream=cfg.stream_tx,
-                   port=0,
+                   unix_socket=tx_socket_path,
                    control_port=cfg.control_port,
                    key=os.path.join(settings.path.conf_dir, cfg.keypair),
                    bw=cfg.bandwidth,
@@ -396,23 +400,23 @@ def init_tunnel(service_name, cfg, wlans, link_id, ant_sel_f, is_cluster, rx_onl
     log.msg('%s RX: %s' % (service_name, ' '.join(cmd_rx)))
     log.msg('%s TX: %s' % (service_name, ' '.join(cmd_tx),))
 
-    tx_ports_df = defer.Deferred()
+    tx_sockets_df = defer.Deferred()
     control_port_df = defer.Deferred() if cfg.control_port == 0 else None
 
-    dl = [TXProtocol(ant_sel_f, cmd_tx, '%s tx' % (service_name,), tx_ports_df, control_port_df).start()]
+    dl = [TXProtocol(ant_sel_f, cmd_tx, '%s tx' % (service_name,), tx_sockets_df, control_port_df).start()]
 
-    # Wait while wfb_tx allocates ephemeral udp ports and reports them back
-    tx_ports = yield tx_ports_df
+    # Wait while wfb_tx allocates unix sockets and reports them back
+    tx_sockets = yield tx_sockets_df
     control_port = cfg.control_port
 
     if control_port == 0:
         control_port = yield control_port_df
 
-    log.msg('%s use wfb_tx ports %s, control_port %d' % (service_name, tx_ports, control_port))
-    p_tx_map = dict((wlan_id, UDPProxyProtocol(('127.0.0.1', port))) for wlan_id, port in tx_ports.items() if wlan_id not in rx_only_wlan_ids)
+    log.msg('%s use wfb_tx sockets %s, control_port %d' % (service_name, tx_sockets, control_port))
+    p_tx_map = dict((wlan_id, UDPProxyProtocol(b'\0' + tx_socket.encode())) for wlan_id, tx_socket in tx_sockets.items() if wlan_id not in rx_only_wlan_ids)
 
     tun_ep = TUNTAPTransport(reactor, p_in, cfg.ifname, cfg.ifaddr, mtu=settings.common.radio_mtu, default_route=cfg.default_route)
-    sockets += [ reactor.listenUDP(0, p_tx) for p_tx in p_tx_map.values() ]
+    sockets += [ reactor.listenUNIXDatagram(None, p_tx) for p_tx in p_tx_map.values() ]
 
     def ant_sel_cb(wlan_id):
         p_in.peer = p_tx_map[wlan_id] \
@@ -469,13 +473,14 @@ def init_udp_proxy(service_name, cfg, wlans, link_id, ant_sel_f, is_cluster, rx_
     if cfg.stream_rx is not None:
         p_rx = UDPProxyProtocol()
         p_rx.peer = p_in
-        rx_socket = reactor.listenUDP(0, p_rx)
+        rx_socket_path = '%s-rx-%s' % (service_name, os.urandom(4).hex())
+        rx_socket = reactor.listenUNIXDatagram(b'\0' + rx_socket_path.encode(), p_rx)
         sockets = [rx_socket]
-        cmd_rx = ('%(cmd)s%(cluster)s -p %(stream)d -u %(port)d -K %(key)s -R %(rcv_buf_size)d -s %(snd_buf_size)d -l %(log_interval)d -i %(link_id)d' % \
+        cmd_rx = ('%(cmd)s%(cluster)s -p %(stream)d -U %(unix_socket)s -K %(key)s -R %(rcv_buf_size)d -s %(snd_buf_size)d -l %(log_interval)d -i %(link_id)d' % \
                   dict(cmd=os.path.join(settings.path.bin_dir, 'wfb_rx'),
                        cluster=' -a %d' % (cfg.udp_port_auto,) if is_cluster else '',
                        stream=cfg.stream_rx,
-                       port=rx_socket.getHost().port,
+                       unix_socket=rx_socket_path,
                        key=os.path.join(settings.path.conf_dir, cfg.keypair),
                        rcv_buf_size=settings.common.tx_rcv_buf_size,
                        snd_buf_size=settings.common.rx_snd_buf_size,
@@ -486,7 +491,8 @@ def init_udp_proxy(service_name, cfg, wlans, link_id, ant_sel_f, is_cluster, rx_
         dl.append(RXProtocol(ant_sel_f, cmd_rx, '%s rx' % (service_name,)).start())
 
     if cfg.stream_tx is not None:
-        cmd_tx = ('%(cmd)s%(cluster)s -f %(frame_type)s -p %(stream)d -u %(port)d -K %(key)s -B %(bw)d '\
+        tx_socket_path = '%s-tx-%s' % (service_name, os.urandom(4).hex())
+        cmd_tx = ('%(cmd)s%(cluster)s -f %(frame_type)s -p %(stream)d -U %(unix_socket)s -K %(key)s -B %(bw)d '\
                   '-G %(gi)s -S %(stbc)d -L %(ldpc)d -M %(mcs)d'\
                   '%(mirror)s%(force_vht)s%(qdisc)s '\
                   '-k %(fec_k)d -n %(fec_n)d -T %(fec_timeout)d -F %(fec_delay)d -i %(link_id)d -R %(rcv_buf_size)d -s %(snd_buf_size)d -l %(log_interval)d -C %(control_port)d' % \
@@ -494,7 +500,7 @@ def init_udp_proxy(service_name, cfg, wlans, link_id, ant_sel_f, is_cluster, rx_
                        cluster=' -d' if is_cluster else '',
                        frame_type=cfg.frame_type,
                        stream=cfg.stream_tx,
-                       port=0,
+                       unix_socket=tx_socket_path,
                        control_port=cfg.control_port,
                        key=os.path.join(settings.path.conf_dir, cfg.keypair),
                        bw=cfg.bandwidth,
@@ -515,22 +521,22 @@ def init_udp_proxy(service_name, cfg, wlans, link_id, ant_sel_f, is_cluster, rx_
                        snd_buf_size=settings.common.rx_snd_buf_size)).split() + wlans
         log.msg('%s TX: %s' % (service_name, ' '.join(cmd_tx)))
 
-        tx_ports_df = defer.Deferred()
+        tx_sockets_df = defer.Deferred()
         control_port_df = defer.Deferred() if cfg.control_port == 0 else None
 
-        dl += [TXProtocol(ant_sel_f, cmd_tx, '%s tx' % (service_name,), tx_ports_df, control_port_df).start()]
+        dl += [TXProtocol(ant_sel_f, cmd_tx, '%s tx' % (service_name,), tx_sockets_df, control_port_df).start()]
 
-        # Wait while wfb_tx allocates ephemeral udp ports and reports them back
-        tx_ports = yield tx_ports_df
+        # Wait while wfb_tx allocates unix sockets and reports them back
+        tx_sockets = yield tx_sockets_df
         control_port = cfg.control_port
 
         if control_port == 0:
             control_port = yield control_port_df
 
-        log.msg('%s use wfb_tx ports %s, control_port %d' % (service_name, tx_ports, control_port))
+        log.msg('%s use wfb_tx sockets %s, control_port %d' % (service_name, tx_sockets, control_port))
 
-        p_tx_map = dict((wlan_id, UDPProxyProtocol(('127.0.0.1', port))) for wlan_id, port in tx_ports.items() if wlan_id not in rx_only_wlan_ids)
-        sockets += [ reactor.listenUDP(0, p_tx) for p_tx in p_tx_map.values() ]
+        p_tx_map = dict((wlan_id, UDPProxyProtocol(b'\0' + tx_socket.encode())) for wlan_id, tx_socket in tx_sockets.items() if wlan_id not in rx_only_wlan_ids)
+        sockets += [ reactor.listenUNIXDatagram(None, p_tx) for p_tx in p_tx_map.values() ]
 
         def ant_sel_cb(wlan_id):
             p_in.peer = p_tx_map[wlan_id] \
