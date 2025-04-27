@@ -18,7 +18,7 @@ fi
 if ! [ -f /etc/bind.key ]
 then
     # Default bind key
-    echo "OoLVgEYyFofg9zdhfYPks8/L8fqWaF9Jk8aEnynFPsXNqhSpRCMbVKBFP4fCEOv5DGcbXmUHV5eSykAbFB70ew==" | base64 -d > /etc/bind.key
+    echo "RvrSKeUVjoU/xXaYTWC+7AtlVdhvuQlhw5UvdlkM84L80RfATVid7J7y/dVnm48LCsmB1hRhPtgkxNe0kmB9Dg==" | base64 -d > /etc/bind.key
 fi
 
 if ! [ -f /etc/wifibroadcast.cfg ]
