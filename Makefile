@@ -68,9 +68,9 @@ wfb_rtsp: src/rtsp_server.c
 test: all_bin
 	PYTHONPATH=`pwd` trial3 wfb_ng.tests
 
-rpm:  all_bin $(ENV)
+rpm:  all_bin wfb_rtsp $(ENV)
 	rm -rf dist
-	$(PYTHON) ./setup.py bdist_rpm --force-arch $(ARCH)
+	$$(PATH=$(ENV)/bin:$(ENV)/local/bin:$(PATH) which python3) ./setup.py bdist_rpm --force-arch $(ARCH) --requires python3-twisted,python3-pyroute2,python3-pyserial,python3-msgpack,python3-jinja2,python3-yaml,socat,iw
 	rm -rf wfb_ng.egg-info/
 
 deb:  all_bin wfb_rtsp $(ENV)
@@ -78,9 +78,9 @@ deb:  all_bin wfb_rtsp $(ENV)
 	$$(PATH=$(ENV)/bin:$(ENV)/local/bin:$(PATH) which python3) ./setup.py --command-packages=stdeb.command sdist_dsc --debian-version 0~$(OS_CODENAME) bdist_deb
 	rm -rf wfb_ng.egg-info/ wfb-ng-$(VERSION).tar.gz
 
-bdist: all_bin
+bdist: all_bin wfb_rtsp
 	rm -rf dist
-	$(PYTHON) ./setup.py bdist --plat-name linux-$(ARCH)
+	$$(PATH=$(ENV)/bin:$(ENV)/local/bin:$(PATH) which python3) ./setup.py bdist --plat-name linux-$(ARCH)
 	rm -rf wfb_ng.egg-info/
 
 check:
@@ -99,6 +99,14 @@ deb_docker:  /opt/qemu/bin
 	@if ! [ -d /opt/qemu ]; then echo "Docker cross build requires patched QEMU!\nApply ./scripts/qemu/qemu.patch to qemu-7.2.0 and build it:\n  ./configure --prefix=/opt/qemu --static --disable-system && make && sudo make install"; exit 1; fi
 	if ! ls /proc/sys/fs/binfmt_misc | grep -q qemu ; then sudo ./scripts/qemu/qemu-binfmt-conf.sh --qemu-path /opt/qemu/bin --persistent yes; fi
 	cp -a Makefile docker/src/
-	TAG="wfb-ng:build-`date +%s`"; docker build --platform linux/$(DOCKER_ARCH) -t $$TAG --build-arg SRC_IMAGE=$(DOCKER_SRC_IMAGE) --build-arg QEMU_CPU=$(QEMU_CPU) docker && \
+	TAG="wfb-ng:build-`date +%s`"; docker build --platform linux/$(DOCKER_ARCH) -t $$TAG --build-arg SRC_IMAGE=$(DOCKER_SRC_IMAGE) --build-arg QEMU_CPU=$(QEMU_CPU) -f docker/Dockerfile.debian docker && \
 	docker run --privileged --platform linux/$(DOCKER_ARCH) -i --rm -v $(PWD):/build $$TAG bash -c "trap 'chown -R --reference=. .' EXIT; export VERSION=$(VERSION) COMMIT=$(COMMIT) SOURCE_DATE_EPOCH=$(SOURCE_DATE_EPOCH) && /sbin/sysctl net.unix.max_dgram_qlen=512 && cd /build && make clean && make test && make deb"
+	docker image ls -q "wfb-ng:build-*" | uniq | tail -n+6 | while read i ; do docker rmi -f $$i; done
+
+rpm_docker:  /opt/qemu/bin
+	@if ! [ -d /opt/qemu ]; then echo "Docker cross build requires patched QEMU!\nApply ./scripts/qemu/qemu.patch to qemu-7.2.0 and build it:\n  ./configure --prefix=/opt/qemu --static --disable-system && make && sudo make install"; exit 1; fi
+	if ! ls /proc/sys/fs/binfmt_misc | grep -q qemu ; then sudo ./scripts/qemu/qemu-binfmt-conf.sh --qemu-path /opt/qemu/bin --persistent yes; fi
+	cp -a Makefile docker/src/
+	TAG="wfb-ng:build-`date +%s`"; docker build --platform linux/$(DOCKER_ARCH) -t $$TAG --build-arg SRC_IMAGE=$(DOCKER_SRC_IMAGE) --build-arg QEMU_CPU=$(QEMU_CPU) -f docker/Dockerfile.redhat docker && \
+	docker run --privileged --platform linux/$(DOCKER_ARCH) -i --rm -v $(PWD):/build $$TAG bash -c "trap 'chown -R --reference=. .' EXIT; export VERSION=$(VERSION) COMMIT=$(COMMIT) SOURCE_DATE_EPOCH=$(SOURCE_DATE_EPOCH) && /sbin/sysctl net.unix.max_dgram_qlen=512 && cd /build && make clean && make test && make rpm"
 	docker image ls -q "wfb-ng:build-*" | uniq | tail -n+6 | while read i ; do docker rmi -f $$i; done

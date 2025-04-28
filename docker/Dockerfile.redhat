@@ -1,0 +1,24 @@
+ARG SRC_IMAGE
+FROM $SRC_IMAGE
+
+ARG QEMU_CPU
+ENV QEMU_CPU=$QEMU_CPU
+
+RUN (. /etc/os-release; echo $VERSION_ID | cut -f1 -d .) > /etc/release
+RUN rpm -ihv https://dl.fedoraproject.org/pub/epel/epel-release-latest-$(cat /etc/release).noarch.rpm
+RUN dnf -y upgrade
+RUN dnf -y groupinstall "Development Tools"
+RUN dnf -y install --enablerepo=devel git wget \
+    python3-virtualenv rpm-build \
+    libpcap-devel libsodium-devel libevent-devel \
+    python3-twisted python3-pyroute2 \
+    python3-devel \
+    python3-pyserial python3-setuptools python3-msgpack python3-jinja2 python3-yaml \
+    gstreamer1-rtsp-server-devel gstreamer1-devel procps net-tools iproute iputils
+
+RUN ln -sf /usr/bin/trial /usr/bin/trial3
+RUN echo "%debug_package %{nil}" > ~/.rpmmacros
+COPY src/Makefile /tmp
+ENV ENV=/opt/env
+ENV PYTHON=python3
+RUN cd /tmp && make $ENV

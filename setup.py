@@ -39,7 +39,7 @@ def _long_description():
 
 setup(
     url="http://wfb-ng.org",
-    name="wfb-ng",
+    name="wfb_ng",
     version=version,
     packages=find_packages(exclude=["*.tests", "*.tests.*", "tests.*", "tests"]),
     zip_safe=False,
