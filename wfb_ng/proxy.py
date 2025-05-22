@@ -22,6 +22,7 @@ from contextlib import closing
 from twisted.python import log
 from twisted.internet import reactor, defer
 from twisted.internet.protocol import DatagramProtocol, Protocol
+from errno import ENETUNREACH, EHOSTUNREACH
 
 from . import mavlink, mavlink_protocol
 from .conf import settings
@@ -109,8 +110,11 @@ class UDPProxyProtocol(DatagramProtocol, ProxyProtocol):
         if self.transport is None or self.reply_addr is None:
             return
 
-        self.transport.write(msg, self.reply_addr)
-        return
+        try:
+            self.transport.write(msg, self.reply_addr)
+        except OSError as v:
+            if v.errno not in (ENETUNREACH, EHOSTUNREACH):
+                raise
 
 
 class MavlinkProxyProtocol(ProxyProtocol):
@@ -171,7 +175,11 @@ class MavlinkUDPProxyProtocol(DatagramProtocol, MavlinkProxyProtocol):
 
         # Mirror packets as is
         if self.mirror:
-            self.transport.write(msg, self.mirror)
+            try:
+                self.transport.write(msg, self.mirror)
+            except OSError as v:
+                if v.errno not in (ENETUNREACH, EHOSTUNREACH):
+                    raise
 
         # Send non-aggregated packets directly
         if self.agg_max_size is None or not self.agg_timeout:
@@ -184,8 +192,14 @@ class MavlinkUDPProxyProtocol(DatagramProtocol, MavlinkProxyProtocol):
             mavlink_fsm.send(None)
 
             for m in mavlink_fsm.send(msg):
-                self.transport.write(m, self.reply_addr)
-
+                try:
+                    self.transport.write(m, self.reply_addr)
+                except OSError as v:
+                    if v.errno not in (ENETUNREACH, EHOSTUNREACH):
+                        raise
+                    else:
+                        # We don't need to send rest of the packets from batch to unreachable host
+                        break
 
 
 class MavlinkSerialProxyProtocol(Protocol, MavlinkProxyProtocol):
