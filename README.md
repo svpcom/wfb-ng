@@ -29,7 +29,7 @@ If you like WFB-ng you can support author via:
 - https://boosty.to/svpcom/donate
 - `bitcoin:bc1qfvlsvr0ea7tzzydngq5cflf4yypemlacgt6t05`
 
-## Wiki:
+## Wiki: [![Ask DeepWiki](https://deepwiki.com/badge.svg)](https://deepwiki.com/svpcom/wfb-ng)
 See https://github.com/svpcom/wfb-ng/wiki for additional info
 
 ## Community support:
