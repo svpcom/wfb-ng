@@ -80,7 +80,7 @@ main (int argc, char *argv[])
     factory = gst_rtsp_media_factory_new ();
 
     snprintf(buf, sizeof(buf),
-             "( udpsrc port=5600 ! application/x-rtp,media=video,clock-rate=90000,encoding-name=H%d ! rtph%ddepay ! rtph%dpay name=pay0 pt=96 aggregate-mode=zero-latency mtu=%d )",
+             "( udpsrc port=5600 ! application/x-rtp,media=video,clock-rate=90000,encoding-name=H%d ! rtph%ddepay ! rtph%dpay name=pay0 pt=96 config-interval=1 aggregate-mode=zero-latency mtu=%d )",
              mode, mode, mode, mtu);
 
     gst_rtsp_media_factory_set_launch (factory, buf);
