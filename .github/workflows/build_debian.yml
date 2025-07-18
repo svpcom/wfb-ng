@@ -13,9 +13,15 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        version: [11, 12]
-        arch: [ "armhf.arm32v7.max", "arm64.arm64v8.cortex-a53", "amd64.amd64.max", "mips64le.mips64le.MIPS64R2-generic", "s390x.s390x.max", "ppc64le.ppc64le.power8"]
-
+        version: [11, 12, "trixie"]
+        arch: [ "armhf.arm32v7.max", "arm64.arm64v8.cortex-a53", "amd64.amd64.max", "mips64le.mips64le.MIPS64R2-generic", "s390x.s390x.max", "ppc64le.ppc64le.power8", "riscv64.riscv64.rv64" ]
+        exclude:
+          - version: 11
+            arch: "riscv64.riscv64.rv64"
+          - version: 12
+            arch: "riscv64.riscv64.rv64"
+          - version: "trixie"
+            arch: "mips64le.mips64le.MIPS64R2-generic"
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4

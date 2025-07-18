@@ -14,8 +14,12 @@ jobs:
       fail-fast: false
       matrix:
         version: [ "20.04", "22.04", "24.04" ]
-        arch: [ "armhf.arm32v7.max", "arm64.arm64v8.cortex-a53", "amd64.amd64.max"]
-
+        arch: [ "armhf.arm32v7.max", "arm64.arm64v8.cortex-a53", "amd64.amd64.max", "riscv64.riscv64.rv64"]
+        exclude:
+          - version: "20.04"
+            arch: "riscv64.riscv64.rv64"
+          - version: "22.04"
+            arch: "riscv64.riscv64.rv64"
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
