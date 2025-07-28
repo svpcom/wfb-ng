@@ -3,7 +3,8 @@ Description=WFB-ng %i RTSP server
 After=network-online.target
 
 [Service]
-ExecStart=/usr/bin/wfb_rtsp %i
+EnvironmentFile=/etc/default/wifibroadcast
+ExecStart=/usr/bin/wfb_rtsp %i $RTP_MTU $RTP_JITTER
 Type=simple
 Restart=always
 RestartSec=1s

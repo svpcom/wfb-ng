@@ -7,3 +7,7 @@
 
 # Autodetect local cards supported by wfb-ng (8812au and 8812eu)
 WFB_NICS="$(wfb-nics)"
+
+# wfb_rtsp settings
+RTP_MTU=1400
+RTP_JITTER=0

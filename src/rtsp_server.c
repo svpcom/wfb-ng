@@ -46,20 +46,26 @@ main (int argc, char *argv[])
     int mode;
     char buf[2048];
     int mtu = 1400;
+    int latency = 0;
 
     gst_init (&argc, &argv);
 
     if(argc < 2 || (strcmp(argv[1], "h264") != 0 && strcmp(argv[1], "h265") != 0))
     {
-        fprintf(stderr, "Usage: %s { h264 | h265 } [mtu]\n", argv[0]);
+        fprintf(stderr, "Usage: %s { h264 | h265 } [mtu] [latency]\n", argv[0]);
         fprintf(stderr, "WFB-ng version %s\n", WFB_VERSION);
         fprintf(stderr, "WFB-ng home page: <http://wfb-ng.org>\n");
         exit(1);
     }
 
-    if(argc == 3)
+    if(argc >= 3)
     {
         mtu = atoi(argv[2]);
+    }
+
+    if(argc >= 4)
+    {
+        latency = atoi(argv[3]);
     }
 
     mode = atoi(argv[1] + 1);
@@ -80,8 +86,8 @@ main (int argc, char *argv[])
     factory = gst_rtsp_media_factory_new ();
 
     snprintf(buf, sizeof(buf),
-             "( udpsrc port=5600 ! application/x-rtp,media=video,clock-rate=90000,encoding-name=H%d ! rtph%ddepay ! rtph%dpay name=pay0 pt=96 config-interval=1 aggregate-mode=zero-latency mtu=%d )",
-             mode, mode, mode, mtu);
+             "( udpsrc port=5600 ! application/x-rtp,media=video,clock-rate=90000,encoding-name=H%d ! rtpjitterbuffer latency=%d ! rtph%ddepay ! rtph%dpay name=pay0 pt=96 config-interval=1 aggregate-mode=zero-latency mtu=%d )",
+             mode, latency, mode, mode, mtu);
 
     gst_rtsp_media_factory_set_launch (factory, buf);
     gst_rtsp_media_factory_set_shared (factory, TRUE);
