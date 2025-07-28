@@ -18,6 +18,12 @@ jobs:
         exclude:
           - version: 11
             arch: "riscv64.riscv64.rv64"
+          - version: 11
+            arch: "mips64le.mips64le.MIPS64R2-generic"
+          - version: 11
+            arch: "s390x.s390x.max"
+          - version: 11
+            arch: "ppc64le.ppc64le.power8"
           - version: 12
             arch: "riscv64.riscv64.rv64"
           - version: "trixie"
