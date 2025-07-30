@@ -444,7 +444,7 @@ fec_new(uint16_t k, uint16_t n) {
     tmp_m[0] = 1;
     for (col = 1; col < k; col++)
         tmp_m[col] = 0;
-    for (p = tmp_m + k, row = 0; row < n - 1; row++, p += k)
+    for (p = tmp_m + k, row = 0; row + 1 < n; row++, p += k)
         for (col = 0; col < k; col++)
             p[col] = gf_exp[modnn (row * col)];
 
@@ -501,7 +501,7 @@ fec_encode(const fec_t* code, const gf** src, gf** fecs, size_t sz) {
 void
 build_decode_matrix_into_space(const fec_t*restrict const code, const unsigned*const restrict index, const unsigned k, gf*restrict const matrix) {
     gf* p = matrix;
-    for (unsigned i=0; i < k; i++, p += k) {
+    for (uint16_t i=0; i < k; i++, p += k) {
         if (index[i] < k) {
             memset(p, 0, k);
             p[i] = 1;
