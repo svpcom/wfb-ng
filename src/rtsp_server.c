@@ -47,32 +47,65 @@ main (int argc, char *argv[])
     char buf[2048];
     int mtu = 1400;
     int latency = 0;
+    char *uri = "/wfb";
+    char *rtsp_port = "8554";
+    int rtp_port = 5600;
+    int opt;
 
     gst_init (&argc, &argv);
 
-    if(argc < 2 || (strcmp(argv[1], "h264") != 0 && strcmp(argv[1], "h265") != 0))
+    while ((opt = getopt(argc, argv, "m:u:l:p:P:")) != -1)
     {
-        fprintf(stderr, "Usage: %s { h264 | h265 } [mtu] [latency]\n", argv[0]);
-        fprintf(stderr, "WFB-ng version %s\n", WFB_VERSION);
-        fprintf(stderr, "WFB-ng home page: <http://wfb-ng.org>\n");
-        exit(1);
+        switch (opt)
+        {
+        case 'm':
+            mtu = atoi(optarg);
+            break;
+
+        case 'u':
+            if (strlen(optarg) > 0 && optarg[0] == '/')
+            {
+                uri = optarg;
+            }
+            else
+            {
+                goto show_usage;
+            }
+            break;
+
+        case 'p':
+            rtsp_port = optarg;
+            break;
+
+        case 'P':
+            rtp_port = atoi(optarg);
+            break;
+
+        case 'l':
+            latency = atoi(optarg);
+            break;
+
+        default:
+        show_usage:
+            fprintf(stderr, "Usage: %s [-m mtu] [-u uri] [-p rtsp_port] [-P rtp_port] [-l latency] { h264 | h265 }\n", argv[0]);
+            fprintf(stderr, "Default: mtu=%d, uri='%s', rtsp_port=%s, rtp_port=%d, latency=%d\n", mtu, uri, rtsp_port, rtp_port, latency);
+            fprintf(stderr, "WFB-ng version %s\n", WFB_VERSION);
+            fprintf(stderr, "WFB-ng home page: <http://wfb-ng.org>\n");
+            exit(1);
+        }
     }
 
-    if(argc >= 3)
+    if (optind >= argc || (strcmp(argv[optind], "h264") != 0 && strcmp(argv[optind], "h265") != 0))
     {
-        mtu = atoi(argv[2]);
+        goto show_usage;
     }
 
-    if(argc >= 4)
-    {
-        latency = atoi(argv[3]);
-    }
-
-    mode = atoi(argv[1] + 1);
+    mode = atoi(argv[optind] + 1);
     loop = g_main_loop_new (NULL, FALSE);
 
     /* create a server instance */
     server = gst_rtsp_server_new ();
+    gst_rtsp_server_set_service(server, rtsp_port);
 
     /* get the mount points for this server, every server has a default object
      * that be used to map uri mount points to media factories */
@@ -86,14 +119,16 @@ main (int argc, char *argv[])
     factory = gst_rtsp_media_factory_new ();
 
     snprintf(buf, sizeof(buf),
-             "( udpsrc port=5600 ! application/x-rtp,media=video,clock-rate=90000,encoding-name=H%d ! rtpjitterbuffer latency=%d ! rtph%ddepay ! rtph%dpay name=pay0 pt=96 config-interval=1 aggregate-mode=zero-latency mtu=%d )",
-             mode, latency, mode, mode, mtu);
+             "( udpsrc port=%d ! application/x-rtp,media=video,clock-rate=90000,encoding-name=H%d ! rtpjitterbuffer latency=%d ! rtph%ddepay ! rtph%dpay name=pay0 pt=96 config-interval=1 aggregate-mode=zero-latency mtu=%d )",
+             rtp_port, mode, latency, mode, mode, mtu);
+
+    g_print ("Pipeline: %s\n", buf);
 
     gst_rtsp_media_factory_set_launch (factory, buf);
     gst_rtsp_media_factory_set_shared (factory, TRUE);
 
     /* attach the test factory to the /test url */
-    gst_rtsp_mount_points_add_factory (mounts, "/wfb", factory);
+    gst_rtsp_mount_points_add_factory (mounts, uri, factory);
 
     /* don't need the ref to the mapper anymore */
     g_object_unref (mounts);
@@ -106,7 +141,9 @@ main (int argc, char *argv[])
     g_timeout_add_seconds (2, (GSourceFunc) timeout, server);
 
     /* start serving, this never stops */
-    g_print ("H%d stream with mtu %d ready at rtsp://127.0.0.1:8554/wfb\n", mode, mtu);
+    g_print ("H%d stream with mtu %d ready at rtsp://127.0.0.1:%s%s\n", mode, mtu, rtsp_port, uri);
+    fflush(stdout);
+
     g_main_loop_run (loop);
 
     return 0;

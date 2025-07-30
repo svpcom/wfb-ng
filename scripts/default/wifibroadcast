@@ -11,3 +11,5 @@ WFB_NICS="$(wfb-nics)"
 # wfb_rtsp settings
 RTP_MTU=1400
 RTP_JITTER=0
+RTSP_PORT=8554
+RTSP_URI="/wfb"

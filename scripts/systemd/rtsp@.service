@@ -4,7 +4,7 @@ After=network-online.target
 
 [Service]
 EnvironmentFile=/etc/default/wifibroadcast
-ExecStart=/usr/bin/wfb_rtsp %i $RTP_MTU $RTP_JITTER
+ExecStart=/usr/bin/wfb_rtsp -m $RTP_MTU -p $RTSP_PORT -u $RTSP_URI -l $RTP_JITTER %i
 Type=simple
 Restart=always
 RestartSec=1s
