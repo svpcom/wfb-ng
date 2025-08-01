@@ -1,3 +1,4 @@
+#pragma once
 // -*- C++ -*-
 //
 // Copyright (C) 2017 - 2024 Vasily Evseenko <svpcom@p2ptech.org>
