@@ -1,3 +1,4 @@
+#pragma once
 #include <stdint.h>
 
 #define CMD_SET_FEC   1
