@@ -4,15 +4,20 @@ FROM $SRC_IMAGE
 ARG QEMU_CPU
 ENV QEMU_CPU=$QEMU_CPU
 
-RUN apt-get update && \
+RUN apt-get update && apt-get install -y lsb-release && \
     DEBIAN_FRONTEND=noninteractive \
-    apt-get install -y lsb-release build-essential git wget \
+    apt-get install -y build-essential git wget \
     virtualenv fakeroot debhelper \
     libpcap-dev libsodium-dev libevent-dev \
     python3-twisted python3-pyroute2 \
     python3-all python3-all-dev \
     python3-serial dh-python python3-setuptools python3-msgpack \
-    libgstrtspserver-1.0-dev procps net-tools iproute2 iputils-ping
+    libgstrtspserver-1.0-dev procps net-tools iproute2 iputils-ping \
+    $(bash -c '[ $(lsb_release -r -s) == "20.04" ] && echo "cmake-mozilla" || echo "cmake"' )
+
+RUN cd /tmp && git clone https://github.com/catchorg/Catch2.git -b v3.7.1 --depth 1 && \
+    cd /tmp/Catch2 && cmake -Bbuild -H. -DBUILD_TESTING=OFF && cmake --build build/ --target install && \
+    rm -rf /tmp/Catch2
 
 COPY src/Makefile /tmp
 ENV ENV=/opt/env

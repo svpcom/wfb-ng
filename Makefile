@@ -42,7 +42,7 @@ gs.key: wfb_keygen
 	@if ! [ -f gs.key ]; then ./wfb_keygen; fi
 
 src/%.o: src/%.c src/*.h
-	$(CC) $(_CFLAGS) -std=gnu99 -ftree-vectorize -c -o $@ $<
+	$(CC) $(_CFLAGS) -std=gnu99 -c -o $@ $<
 
 src/%.o: src/%.cpp src/*.hpp src/*.h
 	$(CXX) $(_CFLAGS) -std=gnu++11 -c -o $@ $<
@@ -52,6 +52,9 @@ wfb_rx: src/rx.o src/radiotap.o src/fec.o src/wifibroadcast.o
 
 wfb_tx: src/tx.o src/fec.o src/wifibroadcast.o
 	$(CXX) -o $@ $^ $(_LDFLAGS)
+
+fec_test: src/fec_test.cpp src/fec.o
+	$(CXX) $(_CFLAGS) -o $@ $^ $(LDFLAGS) $(shell pkg-config --libs catch2-with-main)
 
 wfb_keygen: src/keygen.o
 	$(CC) -o $@ $^ $(_LDFLAGS)
@@ -63,9 +66,10 @@ wfb_tun: src/wfb_tun.o
 	$(CC) -o $@ $^ $(LDFLAGS) -levent_core
 
 wfb_rtsp: src/rtsp_server.c
-	$(CC) $(_CFLAGS) $(shell pkg-config --cflags gstreamer-rtsp-server-1.0) -o $@ $^ $(shell pkg-config --libs gstreamer-rtsp-server-1.0)
+	$(CC) $(_CFLAGS) $(shell pkg-config --cflags gstreamer-rtsp-server-1.0) -o $@ $^ $(LDFLAGS) $(shell pkg-config --libs gstreamer-rtsp-server-1.0)
 
-test: all_bin
+test: all_bin fec_test
+	./fec_test "FEC"
 	PYTHONPATH=`pwd` trial3 wfb_ng.tests
 
 rpm:  all_bin wfb_rtsp $(ENV)

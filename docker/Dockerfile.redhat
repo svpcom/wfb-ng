@@ -14,7 +14,11 @@ RUN dnf -y install --enablerepo=devel git wget \
     python3-twisted python3-pyroute2 \
     python3-devel \
     python3-pyserial python3-setuptools python3-msgpack python3-jinja2 python3-yaml \
-    gstreamer1-rtsp-server-devel gstreamer1-devel procps net-tools iproute iputils
+    gstreamer1-rtsp-server-devel gstreamer1-devel procps net-tools iproute iputils cmake
+
+RUN cd /tmp && git clone https://github.com/catchorg/Catch2.git -b v3.7.1 --depth 1 && \
+    cd /tmp/Catch2 && cmake -Bbuild -H. -DBUILD_TESTING=OFF && cmake --build build/ --target install && \
+    rm -rf /tmp/Catch2
 
 RUN ln -sf /usr/bin/trial /usr/bin/trial3
 RUN echo "%debug_package %{nil}" > ~/.rpmmacros
