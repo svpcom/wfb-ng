@@ -19,6 +19,7 @@
 
 #include <assert.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <inttypes.h>
 #include <sys/types.h>
 #include <sys/stat.h>
@@ -36,10 +37,11 @@
 #include <sys/ioctl.h>
 #include <linux/random.h>
 
+#include "zfex.h"
+
 extern "C"
 {
 #include "ieee80211_radiotap.h"
-#include "fec.h"
 }
 
 #include <string>
@@ -310,7 +312,9 @@ void Aggregator::init_fec(int k, int n)
 
     fec_k = k;
     fec_n = n;
-    fec_p = fec_new(fec_k, fec_n);
+
+    zfex_status_code_t rc = fec_new(fec_k, fec_n, &fec_p);
+    assert(rc == ZFEX_SC_OK);
 
     rx_ring_front = 0;
     rx_ring_alloc = 0;
@@ -325,7 +329,8 @@ void Aggregator::init_fec(int k, int n)
         rx_ring[ring_idx].fragments = new uint8_t*[fec_n];
         for(int i=0; i < fec_n; i++)
         {
-            rx_ring[ring_idx].fragments[i] = new uint8_t[MAX_FEC_PAYLOAD];
+            int _rc = posix_memalign((void**)&rx_ring[ring_idx].fragments[i], ZFEX_SIMD_ALIGNMENT, MAX_FEC_PAYLOAD);
+            assert(_rc == 0);
         }
         rx_ring[ring_idx].fragment_map = new size_t[fec_n];
         memset(rx_ring[ring_idx].fragment_map, '\0', fec_n * sizeof(size_t));
@@ -342,13 +347,14 @@ void Aggregator::deinit_fec(void)
         rx_ring[ring_idx].fragment_map = NULL;
         for(int i=0; i < fec_n; i++)
         {
-            delete[] rx_ring[ring_idx].fragments[i];
+            free(rx_ring[ring_idx].fragments[i]);
         }
         delete[] rx_ring[ring_idx].fragments;
         rx_ring[ring_idx].fragments = NULL;
     }
 
-    fec_free(fec_p);
+    zfex_status_code_t rc = fec_free(fec_p);
+    assert(rc == ZFEX_SC_OK);
     fec_p = NULL;
     fec_k = -1;
     fec_n = -1;
@@ -894,7 +900,9 @@ void Aggregator::apply_fec(int ring_idx)
 
     assert(max_packet_size > 0);
     assert(max_packet_size <= MAX_FEC_PAYLOAD);
-    fec_decode(fec_p, (const uint8_t**)in_blocks, out_blocks, index, max_packet_size);
+
+    zfex_status_code_t rc = fec_decode(fec_p, (const uint8_t**)in_blocks, out_blocks, index, max_packet_size);
+    assert(rc == ZFEX_SC_OK);
 }
 
 AggregatorUDPv4::AggregatorUDPv4(const std::string &client_addr, int client_port, const std::string &keypair, uint64_t epoch, uint32_t channel_id, int snd_buf_size) : \

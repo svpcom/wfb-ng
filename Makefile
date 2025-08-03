@@ -25,7 +25,7 @@ QEMU_CPU ?= "max"
 export VERSION COMMIT SOURCE_DATE_EPOCH
 
 _LDFLAGS := $(LDFLAGS) -lrt -lsodium
-_CFLAGS := $(CFLAGS) -Wall -O2 -fno-strict-aliasing -DWFB_VERSION='"$(VERSION)-$(shell /bin/bash -c '_tmp=$(COMMIT); echo $${_tmp::8}')"'
+_CFLAGS := $(CFLAGS) -Wall -O2 -fno-strict-aliasing -DZFEX_UNROLL_ADDMUL_SIMD=8 -DZFEX_USE_INTEL_SSSE3 -DZFEX_USE_ARM_NEON -DZFEX_INLINE_ADDMUL -DZFEX_INLINE_ADDMUL_SIMD -DWFB_VERSION='"$(VERSION)-$(shell /bin/bash -c '_tmp=$(COMMIT); echo $${_tmp::8}')"'
 
 all: all_bin gs.key test
 
@@ -47,13 +47,13 @@ src/%.o: src/%.c src/*.h
 src/%.o: src/%.cpp src/*.hpp src/*.h
 	$(CXX) $(_CFLAGS) -std=gnu++11 -c -o $@ $<
 
-wfb_rx: src/rx.o src/radiotap.o src/fec.o src/wifibroadcast.o
+wfb_rx: src/rx.o src/radiotap.o src/zfex.o src/wifibroadcast.o
 	$(CXX) -o $@ $^ $(_LDFLAGS) -lpcap
 
-wfb_tx: src/tx.o src/fec.o src/wifibroadcast.o
+wfb_tx: src/tx.o src/zfex.o src/wifibroadcast.o
 	$(CXX) -o $@ $^ $(_LDFLAGS)
 
-fec_test: src/fec_test.cpp src/fec.o
+fec_test: src/fec_test.cpp src/zfex.o
 	$(CXX) $(_CFLAGS) -o $@ $^ $(LDFLAGS) $(shell pkg-config --libs catch2-with-main)
 
 wfb_keygen: src/keygen.o
@@ -88,7 +88,7 @@ bdist: all_bin wfb_rtsp
 	rm -rf wfb_ng.egg-info/
 
 check:
-	cppcheck --std=c++11 --library=std --library=posix --library=gnu --inline-suppr --template=gcc --enable=all --suppress=cstyleCast --suppress=missingOverride --suppress=missingIncludeSystem src/
+	cppcheck --force --std=c++11 --library=std --library=posix --library=gnu --inline-suppr --template=gcc --enable=all --suppress=cstyleCast --suppress=missingOverride --suppress=missingIncludeSystem src/
 	make clean
 	make CFLAGS="-g -fno-omit-frame-pointer -fsanitize=address -fsanitize=undefined -fsanitize=pointer-compare -fsanitize=pointer-subtract -fsanitize=leak -fsanitize-address-use-after-scope" LDFLAGS="-static-libasan -fsanitize=address -fsanitize=undefined -fsanitize=pointer-compare -fsanitize=pointer-subtract -fsanitize=leak -fsanitize-address-use-after-scope" test
 	make clean
