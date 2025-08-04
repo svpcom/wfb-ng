@@ -281,7 +281,10 @@ inline
 #endif /* ZFEX_INLINE_ADDMUL_FEATURE */
 void _addmul1(register gf* ZFEX_RESTRICT dst, register const gf* ZFEX_RESTRICT src, gf c, size_t sz)
 {
-#if (ZFEX_INTEL_SSSE3_FEATURE == 1)
+    // Don't use SSE for unaligned data (for matrix inversion)
+    // It will be more slow than non-optimized version
+
+#if 0  //(ZFEX_INTEL_SSSE3_FEATURE == 1)
     enum { ZFEX_UNROLL_ADDMUL_UNIT = sizeof (__m128i) };
     enum { ZFEX_UNROLL_ADDMUL_TILE_1 = ZFEX_UNROLL_ADDMUL_UNIT };
     enum { ZFEX_UNROLL_ADDMUL_TILE = ZFEX_UNROLL_ADDMUL_UNIT * (ZFEX_UNROLL_ADDMUL_SIMD) };
