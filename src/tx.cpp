@@ -1746,7 +1746,7 @@ int main(int argc, char * const *argv)
             WFB_INFO("Default: K='%s', k=%d, n=%d, fec_delay=%u [us], udp_port=%d, link_id=0x%06x, radio_port=%u, epoch=%" PRIu64 ", bandwidth=%d guard_interval=%s stbc=%d ldpc=%d mcs_index=%d vht_nss=%d, vht_mode=%d, fec_timeout=%d, log_interval=%d, rcv_buf=system_default, snd_buf=system_default, frame_type=data, mirror=false, use_qdisc=false, fwmark=%u, control_port=%d\n",
                     keypair.c_str(), k, n, fec_delay, udp_port, link_id, radio_port, epoch, bandwidth, short_gi ? "short" : "long", stbc, ldpc, mcs_index, vht_nss, vht_mode, fec_timeout, log_interval, fwmark, control_port);
             WFB_INFO("Radio MTU: %lu\n", (unsigned long)MAX_PAYLOAD_SIZE);
-            WFB_INFO("WFB-ng version %s\n", WFB_VERSION);
+            WFB_INFO("WFB-ng version %s, FEC: %s\n", WFB_VERSION, zfex_opt);
             WFB_INFO("WFB-ng home page: <http://wfb-ng.org>\n");
             exit(1);
         }

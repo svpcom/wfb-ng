@@ -34,6 +34,8 @@ typedef struct
     gf* enc_matrix;
 } fec_t;
 
+extern const char* zfex_opt;
+
 /**
  * param k the number of blocks required to reconstruct
  * param m the total number of blocks created

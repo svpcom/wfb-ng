@@ -11,15 +11,19 @@
 
 #if (ZFEX_INTEL_SSSE3_FEATURE == 1)
 #pragma message "Using SSSE3-accelerated FEC"
+const char* zfex_opt = "SSSE3";
 #include <emmintrin.h>
 #include <tmmintrin.h>
 
+
 #elif (ZFEX_ARM_NEON_FEATURE == 1)
 #pragma message "Using NEON-accelerated FEC"
+const char* zfex_opt = "NEON";
 #include <arm_neon.h>
 
 #else
 #pragma message "Using non-accelerated FEC"
+const char* zfex_opt = "noaccel";
 #endif
 
 /*
