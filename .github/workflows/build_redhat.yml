@@ -14,20 +14,24 @@ jobs:
       fail-fast: false
       matrix:
         version: [ 9 ]
-        arch: [ "amd64.amd64.max" ]
+        arch: [ "amd64.amd64.max.-mssse3" ]
 
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
+      - name: eval version
+        id: get_version
+        run: |
+            echo "version=rhel${{ matrix.version }}-$(echo "${{ matrix.arch }}" | cut -f1 -d .)" >> $GITHUB_OUTPUT
       - name: build package
         run: |
           curl -s -L https://github.com/svpcom/wfb-ng/releases/download/wifibroadcast-17.10/qemu-7.2.15-fixed.tar.gz | sudo tar xzv -C /
-          make rpm_docker QEMU_CPU=$(echo ${{ matrix.arch }} | cut -f3 -d.) DOCKER_ARCH=$(echo ${{ matrix.arch }} | cut -f1 -d.) DOCKER_SRC_IMAGE=$(echo ${{ matrix.arch }} | cut -f2 -d.)/rockylinux:${{ matrix.version }}
+          make rpm_docker CFLAGS="$(echo ${{ matrix.arch }} | cut -f4 -d.)" QEMU_CPU=$(echo ${{ matrix.arch }} | cut -f3 -d.) DOCKER_ARCH=$(echo ${{ matrix.arch }} | cut -f1 -d.) DOCKER_SRC_IMAGE=$(echo ${{ matrix.arch }} | cut -f2 -d.)/rockylinux:${{ matrix.version }}
       - name: Archive production artifacts
         uses: actions/upload-artifact@v4
         id: artifact-upload-step
         if: github.event_name != 'pull_request'
         with:
-          name: wfb-ng-${{ github.ref_name }}-redhat${{ matrix.version }}-${{ matrix.arch }}
+          name: wfb-ng-${{ github.ref_name }}-${{ steps.get_version.outputs.version }}
           path: |
             dist/*.rpm

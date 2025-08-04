@@ -25,7 +25,7 @@ jobs:
       - name: build package
         run: |
           curl -s -L https://github.com/svpcom/wfb-ng/releases/download/wifibroadcast-17.10/qemu-7.2.15-fixed.tar.gz | sudo tar xzv -C /
-          make deb_docker DOCKER_SRC_IMAGE=p2ptech/cross-build:${{ matrix.docker-images }}
+          make deb_docker CFLAGS="-march=native" DOCKER_SRC_IMAGE=p2ptech/cross-build:${{ matrix.docker-images }}
       - name: Archive production artifacts
         uses: actions/upload-artifact@v4
         if: github.event_name != 'pull_request'
