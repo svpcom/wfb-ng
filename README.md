@@ -6,6 +6,7 @@ Main features:
 --------------
  - **1:1 map of RTP to IEEE80211 packets for minimum latency** (doesn't serialize to byte stream)
  - **Smart FEC support** (there are many FEC improvements which allow to reduce latency in case of packet loss)
+ - **Accelerated FEC** (using SIMD instructions) on amd64, arm32 and arm64 platforms. **5-10x** times faster than pure C version.
  - [Bidirectional mavlink telemetry](https://github.com/svpcom/wfb-ng/wiki/Setup-HOWTO). You can use it for mavlink up/down and video down link.
  - **IPv4 tunnel for generic usage.** You can transmit ordinary ip packets over WFB link. Note, don't use ip tunnel for high-bandwidth transfers like video or mavlink because it has more overhead than raw udp streams.
  - **Automatic TX diversity** (select TX card based on RX RSSI)
