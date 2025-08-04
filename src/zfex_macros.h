@@ -24,7 +24,7 @@ extern "C"
 #endif
 
 
-#if ((defined __arm__) || (defined __arm) || (defined _ARM) || (defined _M_ARM))
+#if ((defined __arm__) || (defined __arm) || (defined _ARM) || (defined _M_ARM)) || (defined __aarch64__) || (defined __aarch64)
 #define ZFEX_HAS_ARM 1
 #else
 #define ZFEX_HAS_ARM 0
@@ -81,6 +81,8 @@ extern "C"
 #define ZFEX_ASSUME_ALIGNED(what, align) (what)
 #endif
 
+
+#define ZFEX_ROUND_UP_SIMD(x)  (((x) + ZFEX_SIMD_ALIGNMENT - 1) & ~(ZFEX_SIMD_ALIGNMENT - 1))
 
 #ifndef ZFEX_STRIDE
 #define ZFEX_STRIDE 8192

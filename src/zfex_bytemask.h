@@ -67,8 +67,12 @@ uint8x16_t mask_to_u128_NEON(uint16_t const bitmap)
     register uint8x16_t const vbitmap = (uint8x16_t)(uint16x8_t){bitmap, 0, 0, 0, 0, 0, 0, 0};
     register uint8x16_t v;
 
+#ifdef __aarch64__
+    v = vqtbl1q_u8(vbitmap, shuffle);
+#else
     __asm__ ("vtbl.8 %e[out], {%q[t]}, %e[x]" : [out]"=w"(v) : [x]"w"(shuffle), [t]"w"(vbitmap));
     __asm__ ("vtbl.8 %f[out], {%q[t]}, %f[x]" : [out]"+w"(v) : [x]"w"(shuffle), [t]"w"(vbitmap));
+#endif
 
     register uint8x16_t const bitselect = {
         1, 1 << 1, 1 << 2, 1 << 3, 1 << 4, 1 << 5, 1 << 6, 1U << 7,

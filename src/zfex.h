@@ -1,16 +1,11 @@
 #ifndef __ZFEX_H
 #define __ZFEX_H
 
-/**
- * zfex -- fast forward error correction library with Python interface
- *
- * See README.rst for documentation.
- */
-
 #include "zfex_macros.h"
 #include "zfex_status.h"
 
 #include <stddef.h>
+#include <stdint.h>
 
 #if defined(_MSC_VER)
 #define alloca _alloca
@@ -35,8 +30,7 @@ typedef unsigned char gf;
 
 typedef struct
 {
-    unsigned long magic;
-    unsigned short k, n;                     /* parameters of the code */
+    uint16_t k, n;                     /* parameters of the code */
     gf* enc_matrix;
 } fec_t;
 
@@ -44,21 +38,8 @@ typedef struct
  * param k the number of blocks required to reconstruct
  * param m the total number of blocks created
  */
-zfex_status_code_t fec_new(unsigned short k, unsigned short m, fec_t **out_fec_pp);
+zfex_status_code_t fec_new(uint16_t k, uint16_t m, fec_t **out_fec_pp);
 zfex_status_code_t fec_free(fec_t* p);
-
-/**
- * @param inpkts the "primary blocks" i.e. the chunks of the input data
- * @param fecs buffers into which the secondary blocks will be written
- * @param block_nums the numbers of the desired check blocks (the id >= k) which fec_encode() will produce and store into the buffers of the fecs parameter
- * @param num_block_nums the length of the block_nums array
- * @param sz size of a packet in bytes
- */
-zfex_status_code_t fec_encode(
-    const fec_t* code,
-    const gf* ZFEX_RESTRICT const* ZFEX_RESTRICT const inpkts,
-    gf * ZFEX_RESTRICT const * ZFEX_RESTRICT const fecs,
-    size_t sz);
 
 /**
  * @param inpkts the "primary blocks" i.e. the chunks of the input data, all chunks must begin at an address aligned to ZFEX_SIMD_ALIGNMENT
@@ -80,8 +61,10 @@ zfex_status_code_t fec_encode_simd(
  * @param outpkts an array of buffers into which the reconstructed output packets will be written (only packets which are not present in the inpkts input will be reconstructed and written to outpkts)
  * @param index an array of the blocknums of the packets in inpkts
  * @param sz size of a packet in bytes
+ *
+ * @return EXIT_SUCCESS if all the input was validated as correct, EXIT_FAILURE otherwise
  */
-zfex_status_code_t fec_decode(
+zfex_status_code_t fec_decode_simd(
     fec_t const *code,
     gf const **inpkts,
     gf * const *outpkts,
@@ -101,10 +84,10 @@ zfex_status_code_t fec_decode(
  */
 
 /*
- * Much of this work is derived from the "fec" software by Luigi Rizzo, et 
- * al., the copyright notice and licence terms of which are included below 
+ * Much of this work is derived from the "fec" software by Luigi Rizzo, et
+ * al., the copyright notice and licence terms of which are included below
  * for reference.
- * 
+ *
  * fec.h -- forward error correction based on Vandermonde matrices
  * 980614
  * (C) 1997-98 Luigi Rizzo (luigi@iet.unipi.it)
@@ -113,7 +96,7 @@ zfex_status_code_t fec_decode(
  * Robert Morelos-Zaragoza (robert@spectra.eng.hawaii.edu) and Hari
  * Thirumoorthy (harit@spectra.eng.hawaii.edu), Aug 1995
  *
- * Modifications by Dan Rubenstein (see Modifications.txt for 
+ * Modifications by Dan Rubenstein (see Modifications.txt for
  * their description.
  * Modifications (C) 1998 Dan Rubenstein (drubenst@cs.umass.edu)
  *

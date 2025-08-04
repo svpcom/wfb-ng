@@ -329,7 +329,7 @@ void Aggregator::init_fec(int k, int n)
         rx_ring[ring_idx].fragments = new uint8_t*[fec_n];
         for(int i=0; i < fec_n; i++)
         {
-            int _rc = posix_memalign((void**)&rx_ring[ring_idx].fragments[i], ZFEX_SIMD_ALIGNMENT, MAX_FEC_PAYLOAD);
+            int _rc = posix_memalign((void**)&rx_ring[ring_idx].fragments[i], ZFEX_SIMD_ALIGNMENT, ZFEX_ROUND_UP_SIMD(MAX_FEC_PAYLOAD));
             assert(_rc == 0);
         }
         rx_ring[ring_idx].fragment_map = new size_t[fec_n];
@@ -901,7 +901,7 @@ void Aggregator::apply_fec(int ring_idx)
     assert(max_packet_size > 0);
     assert(max_packet_size <= MAX_FEC_PAYLOAD);
 
-    zfex_status_code_t rc = fec_decode(fec_p, (const uint8_t**)in_blocks, out_blocks, index, max_packet_size);
+    zfex_status_code_t rc = fec_decode_simd(fec_p, (const uint8_t**)in_blocks, out_blocks, index, ZFEX_ROUND_UP_SIMD(max_packet_size));
     assert(rc == ZFEX_SC_OK);
 }
 

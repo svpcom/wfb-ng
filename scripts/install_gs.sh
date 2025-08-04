@@ -62,12 +62,12 @@ then
 
     apt -y install python3-all python3-all-dev libpcap-dev libsodium-dev libevent-dev python3-pip python3-pyroute2 python3-msgpack \
        python3-twisted python3-serial python3-jinja2 iw virtualenv debhelper dh-python fakeroot build-essential \
-       libgstrtspserver-1.0-dev socat git
+       libgstrtspserver-1.0-dev socat git libcatch2-dev
 
     tmpdir="$(mktemp -d)"
     git clone -b $release --depth 1 https://github.com/svpcom/wfb-ng.git "$tmpdir"
 
-    (cd "$tmpdir" && make deb && apt -y install ./deb_dist/*.deb)
+    (cd "$tmpdir" && make deb CFLAGS="-march=native" && apt -y install ./deb_dist/*.deb)
     rm -rf "$tmpdir"
 fi
 

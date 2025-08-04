@@ -1,7 +1,3 @@
-/**
- * zfex -- fast forward error correction library with Python interface
- */
-
 #include "zfex.h"
 #include "zfex_pp.h"
 #include "zfex_macros.h"
@@ -14,15 +10,17 @@
 #include <stdint.h>
 
 #if (ZFEX_INTEL_SSSE3_FEATURE == 1)
-#warning "Using SSSE3-accelerated FEC"
+#pragma message "Using SSSE3-accelerated FEC"
 #include <emmintrin.h>
 #include <tmmintrin.h>
-#endif /* ZFEX_INTEL_SSSE3_FEATURE == 1 */
 
-#if (ZFEX_ARM_NEON_FEATURE == 1)
-#warning "Using NEON-accelerated FEC"
+#elif (ZFEX_ARM_NEON_FEATURE == 1)
+#pragma message "Using NEON-accelerated FEC"
 #include <arm_neon.h>
-#endif /* ZFEX_ARM_NEON_FEATURE == 1 */
+
+#else
+#pragma message "Using non-accelerated FEC"
+#endif
 
 /*
  * Primitive polynomials - see Lin & Costello, Appendix A,
@@ -121,7 +119,7 @@ _init_mul_table(void) {
 }
 
 #define NEW_GF_MATRIX(rows, cols) \
-    (gf*)malloc(rows * cols)
+    (gf*)malloc((size_t)rows * (size_t)cols)
 
 /*
  * initialize the data structures used for computations in GF.
@@ -209,11 +207,15 @@ void addmul_neon_kernel(
     register uint8x16_t q9  = q2 & mask_0F;
     register uint8x16_t q10  = q2 >> 4;
 
+#ifdef __aarch64__
+    q9 = vqtbl1q_u8(vmul_lo, q9);
+    q10 = vqtbl1q_u8(vmul_hi, q10);
+#else
     __asm__ ("vtbl.8 %e[x], {%q[t]}, %e[x]" : [x]"+w"(q9) : [t]"w"(vmul_lo));
     __asm__ ("vtbl.8 %f[x], {%q[t]}, %f[x]" : [x]"+w"(q9) : [t]"w"(vmul_lo));
     __asm__ ("vtbl.8 %e[x], {%q[t]}, %e[x]" : [x]"+w"(q10) : [t]"w"(vmul_hi));
     __asm__ ("vtbl.8 %f[x], {%q[t]}, %f[x]" : [x]"+w"(q10) : [t]"w"(vmul_hi));
-
+#endif
     vst1q_u8(dst, q1 ^ q9 ^ q10);
 }
 #endif /* (ZFEX_ARM_NEON_FEATURE == 1) */
@@ -257,6 +259,7 @@ void addmul_ssse3_kernel_unaligned(
     _mm_storeu_si128((__m128i *)dst, to_xor ^ _mm_lddqu_si128((__m128i const *)dst));
 }
 #endif /* (ZFEX_INTEL_SSSE3_FEATURE == 1) */
+
 
 /*
  * addmul() computes dst[] = dst[] + c * src[]
@@ -342,6 +345,7 @@ void _addmul1(register gf* ZFEX_RESTRICT dst, register const gf* ZFEX_RESTRICT s
     }
 #endif
 }
+
 
 #define addmul_simd(dst, src, c, sz)                 \
     if (c != 0) _addmul1_simd(dst, src, c, sz)
@@ -435,10 +439,15 @@ void _addmul1_simd(register gf * ZFEX_RESTRICT dst, register const gf * ZFEX_RES
         register uint8x16_t q9 = q2 & q0;
         register uint8x16_t q10 = q2 >> 4;
 
+#ifdef __aarch64__
+        q9  = vqtbl1q_u8(q3, q9);
+        q10 = vqtbl1q_u8(q8, q10);
+#else
         __asm__ ("vtbl.8 %e[x], {%q[t]}, %e[x]" : [x]"+w"(q9) : [t]"w"(q3));
         __asm__ ("vtbl.8 %f[x], {%q[t]}, %f[x]" : [x]"+w"(q9) : [t]"w"(q3));
         __asm__ ("vtbl.8 %e[x], {%q[t]}, %e[x]" : [x]"+w"(q10) : [t]"w"(q8));
         __asm__ ("vtbl.8 %f[x], {%q[t]}, %f[x]" : [x]"+w"(q10) : [t]"w"(q8));
+#endif
 
 #if (ZFEX_IS_LITTLE_ENDIAN == 1)
         uint16_t const bitmask = 0xFFFF >> (16 - (lim - dst));
@@ -460,7 +469,6 @@ void _addmul1_simd(register gf * ZFEX_RESTRICT dst, register const gf * ZFEX_RES
             (bitmask << 8) | (bitmask >> 8)
         );
 #endif
-
         vst1q_u8(dst, q1 ^ ((q9 ^ q10) & tail_mask));
     }
 
@@ -633,7 +641,6 @@ static void
 _invert_vdm (gf* src, unsigned k) {
     unsigned i, j, row, col;
     gf *b, *c, *p;
-    gf t, xx;
 
     if (k == 1)                   /* degenerate case, matrix must be p^0 = 1 */
         return;
@@ -668,8 +675,8 @@ _invert_vdm (gf* src, unsigned k) {
         /*
          * synthetic division etc.
          */
-        xx = p[row];
-        t = 1;
+        gf xx = p[row];
+        gf t = 1;
         b[k - 1] = 1;             /* this is in fact c[k] */
         for (i = k - 1; i > 0; i--) {
             b[i-1] = c[i] ^ gf_mul (xx, b[i]);
@@ -698,12 +705,11 @@ init_fec (void) {
  * and then transforming it into a systematic matrix.
  */
 
-enum { FEC_MAGIC = 0xFECC0DEC };
 
 zfex_status_code_t
 fec_free (fec_t *p)
 {
-    assert (p != NULL && p->magic == (unsigned long)(((FEC_MAGIC ^ p->k) ^ p->n) ^ (uintptr_t) (p->enc_matrix)));
+    assert (p != NULL);
     free (p->enc_matrix);
     free (p);
 
@@ -711,7 +717,7 @@ fec_free (fec_t *p)
 }
 
 zfex_status_code_t
-fec_new(unsigned short k, unsigned short n, fec_t **out_fec_pp)
+fec_new(uint16_t k, uint16_t n, fec_t **out_fec_pp)
 {
     if (out_fec_pp == NULL)
     {
@@ -725,7 +731,7 @@ fec_new(unsigned short k, unsigned short n, fec_t **out_fec_pp)
 
     assert(k >= 1);
     assert(n >= 1);
-    assert(n <= 256);
+    assert(n < 256);
     assert(k <= n);
 
     if (fec_initialized == 0)
@@ -735,7 +741,6 @@ fec_new(unsigned short k, unsigned short n, fec_t **out_fec_pp)
     retval->k = k;
     retval->n = n;
     retval->enc_matrix = NEW_GF_MATRIX (n, k);
-    retval->magic = ((FEC_MAGIC ^ k) ^ n) ^ (uintptr_t) (retval->enc_matrix);
     tmp_m = NEW_GF_MATRIX (n, k);
     /*
      * fill the matrix with powers of field elements, starting from 0.
@@ -758,47 +763,15 @@ fec_new(unsigned short k, unsigned short n, fec_t **out_fec_pp)
     /*
      * the upper matrix is I so do not bother with a slow multiply
      */
-    memset (retval->enc_matrix, '\0', k * k * sizeof (gf));
+    memset (retval->enc_matrix, '\0',(size_t)k * (size_t)k * sizeof(gf));
+
     for (p = retval->enc_matrix, col = 0; col < k; col++, p += k + 1)
-        *p = 1;
-    free (tmp_m);
-
-    *out_fec_pp = retval;
-
-    return ZFEX_SC_OK;
-}
-
-
-zfex_status_code_t
-fec_encode(
-    fec_t const *code,
-    gf const * ZFEX_RESTRICT const * ZFEX_RESTRICT const src,
-    gf * ZFEX_RESTRICT const * ZFEX_RESTRICT const fecs,
-    size_t const sz)
-{
-    unsigned int i = 0;
-    unsigned int j = 0;
-    size_t k = 0;
-    unsigned int fecnum = 0;
-    const gf* p = NULL;
-
-    for (k = 0; k < sz; k += ZFEX_STRIDE)
     {
-        size_t stride = ((sz - k) < ZFEX_STRIDE) ? (sz - k) : ZFEX_STRIDE;
-
-        for (i = 0; i < (code->n - code->k); ++i)
-        {
-            fecnum = i + code->k;
-            memset(fecs[i] + k, 0, stride);
-
-            p = &(code->enc_matrix[fecnum * code->k]);
-
-            for (j = 0; j < code->k; ++j)
-            {
-                addmul(fecs[i] + k, src[j] + k, p[j], stride);
-            }
-        }
+        *p = 1;
     }
+
+    free (tmp_m);
+    *out_fec_pp = retval;
 
     return ZFEX_SC_OK;
 }
@@ -809,10 +782,9 @@ zfex_status_code_t fec_encode_simd(
     gf * ZFEX_RESTRICT const * ZFEX_RESTRICT const fecs,
     size_t const sz)
 {
-    size_t ix = 0;
 
     /* Verify input blocks addresses */
-    for (ix = 0; ix < code->k; ++ix)
+    for (size_t ix = 0; ix < code->k; ++ix)
     {
         if (((uintptr_t)inpkts[ix] % ZFEX_SIMD_ALIGNMENT) != 0)
         {
@@ -821,7 +793,7 @@ zfex_status_code_t fec_encode_simd(
     }
 
     /* Verify output blocks addresses */
-    for (ix = 0; ix < (code->n - code->k); ++ix)
+    for (size_t ix = 0; ix < (code->n - code->k); ++ix)
     {
         if (((uintptr_t)fecs[ix] % ZFEX_SIMD_ALIGNMENT) != 0)
         {
@@ -829,24 +801,18 @@ zfex_status_code_t fec_encode_simd(
         }
     }
 
-    unsigned int i = 0;
-    unsigned int j = 0;
-    size_t k = 0;
-    unsigned int fecnum = 0;
-    gf const *p = NULL;
-
-    for (k = 0; k < sz; k += ZFEX_STRIDE)
+    for (size_t k = 0; k < sz; k += ZFEX_STRIDE)
     {
         size_t const stride = ((sz - k) < ZFEX_STRIDE) ? (sz - k) : ZFEX_STRIDE;
 
-        for (i = 0; i < (code->n - code->k); ++i)
+        for (unsigned int i = 0; i < (code->n - code->k); ++i)
         {
-            fecnum = i + code->k;
+            unsigned int fecnum = i + code->k;
             memset(fecs[i] + k, 0, stride);
 
-            p = &(code->enc_matrix[fecnum * code->k]);
+            gf const *p = &(code->enc_matrix[fecnum * code->k]);
 
-            for (j = 0; j < code->k; ++j)
+            for (unsigned int j = 0; j < code->k; ++j)
             {
                 addmul_simd(fecs[i] + k, inpkts[j] + k, p[j], stride);
             }
@@ -893,10 +859,11 @@ shuffle(gf const **pkt, unsigned int *index, unsigned int k)
  * @param matrix a space allocated for a k by k matrix
  */
 void
-build_decode_matrix_into_space(const fec_t* ZFEX_RESTRICT const code, const unsigned*const ZFEX_RESTRICT index, const unsigned k, gf* ZFEX_RESTRICT const matrix) {
-    unsigned char i;
-    gf* p;
-    for (i=0, p=matrix; i < k; i++, p += k) {
+build_decode_matrix_into_space(const fec_t* ZFEX_RESTRICT const code, const unsigned*const ZFEX_RESTRICT index, const uint16_t k, gf* ZFEX_RESTRICT const matrix)
+{
+    gf* p = matrix;
+    for (uint16_t i=0; i < k; i++, p += k)
+    {
         if (index[i] < k) {
             memset(p, 0, k);
             p[i] = 1;
@@ -907,18 +874,17 @@ build_decode_matrix_into_space(const fec_t* ZFEX_RESTRICT const code, const unsi
     _invert_mat (matrix, k);
 }
 
+
 zfex_status_code_t
-fec_decode(
+fec_decode_simd(
     fec_t const *code,
     gf const **inpkts,
     gf * const *outpkts,
     unsigned int *index,
     size_t const sz)
 {
-    gf *m_dec = (gf *)alloca(code->k * code->k);
-    unsigned char outix = 0;
-    unsigned char row = 0;
-    unsigned char col = 0;
+    gf *m_dec = (gf *)alloca((size_t)code->k * (size_t)code->k);
+    uint16_t outix = 0;
 
     zfex_status_code_t const shuffle_sc = shuffle(inpkts, index, code->k);
     if (shuffle_sc != ZFEX_SC_OK)
@@ -928,16 +894,30 @@ fec_decode(
 
     build_decode_matrix_into_space(code, index, code->k, m_dec);
 
-    for (row = 0; row < code->k; ++row)
+    /* Verify input blocks addresses */
+    for (uint16_t col = 0; col < code->k; ++col)
+    {
+        if (((uintptr_t)inpkts[col] % ZFEX_SIMD_ALIGNMENT) != 0)
+        {
+            return ZFEX_SC_BAD_INPUT_BLOCK_ALIGNMENT;
+        }
+    }
+
+    for (uint16_t row = 0; row < code->k; ++row)
     {
         assert((index[row] >= code->k) || (index[row] == row)); /* If the block whose number is i is present, then it is required to be in the i'th element. */
 
         if (index[row] >= code->k)
         {
-            memset(outpkts[outix], 0, sz);
-            for (col = 0; col < code->k; ++col)
+            if (((uintptr_t)outpkts[outix] % ZFEX_SIMD_ALIGNMENT) != 0)
             {
-                addmul(outpkts[outix], inpkts[col], m_dec[row * code->k + col], sz);
+                return ZFEX_SC_BAD_OUTPUT_BLOCK_ALIGNMENT;
+            }
+
+            memset(outpkts[outix], 0, sz);
+            for (uint16_t col = 0; col < code->k; ++col)
+            {
+                addmul_simd(outpkts[outix], inpkts[col], m_dec[row * code->k + col], sz);
             }
             ++outix;
         }

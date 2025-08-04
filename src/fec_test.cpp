@@ -9,7 +9,7 @@
 TEST_CASE("FEC", "[!benchmark]")
 {
     const int k = 8, n = 12;
-    const int block_size = 4096;
+    const int block_size = 4095; // test non-multiple simd size
     fec_t *fec_p;
 
     fec_new(k, n, &fec_p);
@@ -20,7 +20,7 @@ TEST_CASE("FEC", "[!benchmark]")
 
     for(int i=0; i < n; i++)
     {
-        int rc = posix_memalign((void**)&block_enc[i], ZFEX_SIMD_ALIGNMENT, block_size);
+        int rc = posix_memalign((void**)&block_enc[i], ZFEX_SIMD_ALIGNMENT, ZFEX_ROUND_UP_SIMD(block_size));
         assert(rc == 0);
 
         if( i < k )
@@ -56,7 +56,7 @@ TEST_CASE("FEC", "[!benchmark]")
 
     BENCHMARK("test decode")
     {
-        zfex_status_code_t rc = fec_decode(fec_p, (const uint8_t**)block_dec_in, block_dec_out, index, block_size);
+        zfex_status_code_t rc = fec_decode_simd(fec_p, (const uint8_t**)block_dec_in, block_dec_out, index, block_size);
         REQUIRE(rc == ZFEX_SC_OK);
     };
 

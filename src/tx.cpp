@@ -132,7 +132,7 @@ void Transmitter::init_session(int k, int n)
     block = new uint8_t*[fec_n];
     for(int i=0; i < fec_n; i++)
     {
-        int _rc = posix_memalign((void**)&block[i], ZFEX_SIMD_ALIGNMENT, MAX_FEC_PAYLOAD);
+        int _rc = posix_memalign((void**)&block[i], ZFEX_SIMD_ALIGNMENT, ZFEX_ROUND_UP_SIMD(MAX_FEC_PAYLOAD));
         assert(_rc == 0);
     }
 
@@ -616,7 +616,7 @@ bool Transmitter::send_packet(const uint8_t *buf, size_t size, uint8_t flags)
 
     if (fragment_idx < fec_k)  return true;
 
-    zfex_status_code_t _rc = fec_encode_simd(fec_p, (const uint8_t**)block, block + fec_k, max_packet_size);
+    zfex_status_code_t _rc = fec_encode_simd(fec_p, (const uint8_t**)block, block + fec_k, ZFEX_ROUND_UP_SIMD(max_packet_size));
     assert(_rc == ZFEX_SC_OK);
 
     // mark fec packets with fwmark + 1
