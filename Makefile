@@ -90,7 +90,7 @@ bdist: all_bin wfb_rtsp
 check:
 	cppcheck --force --std=c++11 --library=std --library=posix --library=gnu --inline-suppr --template=gcc --enable=all --suppress=cstyleCast --suppress=missingOverride --suppress=missingIncludeSystem src/
 	make clean
-	make CFLAGS="-march=native -g -fno-omit-frame-pointer -fsanitize=address -fsanitize=undefined -fsanitize=pointer-compare -fsanitize=pointer-subtract -fsanitize=leak -fsanitize-address-use-after-scope" LDFLAGS="-static-libasan -fsanitize=address -fsanitize=undefined -fsanitize=pointer-compare -fsanitize=pointer-subtract -fsanitize=leak -fsanitize-address-use-after-scope" test
+	make CFLAGS="$(CFLAGS) -g -fno-omit-frame-pointer -fsanitize=address -fsanitize=undefined -fsanitize=pointer-compare -fsanitize=pointer-subtract -fsanitize=leak -fsanitize-address-use-after-scope" LDFLAGS="-static-libasan -fsanitize=address -fsanitize=undefined -fsanitize=pointer-compare -fsanitize=pointer-subtract -fsanitize=leak -fsanitize-address-use-after-scope" test
 	make clean
 
 pylint:

@@ -49,7 +49,10 @@ jobs:
 
     - run: |
        sudo apt update && sudo apt -y install python3-twisted libpcap-dev libevent-dev libsodium-dev python3-pyroute2 python3-msgpack python3-setuptools libasan8 catch2 cppcheck libgstrtspserver-1.0-dev
+       # Check with non-optimized FEC
        make check
+       # Check with SSSE3-optimized FEC
+       make check CFLAGS="-mssse3 -mavx -mvzeroupper"
        make all_bin
        make wfb_rtsp
 
