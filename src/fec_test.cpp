@@ -1,12 +1,14 @@
+#include <stdio.h>
 #include <catch2/catch_test_macros.hpp>
 #include <catch2/benchmark/catch_benchmark.hpp>
+#include <catch2/catch_session.hpp>
 #include <cstdint>
 #include <stdlib.h>
 
 #include "zfex.h"
 
 
-TEST_CASE("FEC", "[!benchmark]")
+TEST_CASE("FEC benchmark", "[benchmark]")
 {
     const int k = 8, n = 12;
     const int block_size = 4095; // test non-multiple simd size
@@ -29,7 +31,7 @@ TEST_CASE("FEC", "[!benchmark]")
         }
     }
 
-    BENCHMARK("test encode")
+    BENCHMARK("encode block")
     {
         zfex_status_code_t rc = fec_encode_simd(fec_p, (const uint8_t**)block_enc, block_enc + k, block_size);
         REQUIRE(rc == ZFEX_SC_OK);
@@ -54,7 +56,7 @@ TEST_CASE("FEC", "[!benchmark]")
         }
     }
 
-    BENCHMARK("test decode")
+    BENCHMARK("decode block")
     {
         zfex_status_code_t rc = fec_decode_simd(fec_p, (const uint8_t**)block_dec_in, block_dec_out, index, block_size);
         REQUIRE(rc == ZFEX_SC_OK);
@@ -74,4 +76,12 @@ TEST_CASE("FEC", "[!benchmark]")
     }
 
     fec_free(fec_p);
+}
+
+int main(int argc, char* argv[])
+{
+    Catch::Session session;
+
+    printf("FEC acceleration: %s\n", zfex_opt);
+    return session.run(argc, argv);
 }
