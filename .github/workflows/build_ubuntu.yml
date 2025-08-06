@@ -14,7 +14,7 @@ jobs:
       fail-fast: false
       matrix:
         version: [ "20.04", "22.04", "24.04" ]
-        arch: [ "armhf.arm32v7.max.-march=armv7-a+simd", "arm64.arm64v8.cortex-a53.-march=armv8-a+simd", "amd64.amd64.max.-mssse3", "riscv64.riscv64.rv64"]
+        arch: [ "armhf.arm32v7.max.-march=armv7-a+simd", "arm64.arm64v8.cortex-a53.-march=armv8-a+simd", "amd64.amd64.max.-mssse3 -mavx -mvzeroupper", "riscv64.riscv64.rv64"]
         exclude:
           - version: "20.04"
             arch: "riscv64.riscv64.rv64"

@@ -104,7 +104,7 @@ deb_docker:  /opt/qemu/bin
 	if ! ls /proc/sys/fs/binfmt_misc | grep -q qemu ; then sudo ./scripts/qemu/qemu-binfmt-conf.sh --qemu-path /opt/qemu/bin --persistent yes; fi
 	cp -a Makefile docker/src/
 	TAG="wfb-ng:build-`date +%s`"; docker build --platform linux/$(DOCKER_ARCH) -t $$TAG --build-arg SRC_IMAGE=$(DOCKER_SRC_IMAGE) --build-arg QEMU_CPU=$(QEMU_CPU) -f docker/Dockerfile.debian docker && \
-	docker run --privileged --platform linux/$(DOCKER_ARCH) -i --rm -v $(PWD):/build $$TAG bash -c "trap 'chown -R --reference=. .' EXIT; export VERSION=$(VERSION) COMMIT=$(COMMIT) SOURCE_DATE_EPOCH=$(SOURCE_DATE_EPOCH) CFLAGS=$(CFLAGS) && /sbin/sysctl net.unix.max_dgram_qlen=512 && cd /build && make clean && make test && make deb"
+	docker run --privileged --platform linux/$(DOCKER_ARCH) -i --rm -v $(PWD):/build $$TAG bash -c "trap 'chown -R --reference=/build/. /build' EXIT; export VERSION=$(VERSION) COMMIT=$(COMMIT) SOURCE_DATE_EPOCH=$(SOURCE_DATE_EPOCH) CFLAGS='$(CFLAGS)' && /sbin/sysctl net.unix.max_dgram_qlen=512 && cd /build && make clean && make test && make deb"
 	docker image ls -q "wfb-ng:build-*" | uniq | tail -n+6 | while read i ; do docker rmi -f $$i; done
 
 rpm_docker:  /opt/qemu/bin
@@ -112,5 +112,5 @@ rpm_docker:  /opt/qemu/bin
 	if ! ls /proc/sys/fs/binfmt_misc | grep -q qemu ; then sudo ./scripts/qemu/qemu-binfmt-conf.sh --qemu-path /opt/qemu/bin --persistent yes; fi
 	cp -a Makefile docker/src/
 	TAG="wfb-ng:build-`date +%s`"; docker build --platform linux/$(DOCKER_ARCH) -t $$TAG --build-arg SRC_IMAGE=$(DOCKER_SRC_IMAGE) --build-arg QEMU_CPU=$(QEMU_CPU) -f docker/Dockerfile.redhat docker && \
-	docker run --privileged --platform linux/$(DOCKER_ARCH) -i --rm -v $(PWD):/build $$TAG bash -c "trap 'chown -R --reference=. .' EXIT; export VERSION=$(VERSION) COMMIT=$(COMMIT) SOURCE_DATE_EPOCH=$(SOURCE_DATE_EPOCH) CFLAGS=$(CFLAGS) && /sbin/sysctl net.unix.max_dgram_qlen=512 && cd /build && make clean && make test && make rpm"
+	docker run --privileged --platform linux/$(DOCKER_ARCH) -i --rm -v $(PWD):/build $$TAG bash -c "trap 'chown -R --reference=/build/. /build' EXIT; export VERSION=$(VERSION) COMMIT=$(COMMIT) SOURCE_DATE_EPOCH=$(SOURCE_DATE_EPOCH) CFLAGS='$(CFLAGS)' && /sbin/sysctl net.unix.max_dgram_qlen=512 && cd /build && make clean && make test && make rpm"
 	docker image ls -q "wfb-ng:build-*" | uniq | tail -n+6 | while read i ; do docker rmi -f $$i; done
