@@ -221,6 +221,7 @@ private:
     fec_t* fec_p;
     int fec_k;  // RS number of primary fragments in block
     int fec_n;  // RS total number of fragments in block
+    uint8_t session_hash[crypto_generichash_BYTES];
 
     uint32_t seq;
     rx_ring_item_t rx_ring[RX_RING_SIZE];

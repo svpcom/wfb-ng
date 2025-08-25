@@ -274,6 +274,7 @@ Aggregator::Aggregator(const string &keypair, uint64_t epoch, uint32_t channel_i
     last_known_block((uint64_t)-1), epoch(epoch), channel_id(channel_id)
 {
     memset(session_key, '\0', sizeof(session_key));
+    memset(session_hash, '\0', sizeof(session_hash));
 
     FILE *fp;
     if((fp = fopen(keypair.c_str(), "r")) == NULL)
@@ -571,6 +572,8 @@ void Aggregator::process_packet(const uint8_t *buf, size_t size, uint8_t wlan_id
                                 uint8_t bandwidth, sockaddr_in *sockaddr)
 {
     uint8_t session_tmp[MAX_SESSION_PACKET_SIZE - crypto_box_MACBYTES - sizeof(wsession_hdr_t)];
+    uint8_t new_session_hash[sizeof(session_hash)];
+
     wsession_data_t* new_session_data = NULL;
     //size_t new_session_tags_size = 0;
 
@@ -605,6 +608,24 @@ void Aggregator::process_packet(const uint8_t *buf, size_t size, uint8_t wlan_id
         {
             WFB_ERR("Invalid session key packet\n");
             count_p_bad += 1;
+            return;
+        }
+
+        if(crypto_generichash(new_session_hash,
+                              sizeof(new_session_hash),
+                              buf + sizeof(wsession_hdr_t),
+                              size - sizeof(wsession_hdr_t),
+                              ((wsession_hdr_t*)buf)->session_nonce,
+                              sizeof(((wsession_hdr_t*)buf)->session_nonce)) != 0)
+        {
+            // Should newer happened
+            assert(0);
+        }
+
+        if (memcmp(session_hash, new_session_hash, sizeof(session_hash)) == 0)
+        {
+            // Session is equal to current so we can ignore it
+            count_p_session += 1;
             return;
         }
 
@@ -677,6 +698,9 @@ void Aggregator::process_packet(const uint8_t *buf, size_t size, uint8_t wlan_id
             IPC_MSG("%" PRIu64 "\tSESSION\t%" PRIu64 ":%u:%d:%d\n", get_time_ms(), epoch, WFB_FEC_VDM_RS, fec_k, fec_n);
             IPC_MSG_SEND();
         }
+
+        // Cache already processed session
+        memcpy(session_hash, new_session_hash, sizeof(session_hash));
 
         return;
 
