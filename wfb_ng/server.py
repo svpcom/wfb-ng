@@ -95,6 +95,13 @@ def init_wlans(max_bw, wlans):
     try:
         yield call_and_check_rc('iw', 'reg', 'set', settings.common.wifi_region)
         for wlan in wlans:
+            try:
+                driver = os.path.basename(os.readlink('/sys/class/net/%s/device/driver' % (wlan,)))
+            except Exception:
+                driver = 'UNKNOWN'
+
+            log.msg('Interface %s has driver %s' % (wlan, driver))
+
             if settings.common.set_nm_unmanaged and os.path.exists('/usr/bin/nmcli'):
                 device_status = yield call_and_check_rc('nmcli', 'device', 'show', wlan, log_stdout=False)
                 if not b'(unmanaged)' in device_status:
