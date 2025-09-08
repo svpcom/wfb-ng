@@ -22,6 +22,7 @@ import sys
 import os
 import queue
 import threading
+import inspect
 import atexit
 import time
 
@@ -37,7 +38,6 @@ from twisted.internet import base as twisted_internet_base
 reload(twisted_internet_base)
 
 from twisted.internet import utils, reactor
-from logging import currentframe
 from twisted.python import log
 from twisted.python.logfile import LogFile
 
@@ -51,7 +51,6 @@ There is NO warranty; not even for MERCHANTABILITY or FITNESS FOR A PARTICULAR P
 """
 
 __orig_msg = log.msg
-_srcfile = os.path.splitext(os.path.normcase(__file__))[0] + '.py'
 
 # Returns escape codes from format codes
 esc = lambda *x: '\033[' + ';'.join(x) + 'm'
@@ -94,39 +93,34 @@ class ConsoleObserver(object):
         sys.stdout.flush()
 
 
-def __findCaller():
+def __find_caller(depth):
     """
-    Find the stack frame of the caller so that we can note the source
-    file name, line number and function name.
+    Find the stack frame of the caller and extract module and function name
     """
-    f = currentframe()
+    f = inspect.currentframe()
 
-    #On some versions of IronPython, currentframe() returns None if
-    #IronPython isn't run with -X:Frames.
-
-    if f is not None:
+    while depth > 0:
         f = f.f_back
+        depth -= 1
 
-    rv = "(unknown file)", 0, "(unknown class)", "(unknown function)"
+    path = os.path.splitext(f.f_code.co_filename)[0].split('/')
 
-    while hasattr(f, "f_code"):
-        co = f.f_code
-        filename = os.path.normcase(co.co_filename)
-        if filename == _srcfile:
-            f = f.f_back
-            continue
+    if len(path) > 1:
+        module = path[-1 if path[-1] != '__init__' else -2]
 
-        try:
-            if 'self' in f.f_locals:
-                klass = f.f_locals['self'].__class__.__name__
-            else:
-                klass = ''
-        except:
-            klass = '<undef>'
+    elif len(path) == 1:
+        module = path[0]
 
-        rv = (co.co_filename, f.f_lineno, klass, co.co_name)
-        break
-    return rv
+    else:
+        module = ''
+
+    fname = f.f_code.co_qualname
+
+    # Hide closure name if any
+    if '.<locals>.' in fname:
+        fname = fname[:fname.index('.<locals>.')]
+
+    return module, fname
 
 
 class LogLevel(object):
@@ -150,9 +144,6 @@ log_level_map = { LogLevel.DEBUG : 'debug',
 
 
 def _log_msg(*args, **kwargs):
-    def _stub():
-        return __findCaller()
-
     level = kwargs.get('level', None)
 
     if level not in set(LogLevel.__dict__.values()):
@@ -161,19 +152,12 @@ def _log_msg(*args, **kwargs):
 
     error = (level >= LogLevel.ERROR)
     kwargs['isError'] = 1 if error else 0
+    module, func = __find_caller(2)
 
-    if 'why' in kwargs:  # handle call from log.err
-        path, line, klass, func = __findCaller()
-    else:
-        path, line, klass, func = _stub()
-
-    filename = os.path.basename(path)
-    module = os.path.splitext(filename)[0]
+    if (module, func) == ('log', 'err'):
+        module, func = __find_caller(3)
 
     tmp = [color_str(module, 'red' if error else 'blue')]
-
-    if klass:
-        tmp.append(color_str(klass, 'red' if error else 'blue'))
 
     tmp.append(color_str(func, 'red' if error else 'green'))
     kwargs['system'] = '%s #%s' % ('.'.join(tmp), log_level_map[level])
