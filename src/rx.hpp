@@ -32,7 +32,14 @@
 #include <stdexcept>
 
 #include "wifibroadcast.hpp"
+#include "zfex.h"
 
+// Forward declaration for isolated packet loss notification
+class PacketLossListener {
+public:
+    virtual ~PacketLossListener() = default;
+    virtual void onPacketLoss(uint32_t lostCount, uint32_t lastSeq, uint32_t newSeq) = 0;
+};
 
 typedef enum {
     LOCAL,
@@ -168,6 +175,9 @@ public:
                                 uint8_t bandwidth, sockaddr_in *sockaddr);
     virtual void dump_stats(void);
 
+    // Packet loss listener for immediate notifications
+    void setPacketLossListener(PacketLossListener* listener) { packet_loss_listener_ = listener; }
+
     // Make stats public for android userspace receiver
     void clear_stats(void)
     {
@@ -235,6 +245,9 @@ private:
     uint8_t rx_secretkey[crypto_box_SECRETKEYBYTES];
     uint8_t tx_publickey[crypto_box_PUBLICKEYBYTES];
     uint8_t session_key[crypto_aead_chacha20poly1305_KEYBYTES];
+
+    // Packet loss listener for immediate notifications
+    PacketLossListener* packet_loss_listener_ = nullptr;
 };
 
 
