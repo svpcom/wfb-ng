@@ -866,8 +866,14 @@ void Aggregator::send_packet(int ring_idx, int fragment_idx)
 
     if (packet_seq > seq + 1 && seq > 0)
     {
-        ANDROID_IPC_MSG("PKT_LOST\t%d", (packet_seq - seq - 1));
-        count_p_lost += (packet_seq - seq - 1);
+        uint32_t lost_count = packet_seq - seq - 1;
+        ANDROID_IPC_MSG("PKT_LOST\t%d", lost_count);
+        count_p_lost += lost_count;
+
+        // Immediate packet loss notification
+        if (packet_loss_listener_) {
+            packet_loss_listener_->onPacketLoss(lost_count, seq, packet_seq);
+        }
     }
 
     seq = packet_seq;
