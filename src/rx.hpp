@@ -35,10 +35,11 @@
 #include "zfex.h"
 
 // Forward declaration for isolated packet loss notification
-class PacketLossListener {
+class PacketLossListener
+{
 public:
     virtual ~PacketLossListener() = default;
-    virtual void onPacketLoss(uint32_t lostCount, uint32_t lastSeq, uint32_t newSeq) = 0;
+    virtual void on_packet_loss(uint32_t lost_count, uint32_t last_seq, uint32_t new_seq) = 0;
 };
 
 typedef enum {
@@ -176,7 +177,7 @@ public:
     virtual void dump_stats(void);
 
     // Packet loss listener for immediate notifications
-    void setPacketLossListener(PacketLossListener* listener) { packet_loss_listener_ = listener; }
+    void set_packet_loss_listener(PacketLossListener* listener) { packet_loss_listener_ = listener; }
 
     // Make stats public for android userspace receiver
     void clear_stats(void)

@@ -871,8 +871,9 @@ void Aggregator::send_packet(int ring_idx, int fragment_idx)
         count_p_lost += lost_count;
 
         // Immediate packet loss notification
-        if (packet_loss_listener_) {
-            packet_loss_listener_->onPacketLoss(lost_count, seq, packet_seq);
+        if (packet_loss_listener_ != NULL)
+        {
+            packet_loss_listener_->on_packet_loss(lost_count, seq, packet_seq);
         }
     }
 
