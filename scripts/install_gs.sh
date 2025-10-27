@@ -85,7 +85,7 @@ fi
 # Setup config
 cat <<EOF > /etc/wifibroadcast.cfg
 [common]
-wifi_channel = 165     # 165 -- radio channel @5825 MHz, range: 5815–5835 MHz, width 20MHz
+wifi_channel = 165     # 165 -- radio channel @5825 MHz, range: 5815-5835 MHz, width 20MHz
                        # 1 -- radio channel @2412 Mhz,
                        # see https://en.wikipedia.org/wiki/List_of_WLAN_channels for reference
 wifi_region = 'BO'     # Your country for CRDA (use BO or GY if you want max tx power)
