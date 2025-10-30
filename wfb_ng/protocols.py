@@ -27,11 +27,11 @@ from itertools import groupby
 from copy import deepcopy
 from twisted.python import log, failure
 from twisted.internet import reactor, defer, threads, task
-from twisted.internet.protocol import ProcessProtocol, Factory
+from twisted.internet.protocol import ProcessProtocol, Factory, ConnectedDatagramProtocol
 from twisted.protocols.basic import LineReceiver, Int32StringReceiver
 
 from .conf import settings
-
+from .common import fatal_error
 
 class BadTelemetry(Exception):
     pass
@@ -667,3 +667,25 @@ class SSHClientProtocol(ProcessProtocol):
                                  childFDs={0: "w", 1: "r", 2: "r"})
 
         return df.addCallback(lambda _: self.df)
+
+
+class SDNotifier(ConnectedDatagramProtocol):
+    def startProtocol(self):
+        log.msg("Sending notification to systemd")
+        self.transport.write(b'READY=1')
+        self.transport.stopListening()
+
+    def connectionFailed(self, reason):
+        log.msg("Connection to systemd failed: %s" % (reason.value,), isError=1)
+        fatal_error()
+
+
+def notify_ready():
+    sock = os.getenv('NOTIFY_SOCKET')
+    if sock is None :
+        return
+
+    if sock[0] == '@':
+        sock = '\0' + sock[1:]
+
+    return reactor.connectUNIXDatagram(sock.encode(), SDNotifier())

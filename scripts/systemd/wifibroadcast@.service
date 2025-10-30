@@ -4,7 +4,7 @@ Requires=wifibroadcast.service
 ReloadPropagatedFrom=wifibroadcast.service
 
 [Service]
-Type=simple
+Type=notify
 # common environment
 EnvironmentFile=/etc/default/wifibroadcast
 # per-profile environment

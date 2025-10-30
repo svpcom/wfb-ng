@@ -33,7 +33,7 @@ from twisted.internet import reactor, defer
 
 from . import _log_msg, ConsoleObserver, ErrorSafeLogFile, call_and_check_rc, ExecError, version_msg
 from .common import abort_on_crash, exit_status, df_sleep, search_attr
-from .protocols import AntStatsAndSelector, RFTempMeter, SSHClientProtocol, MsgPackAPIFactory, JSONAPIFactory
+from .protocols import AntStatsAndSelector, RFTempMeter, SSHClientProtocol, MsgPackAPIFactory, JSONAPIFactory, notify_ready
 from .services import parse_services, init_udp_direct_tx, init_udp_direct_rx, init_mavlink, init_tunnel, init_udp_proxy, hash_link_domain, bandwidth_map
 from .cluster import parse_cluster_services, gen_cluster_scripts
 from .conf import settings, cfg_files
@@ -271,6 +271,8 @@ def init(profiles, wlans, cluster_mode):
                                           srv_cfg.udp_peers_auto if is_cluster else wlans,
                                           link_id, ant_sel_f, is_cluster, rx_only_wlan_ids))
 
+
+    notify_ready()
     yield defer.gatherResults(dl, consumeErrors=True).addBoth(_cleanup).addErrback(lambda f: f.trap(defer.FirstError) and f.value.subFailure)
 
 
