@@ -89,8 +89,8 @@ def color_str(arg, c, bold=False):
 
 class ConsoleObserver(object):
     def emit(self, eventDict):
-        print('[%s] %s' % (eventDict['system'], eventDict['log_text']))
-        sys.stdout.flush()
+        txt = '\n        '.join(str(eventDict['log_text']).rstrip().split('\n'))
+        print('[%s] %s' % (eventDict['system'], txt), flush=True)
 
 
 def __find_caller(depth):
@@ -142,13 +142,23 @@ log_level_map = { LogLevel.DEBUG : 'debug',
                   LogLevel.ALERT : 'alert',
                   LogLevel.FATAL : 'fatal_error'}
 
+min_level = LogLevel.DEBUG
+
+
+def set_log_level(level):
+    global min_level
+    min_level = level
+
 
 def _log_msg(*args, **kwargs):
     level = kwargs.get('level', None)
 
-    if level not in set(LogLevel.__dict__.values()):
+    if level not in log_level_map:
         level = LogLevel.ERROR if kwargs.get('isError') else LogLevel.INFO
         kwargs['level'] = level
+
+    if level < min_level:
+        return
 
     error = (level >= LogLevel.ERROR)
     kwargs['isError'] = 1 if error else 0

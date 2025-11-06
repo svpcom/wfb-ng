@@ -31,7 +31,7 @@ import yaml
 from twisted.python import log, failure
 from twisted.internet import reactor, defer
 
-from . import _log_msg, ConsoleObserver, ErrorSafeLogFile, call_and_check_rc, ExecError, version_msg
+from . import _log_msg, ConsoleObserver, ErrorSafeLogFile, call_and_check_rc, ExecError, version_msg, LogLevel, set_log_level
 from .common import abort_on_crash, exit_status, df_sleep, search_attr
 from .protocols import AntStatsAndSelector, RFTempMeter, SSHClientProtocol, MsgPackAPIFactory, JSONAPIFactory, notify_ready
 from .services import parse_services, init_udp_direct_tx, init_udp_direct_rx, init_mavlink, init_tunnel, init_udp_proxy, hash_link_domain, bandwidth_map
@@ -304,6 +304,7 @@ def main():
         print(gen_bind_yaml(args.profiles))
         return
 
+    set_log_level(LogLevel.DEBUG if settings.common.debug else LogLevel.INFO)
     log.msg = _log_msg
 
     if settings.common.log_file:
