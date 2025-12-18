@@ -48,7 +48,7 @@ def abort_on_crash(f, stop_reactor=True, warn_cancel=True):
     if settings.common.debug:
         log.err(f, 'Stopping reactor due to fatal error')
     else:
-        log.msg('Stopping reactor due to fatal error: %s' % (f.value,), isError=1)
+        log.msg('Stopping reactor due to fatal error: %s %s' % (f.value.__class__.__name__, f.value,), isError=1)
 
     fatal_error(stop_reactor)
 

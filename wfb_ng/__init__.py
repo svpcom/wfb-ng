@@ -191,7 +191,7 @@ def call_and_check_rc(cmd, *args, **kwargs):
         log.msg('# %s' % (' '.join((cmd,) + args),))
 
         if stdout and kwargs.get('log_stdout', True):
-            log.msg(stdout)
+            log.msg(stdout.decode(errors='ignore'))
 
         return stdout
 
