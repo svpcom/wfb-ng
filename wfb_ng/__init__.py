@@ -114,7 +114,10 @@ def __find_caller(depth):
     else:
         module = ''
 
-    fname = f.f_code.co_qualname
+    # Fix for python < 3.11
+    # TODO: remove after python3.10 deprecation
+
+    fname = getattr(f.f_code, 'co_qualname', f.f_code.co_name)
 
     # Hide closure name if any
     if '.<locals>.' in fname:
