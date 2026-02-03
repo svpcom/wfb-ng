@@ -103,7 +103,9 @@ def init_udp_direct_tx(service_name, cfg, wlans, link_id, ant_sel_f, is_cluster,
     cmd = ('%(cmd)s%(cluster)s -f %(frame_type)s -p %(stream)d %(conn_str)s -K %(key)s '\
            '-B %(bw)d -G %(gi)s -S %(stbc)d -L %(ldpc)d -M %(mcs)d'\
            '%(mirror)s%(force_vht)s%(qdisc)s '\
-           '-k %(fec_k)d -n %(fec_n)d -T %(fec_timeout)d -F %(fec_delay)d -i %(link_id)d -R %(rcv_buf_size)d -s %(snd_buf_size)d -l %(log_interval)d -C %(control_port)d' % \
+           '-k %(fec_k)d -n %(fec_n)d -T %(fec_timeout)d -F %(fec_delay)d -i %(link_id)d '\
+           '-R %(rcv_buf_size)d -s %(snd_buf_size)d -l %(log_interval)d -C %(control_port)d '\
+           '-J %(injection_retries)d -E %(injection_retry_delay)d' % \
            dict(cmd=os.path.join(settings.path.bin_dir, 'wfb_tx'),
                 cluster=' -d' if is_cluster else '',
                 frame_type=cfg.frame_type,
@@ -126,7 +128,9 @@ def init_udp_direct_tx(service_name, cfg, wlans, link_id, ant_sel_f, is_cluster,
                 link_id=link_id,
                 log_interval=settings.common.log_interval,
                 rcv_buf_size=settings.common.tx_rcv_buf_size,
-                snd_buf_size=settings.common.rx_snd_buf_size)
+                snd_buf_size=settings.common.rx_snd_buf_size,
+                injection_retries=cfg.injection_retries,
+                injection_retry_delay=cfg.injection_retry_delay)
            ).split() + wlans
 
     control_port_df = defer.Deferred() if cfg.control_port == 0 else None

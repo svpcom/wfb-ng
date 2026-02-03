@@ -158,7 +158,7 @@ class RawSocketTransmitter : public Transmitter
 public:
     RawSocketTransmitter(int k, int n, const std::string &keypair, uint64_t epoch, uint32_t channel_id, uint32_t fec_delay, std::vector<tags_item_t> &tags,
                          const std::vector<std::string> &wlans, radiotap_header_t &radiotap_header,
-                         uint8_t frame_type, bool use_qdisc, uint32_t fwmark_base);
+                         uint8_t frame_type, bool use_qdisc, uint32_t fwmark_base, uint32_t inject_retries, uint32_t inject_retry_delay);
     virtual ~RawSocketTransmitter();
 
     virtual void select_output(int idx)
@@ -196,6 +196,8 @@ private:
     const bool use_qdisc;
     const uint32_t fwmark_base;
     uint32_t fwmark;
+    const uint32_t inject_retries;     // number of injection retries when drives returns ENOBUFS
+    const uint32_t inject_retry_delay; // [usec] delay before retry if drivers returns ENOBUFS
 };
 
 

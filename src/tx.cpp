@@ -195,7 +195,7 @@ void Transmitter::init_session(int k, int n)
 
 RawSocketTransmitter::RawSocketTransmitter(int k, int n, const string &keypair, uint64_t epoch, uint32_t channel_id, uint32_t fec_delay,
                                            vector<tags_item_t> &tags, const vector<string> &wlans, radiotap_header_t &radiotap_header,
-                                           uint8_t frame_type, bool use_qdisc, uint32_t fwmark_base) : \
+                                           uint8_t frame_type, bool use_qdisc, uint32_t fwmark_base, uint32_t inject_retries, uint32_t inject_retry_delay) : \
     Transmitter(k, n, keypair, epoch, channel_id, fec_delay, tags),
     channel_id(channel_id),
     current_output(0),
@@ -204,7 +204,9 @@ RawSocketTransmitter::RawSocketTransmitter(int k, int n, const string &keypair, 
     frame_type(frame_type),
     use_qdisc(use_qdisc),
     fwmark_base(fwmark_base),
-    fwmark(fwmark_base)
+    fwmark(fwmark_base),
+    inject_retries(inject_retries),
+    inject_retry_delay(inject_retry_delay)
 {
     for(auto it=wlans.begin(); it!=wlans.end(); it++)
     {
@@ -315,11 +317,30 @@ void RawSocketTransmitter::inject_packet(const uint8_t *buf, size_t size)
             fd_fwmarks[fd] = fwmark;
         }
 
-        int rc = sendmsg(fd, &msghdr, 0);
-
-        if (rc < 0 && errno != ENOBUFS)
+        int rc = -1;
+        for(uint32_t i=0; rc < 0 && i <= inject_retries; i++)
         {
-            throw runtime_error(string_format("Unable to inject packet: %s", strerror(errno)));
+            if (i > 0)
+            {
+                struct timespec t = {
+                    .tv_sec = (time_t)(inject_retry_delay / 1000000),
+                    .tv_nsec = (suseconds_t)(inject_retry_delay % 1000000) * 1000
+                };
+
+                int rc2 = clock_nanosleep(CLOCK_MONOTONIC, 0, &t, NULL);
+
+                if (rc2 != 0 && rc2 != EINTR)
+                {
+                    throw runtime_error(string_format("clock_nanosleep: %s", strerror(rc2)));
+                }
+            }
+
+            rc = sendmsg(fd, &msghdr, 0);
+
+            if (rc < 0 && errno != ENOBUFS)
+            {
+                throw runtime_error(string_format("Unable to inject packet: %s", strerror(errno)));
+            }
         }
 
         uint64_t key = (uint64_t)(current_output) << 8 | (uint64_t)0xff;
@@ -329,33 +350,79 @@ void RawSocketTransmitter::inject_packet(const uint8_t *buf, size_t size)
     {
         // Mirror mode - transmit packet via all cards
         // Use only for different frequency channels
-        int i = 0;
-        for(auto it=sockfds.begin(); it != sockfds.end(); it++, i++)
+
+        vector<int> rc_vec;
+        vector<uint64_t> lat_vec;
+        int socks_pending = 0;
+
+        for(auto it=sockfds.begin(); it != sockfds.end(); it++)
         {
-            uint64_t start_us = get_time_us();
-            int fd = *it;
+            rc_vec.push_back(-1);
+            lat_vec.push_back(0);
+            socks_pending += 1;
+        }
 
-            if (use_qdisc && fd_fwmarks[fd] != fwmark)
+        for(uint32_t i=0; i <= inject_retries && socks_pending > 0; i++)
+        {
+            if (i > 0)
             {
-                uint32_t sockopt = fwmark;
+                struct timespec t = {
+                    .tv_sec = (time_t)(inject_retry_delay / 1000000),
+                    .tv_nsec = (suseconds_t)(inject_retry_delay % 1000000) * 1000
+                };
 
-                if(setsockopt(fd, SOL_SOCKET, SO_MARK, (const void *)&sockopt , sizeof(sockopt)) !=0)
+                int rc = clock_nanosleep(CLOCK_MONOTONIC, 0, &t, NULL);
+
+                if(rc != 0 && rc != EINTR)
                 {
-                    throw runtime_error(string_format("Unable to set SO_MARK fd(%d)=%u: %s", fd, sockopt, strerror(errno)));
+                    throw runtime_error(string_format("clock_nanosleep: %s", strerror(rc)));
+                }
+            }
+
+            int sock_idx = 0;
+            for(auto it=sockfds.begin(); it != sockfds.end() && socks_pending > 0; it++, sock_idx++)
+            {
+                // skip cards that already sent packet
+                if (rc_vec[sock_idx] >= 0) continue;
+
+                uint64_t start_us = get_time_us();
+                int fd = *it;
+
+                if (use_qdisc && fd_fwmarks[fd] != fwmark)
+                {
+                    uint32_t sockopt = fwmark;
+
+                    if(setsockopt(fd, SOL_SOCKET, SO_MARK, (const void *)&sockopt , sizeof(sockopt)) != 0)
+                    {
+                        throw runtime_error(string_format("Unable to set SO_MARK fd(%d)=%u: %s", fd, sockopt, strerror(errno)));
+                    }
+
+                    fd_fwmarks[fd] = fwmark;
                 }
 
-                fd_fwmarks[fd] = fwmark;
+                rc_vec[sock_idx] = sendmsg(fd, &msghdr, 0);
+
+                if (rc_vec[sock_idx] < 0 && errno != ENOBUFS)
+                {
+                    throw runtime_error(string_format("Unable to inject packet: %s", strerror(errno)));
+                }
+
+                if (rc_vec[sock_idx] >= 0)
+                {
+                    socks_pending -= 1;
+                }
+
+                lat_vec[sock_idx] += (get_time_us() - start_us);
+
+                // log success transmission or if no more retries available
+                if (rc_vec[sock_idx] >= 0 || i == inject_retries)
+                {
+                    uint64_t key = (uint64_t)(sock_idx) << 8 | (uint64_t)0xff;
+                    antenna_stat[key].log_latency(lat_vec[sock_idx] + i * inject_retry_delay,
+                                                  rc_vec[sock_idx] >= 0,
+                                                  size);
+                }
             }
-
-            int rc = sendmsg(fd, &msghdr, 0);
-
-            if (rc < 0 && errno != ENOBUFS)
-            {
-                throw runtime_error(string_format("Unable to inject packet: %s", strerror(errno)));
-            }
-
-            uint64_t key = (uint64_t)(i) << 8 | (uint64_t)0xff;
-            antenna_stat[key].log_latency(get_time_us() - start_us, rc >= 0, size);
         }
     }
 
@@ -1360,7 +1427,8 @@ int open_control_fd(int control_port)
 void local_loop_udp(int argc, char* const* argv, int optind, int rcv_buf, int log_interval,
                     int udp_port, int debug_port, int k, int n, const string &keypair, int fec_timeout,
                     uint64_t epoch, uint32_t channel_id, uint32_t fec_delay, bool use_qdisc, uint32_t fwmark,
-                    radiotap_header_t &radiotap_header, uint8_t frame_type, int control_port, bool mirror, int snd_buf_size)
+                    radiotap_header_t &radiotap_header, uint8_t frame_type, int control_port, bool mirror,
+                    int snd_buf_size, uint32_t inject_retries, uint32_t inject_retry_delay)
 {
     vector<int> rx_fd;
     vector<string> wlans;
@@ -1405,7 +1473,8 @@ void local_loop_udp(int argc, char* const* argv, int optind, int rcv_buf, int lo
     else
     {
         t = unique_ptr<RawSocketTransmitter>(new RawSocketTransmitter(k, n, keypair, epoch, channel_id, fec_delay, tags,
-                                                                              wlans, radiotap_header, frame_type, use_qdisc, fwmark));
+                                                                      wlans, radiotap_header, frame_type, use_qdisc, fwmark,
+                                                                      inject_retries, inject_retry_delay));
     }
 
     int control_fd = open_control_fd(control_port);
@@ -1415,7 +1484,8 @@ void local_loop_udp(int argc, char* const* argv, int optind, int rcv_buf, int lo
 void local_loop_unix(int argc, char* const* argv, int optind, int rcv_buf, int log_interval,
                      const char *unix_socket, int debug_port, int k, int n, const string &keypair, int fec_timeout,
                      uint64_t epoch, uint32_t channel_id, uint32_t fec_delay, bool use_qdisc, uint32_t fwmark,
-                     radiotap_header_t &radiotap_header, uint8_t frame_type, int control_port, bool mirror, int snd_buf_size)
+                     radiotap_header_t &radiotap_header, uint8_t frame_type, int control_port, bool mirror,
+                     int snd_buf_size, uint32_t inject_retries, uint32_t inject_retry_delay)
 {
     vector<int> rx_fd;
     vector<string> wlans;
@@ -1447,7 +1517,8 @@ void local_loop_unix(int argc, char* const* argv, int optind, int rcv_buf, int l
     else
     {
         t = unique_ptr<RawSocketTransmitter>(new RawSocketTransmitter(k, n, keypair, epoch, channel_id, fec_delay, tags,
-                                                                      wlans, radiotap_header, frame_type, use_qdisc, fwmark));
+                                                                      wlans, radiotap_header, frame_type, use_qdisc, fwmark,
+                                                                      inject_retries, inject_retry_delay));
     }
 
     int control_fd = open_control_fd(control_port);
@@ -1623,8 +1694,10 @@ int main(int argc, char * const *argv)
     uint32_t fwmark = 0;
     tx_mode_t tx_mode = LOCAL;
     char *unix_socket = NULL;
+    uint32_t inject_retries = 0;
+    uint32_t inject_retry_delay = 5000; // 5ms
 
-    while ((opt = getopt(argc, argv, "dI:K:k:n:u:U:p:F:l:B:G:S:L:M:N:D:T:i:e:R:s:f:mVQP:C:")) != -1) {
+    while ((opt = getopt(argc, argv, "dI:K:k:n:u:U:p:F:l:B:G:S:L:M:N:D:T:i:e:R:s:f:mVQP:C:J:E:")) != -1) {
         switch (opt) {
         case 'I':
             tx_mode = INJECTOR;
@@ -1720,21 +1793,33 @@ int main(int argc, char * const *argv)
                 exit(1);
             }
             break;
+
         case 'Q':
             use_qdisc = true;
             break;
+
         case 'P':
             fwmark = (uint32_t)atoi(optarg);
             break;
+
         case 'C':
             control_port = atoi(optarg);
             break;
+
+        case 'J':
+            inject_retries = atoi(optarg);
+            break;
+
+        case 'E':
+            inject_retry_delay = atoi(optarg);
+            break;
+
         default: /* '?' */
         show_usage:
             WFB_INFO("Local TX: %s [-K tx_key] [-k RS_K] [-n RS_N] { [-u udp_port] | [-U unix_socket] } [-R rcv_buf] [-p radio_port]\n"
                      "             [-F fec_delay] [-B bandwidth] [-G guard_interval] [-S stbc] [-L ldpc] [-M mcs_index] [-N VHT_NSS]\n"
                      "             [-T fec_timeout] [-l log_interval] [-e epoch] [-i link_id] [-f { data | rts }] [-m] [-V] [-Q]\n"
-                     "             [-P fwmark] [-C control_port] interface1 [interface2] ...\n",
+                     "             [-P fwmark] [-J inject_retries] [-E inject_retry_delay] [-C control_port] interface1 [interface2] ...\n",
                     argv[0]);
             WFB_INFO("TX distributor: %s -d [-K tx_key] [-k RS_K] [-n RS_N] { [-u udp_port] | [-U unix_socket] } [-R rcv_buf] [-s snd_buf] [-p radio_port]\n"
                      "                      [-F fec_delay] [-B bandwidth] [-G guard_interval] [-S stbc] [-L ldpc] [-M mcs_index] [-N VHT_NSS]\n"
@@ -1743,8 +1828,8 @@ int main(int argc, char * const *argv)
                     argv[0]);
             WFB_INFO("TX injector: %s -I port [-Q] [-R rcv_buf] [-l log_interval] interface1 [interface2] ...\n",
                     argv[0]);
-            WFB_INFO("Default: K='%s', k=%d, n=%d, fec_delay=%u [us], udp_port=%d, link_id=0x%06x, radio_port=%u, epoch=%" PRIu64 ", bandwidth=%d guard_interval=%s stbc=%d ldpc=%d mcs_index=%d vht_nss=%d, vht_mode=%d, fec_timeout=%d, log_interval=%d, rcv_buf=system_default, snd_buf=system_default, frame_type=data, mirror=false, use_qdisc=false, fwmark=%u, control_port=%d\n",
-                    keypair.c_str(), k, n, fec_delay, udp_port, link_id, radio_port, epoch, bandwidth, short_gi ? "short" : "long", stbc, ldpc, mcs_index, vht_nss, vht_mode, fec_timeout, log_interval, fwmark, control_port);
+            WFB_INFO("Default: K='%s', k=%d, n=%d, fec_delay=%u [us], udp_port=%d, link_id=0x%06x, radio_port=%u, epoch=%" PRIu64 ", bandwidth=%d guard_interval=%s stbc=%d ldpc=%d mcs_index=%d vht_nss=%d, vht_mode=%d, fec_timeout=%d, log_interval=%d, rcv_buf=system_default, snd_buf=system_default, frame_type=data, mirror=false, use_qdisc=false, fwmark=%u, control_port=%d, inject_retries=%u, inject_retry_delay=%u\n",
+                     keypair.c_str(), k, n, fec_delay, udp_port, link_id, radio_port, epoch, bandwidth, short_gi ? "short" : "long", stbc, ldpc, mcs_index, vht_nss, vht_mode, fec_timeout, log_interval, fwmark, control_port, inject_retries, inject_retry_delay);
             WFB_INFO("Radio MTU: %lu\n", (unsigned long)MAX_PAYLOAD_SIZE);
             WFB_INFO("WFB-ng version %s, FEC: %s\n", WFB_VERSION, zfex_opt);
             WFB_INFO("WFB-ng home page: <http://wfb-ng.org>\n");
@@ -1795,7 +1880,7 @@ int main(int argc, char * const *argv)
                                 unix_socket, debug_port, k, n, keypair, fec_timeout,
                                 epoch, channel_id, fec_delay, use_qdisc, fwmark,
                                 radiotap_header, frame_type, control_port, mirror,
-                                snd_buf);
+                                snd_buf, inject_retries, inject_retry_delay);
             }
             else
             {
@@ -1803,7 +1888,7 @@ int main(int argc, char * const *argv)
                                udp_port, debug_port, k, n, keypair, fec_timeout,
                                epoch, channel_id, fec_delay, use_qdisc, fwmark,
                                radiotap_header, frame_type, control_port, mirror,
-                               snd_buf);
+                               snd_buf, inject_retries, inject_retry_delay);
             }
             break;
 
