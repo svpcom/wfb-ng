@@ -258,7 +258,16 @@ class AntennaStatClientFactory(ReconnectingClientFactory):
     def init_windows(self):
         self.windows.clear()
         # python < 3.11 doesn't have termios.tcgetwinsize
-        height, width = struct.unpack('hh', fcntl.ioctl(1, termios.TIOCGWINSZ, b' ' * 4))
+
+        # struct winsize {
+        #       unsigned short ws_row;
+        #       unsigned short ws_col;
+        #       unsigned short ws_xpixel;   /* unused */
+        #       unsigned short ws_ypixel;   /* unused */
+        #   };
+
+        _sizeofstruct = struct.calcsize('hhhh')
+        height, width = struct.unpack('hhhh', fcntl.ioctl(1, termios.TIOCGWINSZ, b'\0' * _sizeofstruct))[:2]
         curses.resize_term(height, width)
         self.stdscr.clear()
 
