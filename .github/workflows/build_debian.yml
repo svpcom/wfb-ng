@@ -5,7 +5,7 @@ on:
     branches: [ master, release-24.08, release-25.01 ]
   pull_request:
     # The branches below must be a subset of the branches above
-    branches: [ master, stable ]
+    branches: [ master ]
 
 jobs:
   build_and_test:
@@ -13,7 +13,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        version: [11, 12, "13"]
+        version: [11, 12, 13]
         arch: [ "armhf.arm32v7.max.-march=armv7-a+simd", "arm64.arm64v8.cortex-a53.-march=armv8-a+simd", "amd64.amd64.max.-mssse3 -mavx -mvzeroupper", "mips64le.mips64le.MIPS64R2-generic", "s390x.s390x.max", "ppc64le.ppc64le.power8", "riscv64.riscv64.rv64" ]
         exclude:
           - version: 11
@@ -26,7 +26,7 @@ jobs:
             arch: "ppc64le.ppc64le.power8"
           - version: 12
             arch: "riscv64.riscv64.rv64"
-          - version: "13"
+          - version: 13
             arch: "mips64le.mips64le.MIPS64R2-generic"
     steps:
       - name: Checkout repository
