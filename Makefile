@@ -4,16 +4,17 @@ PYTHON ?= /usr/bin/python3
 OS_CODENAME ?= $(shell lsb_release -cs)
 
 ifneq ("$(wildcard .git)","")
-    RELEASE ?= $(or $(shell git rev-parse --abbrev-ref HEAD | grep -v '^stable$$'),\
+    RELEASE := $(or $(RELEASE),\
+                    $(shell git rev-parse --abbrev-ref HEAD | grep -v '^stable$$'),\
                     $(shell git describe --all --match 'release-*' --match 'origin/release-*' --abbrev=0 HEAD 2>/dev/null | grep -o '[^/]*$$'),\
                     unknown)
-    COMMIT ?= $(shell git rev-parse HEAD)
-    SOURCE_DATE_EPOCH ?= $(or $(shell git show -s --format="%ct" $(COMMIT)), $(shell date "+%s"))
-    VERSION ?= $(shell $(PYTHON) ./version.py $(SOURCE_DATE_EPOCH) $(RELEASE))
+    COMMIT := $(or $(COMMIT), $(shell git rev-parse HEAD))
+    SOURCE_DATE_EPOCH := $(or $(SOURCE_DATE_EPOCH), $(shell git show -s --format="%ct" $(COMMIT)), $(shell date "+%s"))
+    VERSION := $(or $(VERSION), $(shell $(PYTHON) ./version.py $(SOURCE_DATE_EPOCH) $(RELEASE)))
 else
-    COMMIT ?= release
-    SOURCE_DATE_EPOCH ?= $(shell date "+%s")
-    VERSION ?= $(or $(shell basename $(PWD) | grep -E -o '[0-9]+.[0-9]+(.[0-9]+)?$$'), 0.0.0)
+    COMMIT := $(or $(COMMIT), release)
+    SOURCE_DATE_EPOCH := $(or $(SOURCE_DATE_EPOCH), $(shell date "+%s"))
+    VERSION := $(or $(VERSION), $(shell basename $(PWD) | grep -E -o '[0-9]+.[0-9]+(.[0-9]+)?$$'), 0.0.0)
 endif
 
 ENV ?= $(PWD)/env
