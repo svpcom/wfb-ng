@@ -75,7 +75,7 @@ wfb_rtsp: src/rtsp_server.c
 test: all_bin fec_test libsodium_test
 	./fec_test
 	./libsodium_test
-	PYTHONPATH=`pwd` trial3 wfb_ng.tests
+	PYTHONPATH=`pwd` $(PYTHON) -m twisted.trial wfb_ng.tests
 
 rpm:  all_bin wfb_rtsp $(ENV)
 	rm -rf dist
