@@ -507,8 +507,13 @@ class TXAntennaProtocol(LineReceiver):
             if len(cols) != 3:
                 raise BadTelemetry()
 
-            k_tuple = ('fec_timeouts', 'incoming', 'incoming_bytes', 'injected', 'injected_bytes', 'dropped', 'truncated')
+            k_tuple = ('fec_timeouts', 'incoming', 'incoming_bytes', 'injected', 'injected_bytes', 'dropped', 'truncated', 'frame_closures')
             counters = tuple(int(i) for i in cols[2].split(':'))
+
+            # frame_closures was added later; default to 0 for older wfb_tx binaries
+            if len(counters) == len(k_tuple) - 1:
+                counters = counters + (0,)
+
             assert len(counters) == len(k_tuple)
 
             if not self.count_all:
