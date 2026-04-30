@@ -195,7 +195,7 @@ make rpm
 For binary distribution Debian or Ubuntu
 ```
 sudo apt install python3-all libpcap-dev libsodium-dev libevent-dev python3-pip python3-pyroute2 \
-            python3-twisted python3-serial python3-all-dev iw socat virtualenv \
+            python3-twisted python3-serial python3-all-dev python3-venv iw socat \
             debhelper dh-python fakeroot build-essential python3-msgpack \
             python3-setuptools libgstrtspserver-1.0-dev -y
 sudo make deb

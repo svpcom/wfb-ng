@@ -9,7 +9,7 @@ RUN rpm -ihv https://dl.fedoraproject.org/pub/epel/epel-release-latest-$(cat /et
 RUN dnf -y upgrade
 RUN dnf -y groupinstall "Development Tools"
 RUN dnf -y install --enablerepo=devel git wget \
-    python3-virtualenv rpm-build \
+    rpm-build \
     libpcap-devel libsodium-devel libevent-devel \
     python3-twisted python3-pyroute2 \
     python3-devel \
