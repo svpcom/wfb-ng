@@ -34,7 +34,7 @@ version:
 	@echo -e "RELEASE=$(RELEASE)\nCOMMIT=$(COMMIT)\nVERSION=$(VERSION)\nSOURCE_DATE_EPOCH=$(SOURCE_DATE_EPOCH)"
 
 $(ENV):
-	$(PYTHON) -m venv --upgrade-deps --clear $(ENV)
+	$(PYTHON) -m venv --clear $(ENV)
 	$$(PATH=$(ENV)/bin:$(ENV)/local/bin:$(PATH) which python3) -m pip install --upgrade pip setuptools $(STDEB)
 
 all_bin: wfb_rx wfb_tx wfb_keygen wfb_tx_cmd wfb_tun
