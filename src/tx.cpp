@@ -418,7 +418,7 @@ void RawSocketTransmitter::inject_packet(const uint8_t *buf, size_t size)
                 if (rc_vec[sock_idx] >= 0 || i == inject_retries)
                 {
                     uint64_t key = (uint64_t)(sock_idx) << 8 | (uint64_t)0xff;
-                    antenna_stat[key].log_latency(lat_vec[sock_idx] + i * inject_retry_delay,
+                    antenna_stat[key].log_latency(lat_vec[sock_idx] + (uint64_t)i * inject_retry_delay,
                                                   rc_vec[sock_idx] >= 0,
                                                   size);
                 }
