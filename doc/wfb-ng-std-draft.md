@@ -1,82 +1,138 @@
-% WFB-NG Data Transport Standard [Draft]
-% Vasily Evseenko <<svpcom@p2ptech.org>>
-% Feb 25, 2025
+# WFB-NG Data Transport Standard [Draft]
 
-## Introduction
+Vasily Evseenko <<svpcom@p2ptech.org>>
 
-The purpose of this document is to standardize the data transfer protocol
-via raw wifi radio over long distances. In this context, "long distance" is the distance over which the standard 802.11 ACK mechanism does not work.
+Jun 20, 2026
 
-Many areas of robotics require an inexpensive and long-range point-to-point or point-to-multipoint communication channel.
+## Abstract
 
-The proposed solution allows you to transmit arbitrary data streams at speeds up to 8mbps (MCS # 1 modulation) over a distance of tens of kilometers
-using ordinary wifi adapters that support the transmission of "raw" packets. At the moment, these are adapters based on Realtek RTL8812AU chips.
+This document specifies the WFB-NG data transport protocol: a method for
+transferring arbitrary data streams over "raw" IEEE 802.11 radio links across
+distances at which the standard 802.11 acknowledgement (ACK) mechanism is not
+usable. It defines the on-air packet formats, the stream addressing scheme, the
+forward error correction (FEC) and the encryption used to protect the link.
 
-## Areas of use:
+## Status of This Document
 
-- Communication between robots and ground station
-- Communication of amateur satellites (CUBESAT) with the Earth
-- Digital radio communication on the ground
-- ...
+This is a draft and may be updated, replaced, or made obsolete by other
+documents at any time. It describes the wire format and behaviour of the
+reference implementation published at [wfb-ng.org](http://wfb-ng.org).
 
-## Work principles
-The main limitation of the transmission range of standard WiFi is the requirement to receive an ACK packet from the receiver in a strictly defined time interval after transmission.
-When the distance between two stations exceeds ~200m, then the receiver does not have time to confirm the receipt of the packet and data transmission becomes impossible.
+## 1. Introduction
 
-Some WiFi adapters have a so-called "raw" mode for receiving and transmitting packets.
-In "raw" WiFi mode, the adapter can receive and transmit packets bypassing the standard 802.11 protocol stack. In particular, you can turn off the requirements for sending and receiving ACK packets.
-In this case, the limitation on the maximum range is removed (the range now depends only on the sensitivity of the receiver and the power of the transmitter).
-But requires to make own medium access control layer (MAC layer).
+The purpose of this document is to standardize the data transfer protocol over
+raw WiFi radio across long distances. In this context, "long distance" means a
+distance over which the standard 802.11 ACK mechanism does not work.
 
-## Protocol description
+Many areas of robotics require an inexpensive, long-range, point-to-point or
+point-to-multipoint communication channel.
 
-The protocol supports point-to-point links. But each of two peers can simultaneously participate in an arbitrary number of links.
+The protocol allows arbitrary data streams to be transmitted at rates up to
+8 Mbps (MCS 1 modulation) over distances of tens of kilometers using ordinary
+WiFi adapters that support the transmission of "raw" packets. At the time of
+writing, these are adapters based on the Realtek RTL8812AU and RTL8812EU chips.
+
+### 1.1. Requirements Language
+
+The key words "MUST", "MUST NOT", "REQUIRED", "SHALL", "SHALL NOT", "SHOULD",
+"SHOULD NOT", "RECOMMENDED", "MAY", and "OPTIONAL" in this document are to be
+interpreted as described in BCP 14 (RFC 2119, RFC 8174) when, and only when,
+they appear in all capitals, as shown here.
+
+### 1.2. Terminology
+
+  * **Link** -- a logical association between two peers, identified by a link
+    id and protected by its own set of encryption keys.
+  * **Stream** -- a unidirectional sequence of data packets within a link,
+    identified by a radio port (0-255).
+  * **Channel id** -- `(link_id << 8) + radio_port`; the value placed in the
+    last four bytes of the source and destination MAC addresses.
+  * **FEC block** -- a group of `n` fragments (`k` data fragments and `n - k`
+    parity fragments) produced by the FEC encoder.
+  * **GS** -- ground station. **Vehicle** -- the remote (airborne) peer.
+
+## 2. Areas of Use
+
+  * Communication between robots and a ground station
+  * Communication of amateur satellites (CUBESAT) with the Earth
+  * Digital radio communication on the ground
+  * ...
+
+## 3. Work Principles
+
+The main limitation on the transmission range of standard WiFi is the
+requirement to receive an ACK packet from the receiver within a strictly
+defined time interval after transmission. When the distance between two stations
+exceeds approximately 200 m (may vary in different implementations), the receiver 
+does not have time to confirm receipt of the packet and data transmission
+becomes impossible.
+
+Some WiFi adapters provide a so-called "raw" mode for receiving and transmitting
+packets. In "raw" mode, the adapter can receive and transmit packets bypassing
+the standard 802.11 protocol stack; in particular, the requirement to send and
+receive ACK packets can be disabled. This removes the limitation on the maximum
+range, which then depends only on the sensitivity of the receiver and the power
+of the transmitter, but it requires the protocol to provide its own medium
+access control (MAC) layer.
+
+## 4. Protocol Description
+
+The protocol supports point-to-point links. Each of the two peers MAY
+simultaneously participate in an arbitrary number of links.
 
 Each link has:
 
- - Own set of encryption keys
- - Up to 256 unidirectional data streams.
+  * Its own set of encryption keys.
+  * Up to 256 unidirectional data streams.
 
-The last four bytes of the sender's MAC address are used to set the connection membership.
-Thus the MAC address has the format: `0x57, 0x42, 0xaa, 0xbb, 0xcc, 0xdd`, where the first two bytes are the protocol header (`'W'`,`'B'`),
-then three bytes - the link id and the last byte - the number of the stream inside the link.
-First address byte `'W'`(0x57) has two lower bits set which means that address is multicast and locally administered.
+The last four bytes of the sender's MAC address identify link membership. The
+MAC address therefore has the format `0x57, 0x42, 0xaa, 0xbb, 0xcc, 0xdd`, where
+the first two bytes are the protocol header (`'W'`, `'B'`), the next three bytes
+are the link id, and the last byte is the stream (radio port) number within the
+link. The first address byte, `'W'` (0x57), has its two low-order bits set,
+which marks the address as multicast and locally administered.
 
-1. The initial data transfer quantum is a UDP packet. The contents of the packet is opaque and can be any of:
-  - RTP packet with video or audio.
-  - Mavlink packet
-  - IP tunnel data packet.
-  - ...
+The transport pipeline is as follows:
 
-2. Next, the packet stream is processed by the FEC codec (using [zfec](http://info.iet.unipi.it/~luigi/fec.html) -- Erasure codes based on Vandermonde matrices.)
-3. FEC packets are encrypted and authenticated with the aead_chacha20poly1305 stream cipher using the libsodium library
-4. The result is transmitted to the air in the form of one WiFi packet.
+1. The initial unit of data transfer is a UDP packet. Its contents are opaque
+   and MAY be any of:
+   - An RTP packet with video or audio.
+   - A MAVLink packet.
+   - An IP tunnel data packet.
+   - ...
 
+2. The packet stream is processed by the FEC codec (see Section 6).
 
-### Stream allocation scheme:
+3. FEC packets are encrypted and authenticated with the
+   `aead_chacha20poly1305` cipher using the libsodium library.
+
+4. The result is transmitted on the air as a single WiFi packet.
+
+### 4.1. Stream Allocation Scheme
 
 Down streams (vehicle to GS): 0 - 127
 
-Up streams (GS to vehicle):   128 - 255
+Up streams (GS to vehicle): 128 - 255
 
 Stream ranges:
 
- * 0 - 15: video streams, 0 is default video stream
- * 16 - 31: mavlink streams, 16 is default mavlink stream
- * 32 - 47: tunnel streams, 32 is default tunnel stream
+  * 0 - 15: video streams; 0 is the default video stream.
+  * 16 - 31: MAVLink streams; 16 is the default MAVLink stream.
+  * 32 - 47: tunnel streams; 32 is the default tunnel stream.
 
-All other ranges reserved for future use
+All other ranges are reserved for future use.
 
+## 5. Radio Packet Format
 
-## Radio packets format
+There are two packet types:
 
-There are two packet types
+1. Data packet (`packet_type = 1`): carries encrypted and authenticated
+   (using the session key) FEC-encoded data.
+2. Session packet (`packet_type = 2`): carries encrypted and authenticated
+   session parameters and the session key (see Section 7).
 
-1. Data packet (`packet_type = 1`, has encrypted and authenticated (using session key) FEC-encoded data)
-2. Session packet (`packet_type = 2`, has encrypted and authenticated session parameters and session key, see note below)
-
-Currently only supported FEC type is Reed-Solomon on Vandermonde matrix, but new FEC algorithms can be added in future.
-Session packet can have any amount of optional tags. Receiver should ignore all unknown or unused tags.
+A session packet MAY carry any number of optional tags. A receiver MUST ignore
+all unknown or unused tags.
 
   ``` .c
   // FEC types
@@ -117,6 +173,9 @@ Session packet can have any amount of optional tags. Receiver should ignore all 
     data nonce:  56bit block_idx + 8bit fragment_idx
     session nonce: crypto_box_NONCEBYTES of random bytes
   ```
+
+All multi-byte numeric fields in the on-air headers MUST be encoded in network
+(big-endian) byte order.
 
   ``` .c
     // Network packet headers. All numbers are in network (big endian) format
@@ -162,23 +221,56 @@ Session packet can have any amount of optional tags. Receiver should ignore all 
 
   ```
 
-## Implementation notes
-### Reference implementation
-[wfb-ng.org](http://wfb-ng.org) -- reference implementation of WFB-NG protocol stack (C + Python/Twisted).
+## 6. Forward Error Correction (FEC)
 
-License GPLv3.
+The only FEC type currently defined is Reed-Solomon over a Vandermonde matrix
+(`WFB_FEC_VDM_RS`); new FEC algorithms MAY be added in the future and are
+negotiated through the `fec_type` field of the session packet. An
+implementation MUST NOT decode a data packet whose session advertises an
+unknown `fec_type`.
 
-### Encryption
-WFB-NG encrypts data stream using libsodium.
+The reference implementation uses zfex (by Wojciech Migda) -- a SIMD-accelerated
+implementation of the erasure code originally published as
+[zfec](http://info.iet.unipi.it/~luigi/fec.html) (erasure codes based on
+Vandermonde matrices). zfex provides SSSE3 (x86) and NEON (ARM) accelerated code
+paths that are typically 5-10 times faster than the portable C implementation;
+the wire format it produces is identical to zfec and the two are interoperable.
 
-When TX starts, it generates new session key, encrypts it using public key authenticated encryption (cryptobox) and announce it every SESSION_KEY_ANNOUNCE_MSEC (default 1s).
-Session packet encryption and authentication are done using X25519 ECDH key generated from (RX public key, TX secret key) on the TX side and (TX public key, RX secret key) on the RX side.
-Data packets encrypted by crypto_aead_chacha20poly1305_encrypt using session key and packet index as nonce.
-TX can change FEC settings online, but it must generate a new session key to avoid invalid data on the RX side.
+## 7. Implementation Notes
 
-### Key derivation from a password (KDF)
+### 7.1. Reference Implementation
 
-For low-risk purposes it is possible to derive keys from a password provided by user.
+[wfb-ng.org](http://wfb-ng.org) -- reference implementation of the WFB-NG
+protocol stack (C + Python/Twisted).
+
+License: GPLv3.
+
+### 7.2. Encryption
+
+WFB-NG encrypts the data stream using libsodium.
+
+When a transmitter starts, it generates a new session key, encrypts it using
+public-key authenticated encryption (cryptobox), and announces it every
+`SESSION_KEY_ANNOUNCE_MSEC` (default 1 s). Session-packet encryption and
+authentication use an X25519 ECDH key derived from (RX public key, TX secret
+key) on the transmitter side and (TX public key, RX secret key) on the receiver
+side. Data packets are encrypted with `crypto_aead_chacha20poly1305_encrypt`
+using the session key, with the packet index as the nonce.
+
+A transmitter MAY change FEC settings online, but when it does so it MUST
+generate a new session key to avoid presenting invalid data to the receiver.
+
+Because public-key decryption of a session packet is expensive and session
+packets are re-announced once per second, a receiver SHOULD cache the result of
+the last successfully decrypted session packet and reuse it for subsequent,
+identical session announcements, performing the full `crypto_box_open_easy`
+operation only when the announced session changes.
+
+### 7.3. Key Derivation From a Password (KDF)
+
+For low-risk purposes it is possible to derive the key pairs from a
+user-supplied password.
+
 #### Reference implementation:
 
 ```
@@ -205,37 +297,64 @@ For low-risk purposes it is possible to derive keys from a password provided by 
 ```
 
 #### Test vectors:
-For 'secret password' as password string resulting keypairs must be:
+For the password string `secret password`, the resulting key pairs MUST be:
 - `gs.key` (gs sec + drone pub) sha1 checksum: `cb8d52ca7602928f67daba6ba1f308f4cfc88aa7`
 - `drone.key` (drone sec + gs pub) sha1 checksum: `7a6ffb44cebc53b4538d20bdcaba8d70c9cf4095`
 
-### RX-Ring
-Due to multiple RX radios with own internal queues incoming packets can arrive out of order and you need a method to rearrange them.
-RX-Ring is a circular buffer, where you store packets, grouped by FEC blocks. It has two parameters: *rx_ring_front* (index of the first allocated FEC block) and
-*alloc_size* -- number of allocated blocks. So rx_ring is like a queue of FEC blocks (each block can hold up to N fragments) - you append
-new fragments to block(s) in the tail and fetch them from the head.
+### 7.4. RX-Ring
 
-When you receive a new packet it can belongs to:
+Because multiple RX radios with their own internal queues are used, incoming
+packets can arrive out of order, and a receiver needs a method to reorder them.
 
-1. New FEC block - you need to allocate it in RX ring (do nothing if block was already processed)
-2. Already existing FEC block - you need to add it to them (do nothing if packet already processed)
+RX-Ring is a circular buffer in which packets are stored, grouped by FEC block.
+It has two parameters: *rx_ring_front* (the index of the first allocated FEC
+block) and *alloc_size* (the number of allocated blocks). The RX ring behaves
+like a queue of FEC blocks (each block holding up to `n` fragments): new
+fragments are appended to block(s) at the tail and fetched from the head.
 
-If you successfully decode all fragments from the block then you should yield and remove ALL unfinished blocks before it.
+A newly received packet belongs to either:
 
-When you allocate a new block you have following choices:
+1. A new FEC block -- the receiver allocates it in the RX ring (and does nothing
+   if the block was already processed); or
+2. An already existing FEC block -- the receiver adds the fragment to that block
+   (and does nothing if the packet was already processed).
 
-1. Add a new block to rx ring tail.
-2. Override a block at rx ring head if rx ring is full.
+When all fragments of a block have been successfully decoded, the receiver MUST
+yield that block and remove ALL unfinished blocks ahead of it.
 
-So you can support invariant that output UDP packets will be always ordered and no duplicates will be inside.
+When allocating a new block, the receiver has the following choices:
 
-### Mavlink mode
-By default WFB-NG encapsulates one source UDP packet to one WiFi packet. But mavlink packets are very small (usually less than 100 bytes) and
-send them in separate packets produces too much overhead. You can add optimized mavlink mode.
-It will pack mavlink packets into one UDP packet while size < ``MAX_PAYLOAD_SIZE`` and  ``mavlink_agg_in_ms`` is not expired.
+1. Append a new block to the RX ring tail; or
+2. Overwrite the block at the RX ring head if the RX ring is full.
 
-### TX FEC timeout
-By default WFB-NG doesn't close TX FEC block if less than ``K`` packets was sent and no new packets available.
-This can be an issue for interactive protocols or for protocols with variable data stream speed such as mavlink or IP tunnel.
-In such cases TX can issue empty packets with ``WFB_PACKET_FEC_ONLY`` flag to close non-empty FEC blocks if no new packets are available in some timeout.
-As alternative you can use FEC with ``K=1`` for such streams.
+This maintains the invariant that output UDP packets are always ordered and
+contain no duplicates.
+
+### 7.5. MAVLink Mode
+
+By default WFB-NG encapsulates one source UDP packet in one WiFi packet.
+However, MAVLink packets are very small (usually less than 100 bytes), and
+sending each in a separate packet produces too much overhead. An optimized
+MAVLink mode MAY be used: it packs MAVLink packets into one UDP packet while the
+size is less than `MAX_PAYLOAD_SIZE` and the `mavlink_agg_in_ms` timeout has not
+expired.
+
+### 7.6. TX FEC Timeout
+
+By default WFB-NG does not close a TX FEC block while fewer than `k` packets
+have been sent and no new packets are available. This can be a problem for
+interactive protocols or for protocols with a variable data rate, such as
+MAVLink or the IP tunnel. In such cases the transmitter MAY emit empty packets
+with the `WFB_PACKET_FEC_ONLY` flag to close a non-empty FEC block when no new
+packets are available within some timeout. As an alternative, FEC with `k = 1`
+MAY be used for such streams.
+
+### 7.7. Injection Retry
+
+A "raw" WiFi adapter MAY transiently refuse to accept a frame for injection
+(for example, when its internal TX queue is full). To improve delivery on the
+custom MAC layer, a transmitter MAY retry injection of a frame a configurable
+number of times, waiting a configurable delay between attempts, before counting
+the frame as dropped. Retrying injection only affects the local handoff to the
+adapter; it does not change the on-air packet format and is transparent to the
+receiver.
