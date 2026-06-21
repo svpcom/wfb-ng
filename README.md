@@ -37,6 +37,9 @@ See https://github.com/svpcom/wfb-ng/wiki for additional info
 Telegram group: (**wfb-ng support**) https://t.me/wfb_ng
 Please note, that it is only one official group.
 
+## WFB-ng Data Transport Standard
+[RFC draft](doc/wfb-ng-std-draft.md)
+
 ## Supported WiFi hardware:
  - **RTL8812au**. (stable) 802.11ac capable. [**Requires external patched driver!**](https://github.com/svpcom/rtl8812au) System was tested with ALPHA AWUS036ACH on both sides in 5GHz mode.
  - **RTL8812eu**. (stable) 802.11ac capable. [**Requires external patched driver!**](https://github.com/svpcom/rtl8812eu) System was tested with [LB-LINK's BL-M8812EU2 module](https://www.lb-link.com/product_36_183.html)
