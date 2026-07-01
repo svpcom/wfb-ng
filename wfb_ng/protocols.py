@@ -122,26 +122,30 @@ class RFTempMeter(object):
     def read_temperature(self):
         def _read_temperature():
             res = {}
+            driver_names = ('rtl88x2eu', 'rtl88x2cu')
             for idx, wlan in enumerate(self.wlans):
-                fname = '/proc/net/rtl88x2eu/%s/thermal_state' % (wlan,)
-                try:
-                    with open(fname) as fd:
-                        for line in fd:
-                            line = line.strip()
-                            if not line:
-                                continue
+                for driver in driver_names:
+                    fname = '/proc/net/%s/%s/thermal_state' % (driver, wlan)
+                    try:
+                        with open(fname) as fd:
+                            for line in fd:
+                                line = line.strip()
+                                if not line:
+                                    continue
 
-                            d = {}
-                            for f in line.split(','):
-                                k, v = f.split(':', 1)
-                                d[k.strip()] = int(v.strip())
+                                d = {}
+                                for f in line.split(','):
+                                    k, v = f.split(':', 1)
+                                    d[k.strip()] = int(v.strip())
 
-                            ant_id = (idx << 8) + d['rf_path']
-                            res[ant_id] = d['temperature']
-                except FileNotFoundError:
-                    pass
-                except Exception as v:
-                    reactor.callFromThread(log.err, v, 'Unable to parse %s:' % (fname,))
+                                ant_id = (idx << 8) + d['rf_path']
+                                res[ant_id] = d['temperature']
+                                break
+                    except FileNotFoundError:
+                        continue
+                    except Exception as v:
+                        reactor.callFromThread(log.err, v, 'Unable to parse %s:' % (fname,))
+                        break
             return res
 
         def _got_temp(temp_d):
