@@ -1773,6 +1773,7 @@ int main(int argc, char * const *argv)
             break;
         case 'l':
             log_interval = atoi(optarg);
+            if (log_interval <= 0) goto show_usage;
             break;
         case 'i':
             link_id = ((uint32_t)atoi(optarg)) & 0xffffff;
