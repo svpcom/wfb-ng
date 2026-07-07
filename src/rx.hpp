@@ -39,7 +39,7 @@ class PacketLossListener
 {
 public:
     virtual ~PacketLossListener() = default;
-    virtual void on_packet_loss(uint32_t lost_count, uint32_t last_seq, uint32_t new_seq) = 0;
+    virtual void on_packet_loss(uint32_t lost_count, uint64_t last_seq, uint64_t new_seq) = 0;
 };
 
 typedef enum {
@@ -234,7 +234,7 @@ private:
     int fec_n;  // RS total number of fragments in block
     uint8_t session_hash[crypto_generichash_BYTES];
 
-    uint32_t seq;
+    uint64_t seq;
     rx_ring_item_t rx_ring[RX_RING_SIZE];
     int rx_ring_front; // current packet
     int rx_ring_alloc; // number of allocated entries

@@ -177,7 +177,7 @@ void Transmitter::init_session(int k, int n)
         assert(session_data_size <= sizeof(tmp));
 
         tlv->id = it->id;
-        tlv->len = it->value.size();
+        tlv->len = htons(it->value.size());
         memcpy(tlv->value, &it->value[0], it->value.size());
     }
 
@@ -757,7 +757,7 @@ void data_source(unique_ptr<Transmitter> &t, vector<int> &rx_fd, int control_fd,
     fds[nfds].events = POLLIN;
 
     uint64_t session_key_announce_ts = get_time_ms();
-    uint32_t rxq_overflow = 0;
+    uint32_t rxq_overflow[nfds] = {};
     uint64_t log_send_ts = get_time_ms();
     uint64_t fec_close_ts = fec_timeout > 0 ? get_time_ms() + fec_timeout : 0;
     uint32_t count_p_fec_timeouts = 0; // empty packets sent to close fec block due to timeout
@@ -1049,12 +1049,12 @@ void data_source(unique_ptr<Transmitter> &t, vector<int> &rx_fd, int control_fd,
                     }
 
                     uint32_t cur_rxq_overflow = extract_rxq_overflow(&msghdr);
-                    if (cur_rxq_overflow != rxq_overflow)
+                    if (cur_rxq_overflow > rxq_overflow[i])
                     {
                         // Count dropped packets as possible incoming
-                        count_p_dropped += (cur_rxq_overflow - rxq_overflow);
-                        count_p_incoming += (cur_rxq_overflow - rxq_overflow);
-                        rxq_overflow = cur_rxq_overflow;
+                        count_p_dropped += (cur_rxq_overflow - rxq_overflow[i]);
+                        count_p_incoming += (cur_rxq_overflow - rxq_overflow[i]);
+                        rxq_overflow[i] = cur_rxq_overflow;
                     }
 
                     cur_ts = get_time_ms();
@@ -1225,7 +1225,7 @@ void packet_injector(RawSocketInjector &t, vector<int> &rx_fd, int log_interval)
         fds[i].events = POLLIN;
     }
 
-    uint32_t rxq_overflow = 0;
+    uint32_t rxq_overflow[nfds] = {};
     uint64_t log_send_ts = get_time_ms();
 
     uint32_t count_p_incoming = 0;   // incoming udp packets (received + dropped due to rxq overflow)
@@ -1340,12 +1340,12 @@ void packet_injector(RawSocketInjector &t, vector<int> &rx_fd, int log_interval)
                     count_b_incoming += rsize;
 
                     uint32_t cur_rxq_overflow = extract_rxq_overflow(&msghdr);
-                    if (cur_rxq_overflow != rxq_overflow)
+                    if (cur_rxq_overflow > rxq_overflow[i])
                     {
                         // Count dropped packets as possible incoming
-                        count_p_dropped += (cur_rxq_overflow - rxq_overflow);
-                        count_p_incoming += (cur_rxq_overflow - rxq_overflow);
-                        rxq_overflow = cur_rxq_overflow;
+                        count_p_dropped += (cur_rxq_overflow - rxq_overflow[i]);
+                        count_p_incoming += (cur_rxq_overflow - rxq_overflow[i]);
+                        rxq_overflow[i] = cur_rxq_overflow;
                     }
 
                     cur_ts = get_time_ms();
@@ -1466,6 +1466,11 @@ void local_loop_udp(int argc, char* const* argv, int optind, int rcv_buf, int lo
 
     if (debug_port)
     {
+        if(mirror)
+        {
+            throw runtime_error("Mirroring is not supported in debug mode!");
+        }
+
         WFB_INFO("Using %zu ports from %d for wlan emulation\n", wlans.size(), debug_port);
         t = unique_ptr<UdpTransmitter>(new UdpTransmitter(k, n, keypair, "127.0.0.1", debug_port, epoch, channel_id,
                                                           fec_delay, tags, use_qdisc, fwmark, snd_buf_size));
@@ -1510,6 +1515,11 @@ void local_loop_unix(int argc, char* const* argv, int optind, int rcv_buf, int l
 
     if (debug_port)
     {
+        if(mirror)
+        {
+            throw runtime_error("Mirroring is not supported in debug mode!");
+        }
+
         WFB_INFO("Using %zu ports from %d for wlan emulation\n", wlans.size(), debug_port);
         t = unique_ptr<UdpTransmitter>(new UdpTransmitter(k, n, keypair, "127.0.0.1", debug_port, epoch, channel_id,
                                                           fec_delay, tags, use_qdisc, fwmark, snd_buf_size));

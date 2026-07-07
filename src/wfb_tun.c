@@ -22,6 +22,7 @@
 #include <stdio.h>
 #include <stdbool.h>
 #include <assert.h>
+#include <errno.h>
 #include <signal.h>
 #include <string.h>
 #include <sys/ioctl.h>
@@ -128,7 +129,18 @@ void ev_tun_read_cb(evutil_socket_t fd, short flags, void *arg)
                      buf->data + buf->data_size + sizeof(tun_packet_hdr_t),
                      MTU - sizeof(tun_packet_hdr_t));
 
-    assert(nread > 0);
+    if (nread <= 0)
+    {
+        // No data ready (EAGAIN), interrupted, or EOF: keep listening without
+        // touching the aggregation buffer instead of aborting.
+        if (nread < 0 && errno != EAGAIN && errno != EWOULDBLOCK && errno != EINTR)
+        {
+            fprintf(stderr, "tun read error: %s\n", strerror(errno));
+        }
+        event_add(ev_tun_read, NULL);
+        return;
+    }
+
     assert(nread <= MTU - sizeof(tun_packet_hdr_t));
 
     ((tun_packet_hdr_t*)(buf->data + buf->data_size))->packet_size = htons(nread);
@@ -235,14 +247,47 @@ void ev_tun_write_cb(evutil_socket_t fd, short flags, void *arg)
     assert(ev_tun_write != NULL);
     assert(ev_socket_read != NULL);
 
-    assert(buf->offset + sizeof(tun_packet_hdr_t) <= buf->data_size);
+    if (buf->offset + sizeof(tun_packet_hdr_t) > buf->data_size)
+    {
+        // Truncated/misframed batch from the peer: drop it and resume reading
+        // instead of aborting the tunnel.
+        fprintf(stderr, "tun_write: truncated batch header, dropping\n");
+        memset(buf, 0, sizeof(out_packet_buffer_t));
+        event_add(ev_socket_read, NULL);
+        return;
+    }
+
     uint16_t packet_size = ntohs(((tun_packet_hdr_t*)(buf->data + buf->offset))->packet_size);
 
     WFB_DBG("tun_write: off=%zu, psize=%zu + %d, data_size=%zu\n", buf->offset, sizeof(tun_packet_hdr_t), packet_size, buf->data_size);
-    assert(buf->offset + sizeof(tun_packet_hdr_t) + packet_size <= buf->data_size);
+
+    if (buf->offset + sizeof(tun_packet_hdr_t) + packet_size > buf->data_size)
+    {
+        // Framed length runs past the received batch: drop and resume reading.
+        fprintf(stderr, "tun_write: framed packet_size overruns batch, dropping\n");
+        memset(buf, 0, sizeof(out_packet_buffer_t));
+        event_add(ev_socket_read, NULL);
+        return;
+    }
 
     nwrote = write(fd, buf->data + buf->offset + sizeof(tun_packet_hdr_t), packet_size);
-    assert(nwrote == packet_size);
+
+    if (nwrote != (int)packet_size)
+    {
+        if (nwrote < 0 && (errno == EAGAIN || errno == EWOULDBLOCK || errno == EINTR))
+        {
+            // TUN queue full: retry this same packet once the device is writable
+            // again (offset is not advanced).
+            event_add(ev_tun_write, NULL);
+            return;
+        }
+
+        // Hard error or short write: drop the rest of the batch and resume reading.
+        fprintf(stderr, "tun write error (%d/%u): %s\n", nwrote, packet_size, strerror(errno));
+        memset(buf, 0, sizeof(out_packet_buffer_t));
+        event_add(ev_socket_read, NULL);
+        return;
+    }
 
     buf->offset += (sizeof(tun_packet_hdr_t) + packet_size);
 
@@ -274,7 +319,17 @@ void ev_socket_read_cb(evutil_socket_t fd, short flags, void *arg)
                  MTU,
                  MSG_DONTWAIT);
 
-    assert(nread >= 0);
+    if (nread < 0)
+    {
+        // No datagram ready (EAGAIN) or interrupted: keep listening.
+        if (errno != EAGAIN && errno != EWOULDBLOCK && errno != EINTR)
+        {
+            fprintf(stderr, "socket recv error: %s\n", strerror(errno));
+        }
+        event_add(ev_socket_read, NULL);
+        return;
+    }
+
     assert(nread <= MTU);
 
     if(nread == 0)
@@ -317,6 +372,7 @@ static int open_tun(char *dev, char *dev_addr)
     if(dev != NULL)
     {
         strncpy(ifr.ifr_name, dev, IFNAMSIZ);
+        ifr.ifr_name[IFNAMSIZ - 1] = '\0';
     }
 
     if((err = ioctl(fd, TUNSETIFF, (void *) &ifr)) < 0)

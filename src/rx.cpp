@@ -104,7 +104,6 @@ Receiver::Receiver(const char *wlan, int wlan_idx, uint32_t channel_id, BaseAggr
 
 Receiver::~Receiver()
 {
-    close(fd);
     pcap_close(ppcap);
 }
 
@@ -553,15 +552,18 @@ int Aggregator::get_tag(const void *buf, size_t size, uint8_t tag_id, void *valu
 
     while((void*)(p + 1) <= end)
     {
+        uint16_t t_len = ntohs(p->len);
+
         if(p->id != tag_id)
         {
-            p = (tlv_hdr_t*)((uint8_t*)(p + 1) + p->len);
+            p = (tlv_hdr_t*)((uint8_t*)(p + 1) + t_len);
             continue;
         }
-        if(p->len > value_size) return -1;
-        if(p->value + p->len > end) return -1;
-        memcpy(value, p->value, p->len);
-        return p->len;
+
+        if(t_len > value_size) return -1;
+        if(p->value + t_len > end) return -1;
+        memcpy(value, p->value, t_len);
+        return t_len;
     }
 
     return -1;
@@ -862,12 +864,12 @@ void Aggregator::send_packet(int ring_idx, int fragment_idx)
     uint8_t *payload = (rx_ring[ring_idx].fragments[fragment_idx]) + sizeof(wpacket_hdr_t);
     uint8_t flags = packet_hdr->flags;
     uint16_t packet_size = be16toh(packet_hdr->packet_size);
-    uint32_t packet_seq = rx_ring[ring_idx].block_idx * fec_k + fragment_idx;
+    uint64_t packet_seq = rx_ring[ring_idx].block_idx * fec_k + fragment_idx;
 
     if (packet_seq > seq + 1 && seq > 0)
     {
-        uint32_t lost_count = packet_seq - seq - 1;
-        ANDROID_IPC_MSG("PKT_LOST\t%d", lost_count);
+        uint32_t lost_count = (uint32_t)(packet_seq - seq - 1);
+        ANDROID_IPC_MSG("PKT_LOST\t%u", lost_count);
         count_p_lost += lost_count;
 
         // Immediate packet loss notification
@@ -881,7 +883,7 @@ void Aggregator::send_packet(int ring_idx, int fragment_idx)
 
     if(packet_size > MAX_PAYLOAD_SIZE)
     {
-        WFB_ERR("Corrupted packet %u\n", seq);
+        WFB_ERR("Corrupted packet %" PRIu64 "\n", seq);
         count_p_bad += 1;
     }
     else if(!(flags & WFB_PACKET_FEC_ONLY))
