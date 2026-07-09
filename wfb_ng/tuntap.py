@@ -24,7 +24,7 @@ import struct
 
 from collections import deque
 from twisted.python import log, failure
-from twisted.internet import defer, abstract, main, task
+from twisted.internet import defer, abstract, main, task, threads
 from twisted.internet.protocol import Protocol, connectionDone
 from pyroute2 import IPRoute
 from contextlib import closing
@@ -44,28 +44,42 @@ class TUNTAPTransport(abstract.FileDescriptor):
         self.queue = deque()
         self.mtu = mtu - 2  # reserve two bytes for packet header
         self.name = name
+        self.addr = addr
+        self.default_route = default_route
+        self.protocol = protocol
         self.fd = os.open(dev, os.O_RDWR | os.O_NONBLOCK)
 
         try:
             # We don't need packet info
             mode |= self.IFF_NO_PI
             fcntl.ioctl(self.fd, self.TUNSETIFF, struct.pack('16sH', name.encode('ascii'), mode))
-            with closing(IPRoute()) as ip:
-                ifidx = ip.link_lookup(ifname=name)[0]
-                _addr, _mask = addr.split('/')
-                ip.link('set', index=ifidx, state='up', mtu=self.mtu)
-                ip.addr('add', index=ifidx, address=_addr, prefixlen=int(_mask))
-                if default_route:
-                    ip.route('add', dst='default', oif=ifidx, metric=10)
         except Exception:
             os.close(self.fd)
             raise
 
-        # Connect protocol
-        self.protocol = protocol
-        self.protocol.makeConnection(self)
-        self.connected = 1
-        self.startReading()
+    def _configure_iface(self):
+        # Run in thread pool to avoid reactor block
+        with closing(IPRoute()) as ip:
+            ifidx = ip.link_lookup(ifname=self.name)[0]
+            _addr, _mask = self.addr.split('/')
+            ip.link('set', index=ifidx, state='up', mtu=self.mtu)
+            ip.addr('add', index=ifidx, address=_addr, prefixlen=int(_mask))
+            if self.default_route:
+                ip.route('add', dst='default', oif=ifidx, metric=10)
+
+    def setup(self):
+        def _connect(res):
+            self.protocol.makeConnection(self)
+            self.connected = 1
+            self.startReading()
+            return res
+
+        def _close_fd(f):
+            os.close(self.fd)
+            self.fd = None
+            return f
+
+        return threads.deferToThread(self._configure_iface).addCallbacks(_connect, _close_fd)
 
     def connectionLost(self, reason=connectionDone):
         abstract.FileDescriptor.connectionLost(self, reason)

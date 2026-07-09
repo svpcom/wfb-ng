@@ -262,7 +262,8 @@ def init_mavlink(service_name, cfg, wlans, link_id, ant_sel_f, is_cluster, rx_on
     cmd_tx = ('%(cmd)s%(cluster)s -f %(frame_type)s -p %(stream)d -U %(unix_socket)s -K %(key)s -B %(bw)d '\
               '-G %(gi)s -S %(stbc)d -L %(ldpc)d -M %(mcs)d'\
               '%(mirror)s%(force_vht)s%(qdisc)s '\
-              '-k %(fec_k)d -n %(fec_n)d -T %(fec_timeout)d -F %(fec_delay)d -i %(link_id)d -R %(rcv_buf_size)d -s %(snd_buf_size)d -l %(log_interval)d -C %(control_port)d' % \
+              '-k %(fec_k)d -n %(fec_n)d -T %(fec_timeout)d -F %(fec_delay)d -i %(link_id)d -R %(rcv_buf_size)d -s %(snd_buf_size)d -l %(log_interval)d -C %(control_port)d '\
+              '-J %(injection_retries)d -E %(injection_retry_delay)d' % \
               dict(cmd=os.path.join(settings.path.bin_dir, 'wfb_tx'),
                    cluster=' -d' if is_cluster else '',
                    frame_type=cfg.frame_type,
@@ -285,7 +286,9 @@ def init_mavlink(service_name, cfg, wlans, link_id, ant_sel_f, is_cluster, rx_on
                    link_id=link_id,
                    log_interval=settings.common.log_interval,
                    rcv_buf_size=settings.common.tx_rcv_buf_size,
-                   snd_buf_size=settings.common.rx_snd_buf_size)).split() + wlans
+                   snd_buf_size=settings.common.rx_snd_buf_size,
+                   injection_retries=cfg.injection_retries,
+                   injection_retry_delay=cfg.injection_retry_delay)).split() + wlans
 
     log.msg('%s RX: %s' % (service_name, ' '.join(cmd_rx)))
     log.msg('%s TX: %s' % (service_name, ' '.join(cmd_tx)))
@@ -294,7 +297,7 @@ def init_mavlink(service_name, cfg, wlans, link_id, ant_sel_f, is_cluster, rx_on
     if cfg.mavlink_tcp_port:
         mav_tcp_f = MavlinkTCPFactory(p_in)
         p_in.rx_hooks.append(mav_tcp_f.write)
-        reactor.listenTCP(cfg.mavlink_tcp_port, mav_tcp_f)
+        sockets += [ reactor.listenTCP(cfg.mavlink_tcp_port, mav_tcp_f) ]
 
     tx_sockets_df = defer.Deferred()
     control_port_df = defer.Deferred() if cfg.control_port == 0 else None
@@ -318,7 +321,7 @@ def init_mavlink(service_name, cfg, wlans, link_id, ant_sel_f, is_cluster, rx_on
 
     else:
         serial_port = None
-        sockets += [ reactor.listenUDP(listen[1] if listen else 0, p_in) ]
+        sockets += [ reactor.listenUDP(listen[1] if listen else 0, p_in, interface=listen[0] if listen else '') ]
 
     sockets += [ reactor.listenUNIXDatagram(None, p_tx) for p_tx in p_tx_map.values() ]
 
@@ -376,7 +379,8 @@ def init_tunnel(service_name, cfg, wlans, link_id, ant_sel_f, is_cluster, rx_onl
     cmd_tx = ('%(cmd)s%(cluster)s -f %(frame_type)s -p %(stream)d -U %(unix_socket)s -K %(key)s -B %(bw)d -G %(gi)s '\
               '-S %(stbc)d -L %(ldpc)d -M %(mcs)d'\
               '%(mirror)s%(force_vht)s%(qdisc)s '\
-              '-k %(fec_k)d -n %(fec_n)d -T %(fec_timeout)d -F %(fec_delay)d -i %(link_id)d -R %(rcv_buf_size)d -s %(snd_buf_size)d -l %(log_interval)d -C %(control_port)d' % \
+              '-k %(fec_k)d -n %(fec_n)d -T %(fec_timeout)d -F %(fec_delay)d -i %(link_id)d -R %(rcv_buf_size)d -s %(snd_buf_size)d -l %(log_interval)d -C %(control_port)d '\
+              '-J %(injection_retries)d -E %(injection_retry_delay)d' % \
               dict(cmd=os.path.join(settings.path.bin_dir, 'wfb_tx'),
                    cluster=' -d' if is_cluster else '',
                    frame_type=cfg.frame_type,
@@ -399,7 +403,9 @@ def init_tunnel(service_name, cfg, wlans, link_id, ant_sel_f, is_cluster, rx_onl
                    link_id=link_id,
                    log_interval=settings.common.log_interval,
                    rcv_buf_size=settings.common.tx_rcv_buf_size,
-                   snd_buf_size=settings.common.rx_snd_buf_size)).split() + wlans
+                   snd_buf_size=settings.common.rx_snd_buf_size,
+                   injection_retries=cfg.injection_retries,
+                   injection_retry_delay=cfg.injection_retry_delay)).split() + wlans
 
     log.msg('%s RX: %s' % (service_name, ' '.join(cmd_rx)))
     log.msg('%s TX: %s' % (service_name, ' '.join(cmd_tx),))
@@ -420,6 +426,7 @@ def init_tunnel(service_name, cfg, wlans, link_id, ant_sel_f, is_cluster, rx_onl
     p_tx_map = dict((wlan_id, UDPProxyProtocol(b'\0' + tx_socket.encode())) for wlan_id, tx_socket in tx_sockets.items() if wlan_id not in rx_only_wlan_ids)
 
     tun_ep = TUNTAPTransport(reactor, p_in, cfg.ifname, cfg.ifaddr, mtu=settings.common.radio_mtu, default_route=cfg.default_route)
+    yield tun_ep.setup()
     sockets += [ reactor.listenUNIXDatagram(None, p_tx) for p_tx in p_tx_map.values() ]
 
     def ant_sel_cb(wlan_id):
@@ -471,7 +478,7 @@ def init_udp_proxy(service_name, cfg, wlans, link_id, ant_sel_f, is_cluster, rx_
 
     # The first argument is not None only if we initiate mavlink connection
     p_in = UDPProxyProtocol(connect)
-    sockets = [reactor.listenUDP(listen[1] if listen else 0, p_in)]
+    sockets = [reactor.listenUDP(listen[1] if listen else 0, p_in, interface=listen[0] if listen else '')]
     dl = []
 
     if cfg.stream_rx is not None:
@@ -479,7 +486,7 @@ def init_udp_proxy(service_name, cfg, wlans, link_id, ant_sel_f, is_cluster, rx_
         p_rx.peer = p_in
         rx_socket_path = '%s-rx-%s' % (service_name, os.urandom(4).hex())
         rx_socket = reactor.listenUNIXDatagram(b'\0' + rx_socket_path.encode(), p_rx)
-        sockets = [rx_socket]
+        sockets += [rx_socket]
         cmd_rx = ('%(cmd)s%(cluster)s -p %(stream)d -U %(unix_socket)s -K %(key)s -R %(rcv_buf_size)d -s %(snd_buf_size)d -l %(log_interval)d -i %(link_id)d' % \
                   dict(cmd=os.path.join(settings.path.bin_dir, 'wfb_rx'),
                        cluster=' -a %d' % (cfg.udp_port_auto,) if is_cluster else '',
@@ -499,7 +506,8 @@ def init_udp_proxy(service_name, cfg, wlans, link_id, ant_sel_f, is_cluster, rx_
         cmd_tx = ('%(cmd)s%(cluster)s -f %(frame_type)s -p %(stream)d -U %(unix_socket)s -K %(key)s -B %(bw)d '\
                   '-G %(gi)s -S %(stbc)d -L %(ldpc)d -M %(mcs)d'\
                   '%(mirror)s%(force_vht)s%(qdisc)s '\
-                  '-k %(fec_k)d -n %(fec_n)d -T %(fec_timeout)d -F %(fec_delay)d -i %(link_id)d -R %(rcv_buf_size)d -s %(snd_buf_size)d -l %(log_interval)d -C %(control_port)d' % \
+                  '-k %(fec_k)d -n %(fec_n)d -T %(fec_timeout)d -F %(fec_delay)d -i %(link_id)d -R %(rcv_buf_size)d -s %(snd_buf_size)d -l %(log_interval)d -C %(control_port)d '\
+                  '-J %(injection_retries)d -E %(injection_retry_delay)d' % \
                   dict(cmd=os.path.join(settings.path.bin_dir, 'wfb_tx'),
                        cluster=' -d' if is_cluster else '',
                        frame_type=cfg.frame_type,
@@ -522,7 +530,9 @@ def init_udp_proxy(service_name, cfg, wlans, link_id, ant_sel_f, is_cluster, rx_
                        link_id=link_id,
                        log_interval=settings.common.log_interval,
                        rcv_buf_size=settings.common.tx_rcv_buf_size,
-                       snd_buf_size=settings.common.rx_snd_buf_size)).split() + wlans
+                       snd_buf_size=settings.common.rx_snd_buf_size,
+                       injection_retries=cfg.injection_retries,
+                       injection_retry_delay=cfg.injection_retry_delay)).split() + wlans
         log.msg('%s TX: %s' % (service_name, ' '.join(cmd_tx)))
 
         tx_sockets_df = defer.Deferred()

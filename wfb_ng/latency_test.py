@@ -78,6 +78,10 @@ class PacketSink(DatagramProtocol):
         self.df.callback(None)
 
     def datagramReceived(self, data, addr):
+        if len(data) < struct.calcsize('!HIdd'):
+            log.msg('short packet %d' % (len(data),), isError=1)
+            return
+
         size, i, ts, key = struct.unpack_from('!HIdd', data)
 
         if size != len(data):
@@ -141,6 +145,7 @@ def run_test(port_in, port_out, size, count, rate):
 @defer.inlineCallbacks
 def eval_max_rate(port_in, port_out, size, max_rate):
     min_rate = 1
+    bitrate = None
     while 1:
         dr = int((max_rate - min_rate) / 2)
         if dr <= 0:
@@ -155,7 +160,10 @@ def eval_max_rate(port_in, port_out, size, max_rate):
             # rate too low
             min_rate = rate
 
-    log.msg('Max bitrate is %.2f MBit/s' % (bitrate,))
+    if bitrate is None:
+        log.msg('Unable to estimate max bitrate: max packet rate %d is too low' % (max_rate,), isError=1)
+    else:
+        log.msg('Max bitrate is %.2f MBit/s' % (bitrate,))
 
 
 def main():

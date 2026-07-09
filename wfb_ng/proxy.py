@@ -183,7 +183,11 @@ class MavlinkUDPProxyProtocol(DatagramProtocol, MavlinkProxyProtocol):
 
         # Send non-aggregated packets directly
         if self.agg_max_size is None or not self.agg_timeout:
-            self.transport.write(msg, self.reply_addr)
+            try:
+                self.transport.write(msg, self.reply_addr)
+            except OSError as v:
+                if v.errno not in (ENETUNREACH, EHOSTUNREACH):
+                    raise
             return
 
         # Split batch of mavlink packets due to issues with mavlink-router

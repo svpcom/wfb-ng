@@ -18,6 +18,7 @@
 #
 
 import itertools
+import shlex
 from jinja2 import Environment, StrictUndefined
 
 from .common import search_attr
@@ -89,6 +90,8 @@ def parse_cluster_services(profiles):
 env = Environment(autoescape=False, undefined=StrictUndefined, trim_blocks=True, lstrip_blocks=True)
 env.globals.update({'sorted': sorted, 'repr': repr, 'max': max,
                     'min': min, 'None': None, 'settings': settings})
+# Quote config-derived values interpolated into the generated shell script
+env.filters['quote'] = lambda v: shlex.quote(str(v))
 
 script_template = '''\
 #!/bin/bash
@@ -112,36 +115,36 @@ trap _cleanup EXIT
 {{ custom_init_script }}
 {% endif %}
 
-iw reg set {{ settings.common.wifi_region }}
+iw reg set {{ settings.common.wifi_region | quote }}
 {% for wlan in  wlans %}
 
-# init {{ wlan }}
-if which nmcli > /dev/null && ! nmcli device show {{ wlan }} | grep -q '(unmanaged)'
+# init {{ wlan | quote }}
+if which nmcli > /dev/null && ! nmcli device show {{ wlan | quote }} | grep -q '(unmanaged)'
 then
-  nmcli device set {{ wlan }} managed no
+  nmcli device set {{ wlan | quote }} managed no
   sleep 1
 fi
 
-ip link set {{ wlan }} down
-iw dev {{ wlan }} set monitor otherbss
-ip link set {{ wlan }} up
+ip link set {{ wlan | quote }} down
+iw dev {{ wlan | quote }} set monitor otherbss
+ip link set {{ wlan | quote }} up
 {% if channel[wlan] > 2000 %}
-iw dev {{ wlan }} set freq {{ channel[wlan] }} {{ ht_mode }}
+iw dev {{ wlan | quote }} set freq {{ channel[wlan] | quote }} {{ ht_mode }}
 {% else %}
-iw dev {{ wlan }} set channel {{ channel[wlan] }} {{ ht_mode }}
+iw dev {{ wlan | quote }} set channel {{ channel[wlan] | quote }} {{ ht_mode }}
 {% endif %}
 {% if txpower[wlan] not in (None, 'off') %}
-iw dev {{ wlan }} set txpower fixed {{ txpower[wlan] }}
+iw dev {{ wlan | quote }} set txpower fixed {{ txpower[wlan] | quote }}
 {% endif %}
 {% endfor %}
 {% for service, attrs in services.items() %}
 
 # {{ service }}
 {% if attrs['stream_rx'] != None %}
-wfb_rx -f -c {{ attrs['rx_fwd'][0] }} -u {{ attrs['rx_fwd'][1] }} -p {{ attrs['stream_rx'] }} -i {{ attrs['link_id'] }} -R {{ settings.common.tx_rcv_buf_size }} {{ attrs['wlans']|join(' ') }} &
+wfb_rx -f -c {{ attrs['rx_fwd'][0] | quote }} -u {{ attrs['rx_fwd'][1] | quote }} -p {{ attrs['stream_rx'] }} -i {{ attrs['link_id'] }} -R {{ settings.common.tx_rcv_buf_size }} {{ attrs['wlans']|map('quote')|join(' ') }} &
 {% endif %}
 {% if attrs['stream_tx'] != None %}
-wfb_tx -I {{ attrs['tx_port_base'] }} -R {{ settings.common.tx_rcv_buf_size }} {{ '-Q -P %d' % (attrs['fwmark'],) if attrs['fwmark'] != None else '' }} {{ attrs['wlans']|join(' ') }} &
+wfb_tx -I {{ attrs['tx_port_base'] }} -R {{ settings.common.tx_rcv_buf_size }} {{ '-Q -P %d' % (attrs['fwmark'],) if attrs['fwmark'] != None else '' }} {{ attrs['wlans']|map('quote')|join(' ') }} &
 {% endif %}
 {% endfor %}
 
@@ -185,6 +188,13 @@ def gen_cluster_scripts(cluster_nodes, ssh_mode=False):
 
         if not isinstance(txpower, dict):
             txpower = dict((wlan, txpower) for wlan in wlans)
+
+        for wlan in wlans:
+            if wlan not in txpower:
+                raise Exception("%s: wifi_txpower has no entry for interface '%s'" % (node, wlan))
+
+            if wlan not in channel:
+                raise Exception("%s: wifi_channel has no entry for interface '%s'" % (node, wlan))
 
         res[node] = script_template.render(wlans=wlans,
                                            ht_mode=bandwidth_map[max_bw],

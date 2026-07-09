@@ -332,11 +332,15 @@ void _addmul1(register gf* ZFEX_RESTRICT dst, register const gf* ZFEX_RESTRICT s
     enum { ZFEX_UNROLL_ADDMUL_TILE = ZFEX_UNROLL_ADDMUL_UNIT * (ZFEX_UNROLL_ADDMUL) };
 
     USE_GF_MULC;
-    const gf* lim = &dst[sz - ZFEX_UNROLL_ADDMUL_TILE + 1];
+    /* Iterate against a valid one-past-end pointer; the old
+       &dst[sz - ZFEX_UNROLL_ADDMUL_TILE + 1] limit underflowed (forming an
+       out-of-bounds pointer, UB) when sz < ZFEX_UNROLL_ADDMUL_TILE. */
+    const gf* const end = dst + sz;
 
     GF_MULC0 (c);
 
 #if (ZFEX_UNROLL_ADDMUL > 1)
+    const gf* const lim = dst + (sz - sz % ZFEX_UNROLL_ADDMUL_TILE);
     for (; dst < lim; dst += ZFEX_UNROLL_ADDMUL_TILE, src += ZFEX_UNROLL_ADDMUL_TILE)
     {
 #define KERNEL(i) GF_ADDMULC (dst[i], src[i]);
@@ -345,8 +349,7 @@ void _addmul1(register gf* ZFEX_RESTRICT dst, register const gf* ZFEX_RESTRICT s
     }
 #endif
 
-    lim += ZFEX_UNROLL_ADDMUL_TILE - 1;
-    for (; dst < lim; dst++, src++)       /* final components */
+    for (; dst < end; dst++, src++)       /* final components */
     {
         GF_ADDMULC (*dst, *src);
     }
@@ -484,11 +487,15 @@ void _addmul1_simd(register gf * ZFEX_RESTRICT dst, register const gf * ZFEX_RES
     enum { ZFEX_UNROLL_ADDMUL_TILE = ZFEX_UNROLL_ADDMUL_UNIT * (ZFEX_UNROLL_ADDMUL) };
 
     USE_GF_MULC;
-    const gf* lim = &dst[sz - ZFEX_UNROLL_ADDMUL_TILE + 1];
+    /* Iterate against a valid one-past-end pointer; the old
+       &dst[sz - ZFEX_UNROLL_ADDMUL_TILE + 1] limit underflowed (forming an
+       out-of-bounds pointer, UB) when sz < ZFEX_UNROLL_ADDMUL_TILE. */
+    const gf* const end = dst + sz;
 
     GF_MULC0 (c);
 
 #if (ZFEX_UNROLL_ADDMUL > 1)
+    const gf* const lim = dst + (sz - sz % ZFEX_UNROLL_ADDMUL_TILE);
     for (; dst < lim; dst += ZFEX_UNROLL_ADDMUL_TILE, src += ZFEX_UNROLL_ADDMUL_TILE)
     {
 #define KERNEL(i) GF_ADDMULC (dst[i], src[i]);
@@ -497,8 +504,7 @@ void _addmul1_simd(register gf * ZFEX_RESTRICT dst, register const gf * ZFEX_RES
     }
 #endif
 
-    lim += ZFEX_UNROLL_ADDMUL_TILE - 1;
-    for (; dst < lim; dst++, src++)       /* final components */
+    for (; dst < end; dst++, src++)       /* final components */
     {
         GF_ADDMULC (*dst, *src);
     }
@@ -897,6 +903,16 @@ fec_decode_simd(
     if (shuffle_sc != ZFEX_SC_OK)
     {
         return shuffle_sc;
+    }
+
+    /* Reject block indices outside the encode matrix (n rows) to prevent an
+       out-of-bounds read in build_decode_matrix_into_space (enc_matrix is n*k). */
+    for (uint16_t row = 0; row < code->k; ++row)
+    {
+        if (index[row] >= code->n)
+        {
+            return ZFEX_SC_DECODE_INVALID_BLOCK_INDEX;
+        }
     }
 
     build_decode_matrix_into_space(code, index, code->k, m_dec);

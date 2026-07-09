@@ -30,13 +30,16 @@ class TUNTAPTestCase(unittest.TestCase):
        or twisted_version < Version("Twisted", 19, 7, 0):
         skip = "Root requires or system is incompatible"
 
+    @defer.inlineCallbacks
     def setUp(self):
         self.p1 = TUNTAPProtocol(mtu=1400)
         self.p2 = TUNTAPProtocol(mtu=1400)
         self.p1.peer = self.p2
         self.p2.peer = self.p1
         self.ep1 = TUNTAPTransport(reactor, self.p1, 'tuntest1', '192.168.77.1/24', mtu=1400)
+        yield self.ep1.setup()
         self.ep2 = TUNTAPTransport(reactor, self.p2, 'tuntest2', '192.168.77.2/24', mtu=1400)
+        yield self.ep2.setup()
 
     def tearDown(self):
         self.ep1.loseConnection()

@@ -415,7 +415,9 @@ class RXAntennaProtocol(LineReceiver):
 
                 k_tuple = ('all', 'all_bytes', 'dec_err', 'session', 'data', 'uniq', 'fec_rec', 'lost', 'bad', 'out', 'out_bytes')
                 counters = tuple(int(i) for i in cols[2].split(':'))
-                assert len(counters) == len(k_tuple)
+
+                if len(counters) != len(k_tuple):
+                    raise BadTelemetry()
 
                 if not self.count_all:
                     self.count_all = counters
@@ -442,7 +444,7 @@ class RXAntennaProtocol(LineReceiver):
                     self.ant_stat_cb.process_new_session(self.rx_id, self.session)
             else:
                 raise BadTelemetry()
-        except BadTelemetry:
+        except (BadTelemetry, ValueError):
             log.msg('Bad telemetry [%s]: %s' % (self.rx_id, line), isError=1)
 
 
@@ -476,57 +478,63 @@ class TXAntennaProtocol(LineReceiver):
         self.count_all = None
 
     def lineReceived(self, line):
-        cols = line.decode('utf-8').strip().split('\t')
+        line = line.decode('utf-8').strip()
+        cols = line.split('\t')
         if len(cols) < 2:
             return
 
-        #ts = int(cols[0])
-        cmd = cols[1]
+        try:
+            #ts = int(cols[0])
+            cmd = cols[1]
 
-        if cmd == 'LISTEN_UDP' and len(cols) == 3:
-            port, wlan_id = cols[2].split(':', 1)
-            self.ports[int(wlan_id, 16)] = int(port)
+            if cmd == 'LISTEN_UDP' and len(cols) == 3:
+                port, wlan_id = cols[2].split(':', 1)
+                self.ports[int(wlan_id, 16)] = int(port)
 
-        elif cmd == 'LISTEN_UDP_END' and self.ports_df is not None:
-            self.ports_df.callback(self.ports)
+            elif cmd == 'LISTEN_UDP_END' and self.ports_df is not None:
+                self.ports_df.callback(self.ports)
 
-        elif cmd == 'LISTEN_UNIX' and len(cols) == 3:
-            unix_socket, wlan_id = cols[2].split(':', 1)
-            self.sockets[int(wlan_id, 16)] = unix_socket
+            elif cmd == 'LISTEN_UNIX' and len(cols) == 3:
+                unix_socket, wlan_id = cols[2].split(':', 1)
+                self.sockets[int(wlan_id, 16)] = unix_socket
 
-        elif cmd == 'LISTEN_UNIX_END' and self.ports_df is not None:
-            self.ports_df.callback(self.sockets)
+            elif cmd == 'LISTEN_UNIX_END' and self.ports_df is not None:
+                self.ports_df.callback(self.sockets)
 
-        elif cmd == 'LISTEN_UDP_CONTROL' and len(cols) == 3 and self.control_port_df is not None:
-            port = cols[2]
-            self.control_port = int(port)
-            self.control_port_df.callback(self.control_port)
+            elif cmd == 'LISTEN_UDP_CONTROL' and len(cols) == 3 and self.control_port_df is not None:
+                port = cols[2]
+                self.control_port = int(port)
+                self.control_port_df.callback(self.control_port)
 
-        elif cmd == 'TX_ANT':
-            if len(cols) != 4:
-                raise BadTelemetry()
-            self.ant[int(cols[2], 16)] = tuple(int(i) for i in cols[3].split(':'))
+            elif cmd == 'TX_ANT':
+                if len(cols) != 4:
+                    raise BadTelemetry()
+                self.ant[int(cols[2], 16)] = tuple(int(i) for i in cols[3].split(':'))
 
-        elif cmd == 'PKT':
-            if len(cols) != 3:
-                raise BadTelemetry()
+            elif cmd == 'PKT':
+                if len(cols) != 3:
+                    raise BadTelemetry()
 
-            k_tuple = ('fec_timeouts', 'incoming', 'incoming_bytes', 'injected', 'injected_bytes', 'dropped', 'truncated')
-            counters = tuple(int(i) for i in cols[2].split(':'))
-            assert len(counters) == len(k_tuple)
+                k_tuple = ('fec_timeouts', 'incoming', 'incoming_bytes', 'injected', 'injected_bytes', 'dropped', 'truncated')
+                counters = tuple(int(i) for i in cols[2].split(':'))
 
-            if not self.count_all:
-                self.count_all = counters
-            else:
-                self.count_all = tuple((a + b) for a, b in zip(counters, self.count_all))
+                if len(counters) != len(k_tuple):
+                    raise BadTelemetry()
 
-            stats = dict(zip(k_tuple, zip(counters, self.count_all)))
+                if not self.count_all:
+                    self.count_all = counters
+                else:
+                    self.count_all = tuple((a + b) for a, b in zip(counters, self.count_all))
 
-            # Send stats to aggregators
-            if self.ant_stat_cb is not None:
-                self.ant_stat_cb.update_tx_stats(self.tx_id, stats, dict(self.ant))
+                stats = dict(zip(k_tuple, zip(counters, self.count_all)))
 
-            self.ant.clear()
+                # Send stats to aggregators
+                if self.ant_stat_cb is not None:
+                    self.ant_stat_cb.update_tx_stats(self.tx_id, stats, dict(self.ant))
+
+                self.ant.clear()
+        except (BadTelemetry, ValueError):
+            log.msg('Bad telemetry [%s]: %s' % (self.tx_id, line), isError=1)
 
 
 class RXProtocol(ProcessProtocol):

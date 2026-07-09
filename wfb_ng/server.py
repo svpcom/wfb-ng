@@ -86,7 +86,11 @@ def gen_bind_yaml(profiles):
 
 @defer.inlineCallbacks
 def init_wlans(max_bw, wlans):
-    ht_mode = bandwidth_map[max_bw]
+    try:
+        ht_mode = bandwidth_map[max_bw]
+    except KeyError:
+        raise Exception('Unsupported bandwidth %r, expected one of: %s' % (
+            max_bw, ', '.join(str(b) for b in sorted(bandwidth_map))))
 
     if not settings.common.primary:
         log.msg('Skip card init due to secondary role')
@@ -115,6 +119,8 @@ def init_wlans(max_bw, wlans):
 
             # You can set own frequency channel for each card
             if isinstance(settings.common.wifi_channel, dict):
+                if wlan not in settings.common.wifi_channel:
+                    raise Exception("wifi_channel has no entry for interface '%s'" % (wlan,))
                 channel = settings.common.wifi_channel[wlan]
             else:
                 channel = settings.common.wifi_channel
@@ -129,6 +135,8 @@ def init_wlans(max_bw, wlans):
 
             # You can set own tx power for each card
             if isinstance(txpower, dict):
+                if wlan not in txpower:
+                    raise Exception("wifi_txpower has no entry for interface '%s'" % (wlan,))
                 txpower = txpower[wlan]
 
             if txpower not in (None, 'off'):
@@ -167,7 +175,7 @@ def init(profiles, wlans, cluster_mode):
                                   settings.common.__dict__)
 
             for idx, wlan in enumerate(settings.cluster.nodes[node]['wlans']):
-                if (txpower[wlan] if isinstance(txpower, dict) else txpower) == 'off':
+                if (txpower.get(wlan) if isinstance(txpower, dict) else txpower) == 'off':
                     rx_only_wlan_ids.add((node_ipv4_addr << 24) | idx)
 
 
@@ -200,13 +208,16 @@ def init(profiles, wlans, cluster_mode):
         if not wlans:
             raise Exception('WiFi interface list is empty!')
 
-        max_bw = max(cfg.bandwidth for _, tmp in services for _, _, cfg in tmp)
+        bw_list = [cfg.bandwidth for _, tmp in services for _, _, cfg in tmp]
+        if not bw_list:
+            raise Exception('No services configured for profile(s): %s' % (', '.join(profiles),))
+        max_bw = max(bw_list)
         yield init_wlans(max_bw, wlans)
 
         txpower = settings.common.wifi_txpower
 
         for idx, wlan in enumerate(wlans):
-            if (txpower[wlan] if isinstance(txpower, dict) else txpower) == 'off':
+            if (txpower.get(wlan) if isinstance(txpower, dict) else txpower) == 'off':
                 rx_only_wlan_ids.add(idx)
 
 
