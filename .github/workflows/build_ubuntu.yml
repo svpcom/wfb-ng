@@ -22,6 +22,8 @@ jobs:
             arch: "riscv64.riscv64.rv64"
           - version: "26.04"
             arch: "riscv64.riscv64.rv64"
+          - version: "26.04"
+            arch: "armhf.arm32v7.max.-march=armv7-a+simd"
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
