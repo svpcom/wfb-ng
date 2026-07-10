@@ -2,7 +2,7 @@ name: WFB-ng package builder for ubuntu
 
 on:
   push:
-    branches: [ master, release-24.08, release-25.01 ]
+    branches: [ master, release-25.01 ]
   pull_request:
     # The branches below must be a subset of the branches above
     branches: [ master, stable ]
@@ -13,7 +13,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        version: [ "20.04", "22.04", "24.04" ]
+        version: [ "20.04", "22.04", "24.04", "26.04" ]
         arch: [ "armhf.arm32v7.max.-march=armv7-a+simd", "arm64.arm64v8.cortex-a53.-march=armv8-a+simd", "amd64.amd64.max.-mssse3 -mavx -mvzeroupper", "riscv64.riscv64.rv64"]
         exclude:
           - version: "20.04"
