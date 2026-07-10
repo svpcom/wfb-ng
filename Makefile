@@ -19,7 +19,7 @@ endif
 
 ENV ?= $(PWD)/env
 DOCKER_ARCH ?= amd64
-DOCKER_SRC_IMAGE ?= "p2ptech/cross-build:2023-02-21-raspios-bullseye-armhf-lite"
+DOCKER_SRC_IMAGE ?= "debian:13"
 STDEB ?= "git+https://github.com/svpcom/stdeb"
 QEMU_CPU ?= "max"
 

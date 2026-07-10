@@ -4,6 +4,15 @@ FROM $SRC_IMAGE
 ARG QEMU_CPU
 ENV QEMU_CPU=$QEMU_CPU
 
+RUN set -eu; \
+    printf '%s\n' \
+      'Acquire::Retries "5";' \
+      'Acquire::Retries::Delay::Maximum "30";' \
+      'Acquire::http::Timeout "15";' \
+      'Acquire::https::Timeout "15";' \
+      'Acquire::ConnectionAttemptDelayMsec "150";' \
+      > /etc/apt/apt.conf.d/80-network
+
 RUN apt-get update && apt-get install -y lsb-release && \
     DEBIAN_FRONTEND=noninteractive \
     apt-get install -y build-essential git wget \

@@ -20,6 +20,8 @@ jobs:
             arch: "riscv64.riscv64.rv64"
           - version: "22.04"
             arch: "riscv64.riscv64.rv64"
+          - version: "26.04"
+            arch: "riscv64.riscv64.rv64"
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
