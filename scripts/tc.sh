@@ -52,7 +52,19 @@ tc class add dev $wlan parent 1:99 classid 1:20 htb rate 500kbit ceil 1mbit prio
 tc filter add dev $wlan parent 1: handle 20 fw classid 1:20 # data
 tc filter add dev $wlan parent 1: handle 21 fw classid 1:20 # fec
 
-# qdisc
-tc qdisc add dev $wlan handle 101: parent 1:1 pfifo    # video
-tc qdisc add dev $wlan handle 102: parent 1:10 pfifo   # mavlink
-tc qdisc add dev $wlan handle 103: parent 1:20 pfifo   # tunnel
+# qdisc: inside each stream data packets (band 1) are sent before fec packets (band 2)
+
+# video
+tc qdisc add dev $wlan handle 101: parent 1:1 prio bands 2 priomap 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0
+tc filter add dev $wlan parent 101: handle 1 fw classid 101:1 # data
+tc filter add dev $wlan parent 101: handle 2 fw classid 101:2 # fec
+
+# mavlink
+tc qdisc add dev $wlan handle 102: parent 1:10 prio bands 2 priomap 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0
+tc filter add dev $wlan parent 102: handle 10 fw classid 102:1 # data
+tc filter add dev $wlan parent 102: handle 11 fw classid 102:2 # fec
+
+# tunnel
+tc qdisc add dev $wlan handle 103: parent 1:20 prio bands 2 priomap 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0
+tc filter add dev $wlan parent 103: handle 20 fw classid 103:1 # data
+tc filter add dev $wlan parent 103: handle 21 fw classid 103:2 # fec
