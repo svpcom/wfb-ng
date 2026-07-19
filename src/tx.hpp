@@ -82,6 +82,7 @@ public:
     virtual void dump_stats(uint64_t ts, uint32_t &injected_packets, uint32_t &dropped_packets, uint32_t &injected_bytes) = 0;
     virtual void update_radiotap_header(radiotap_header_t &radiotap_header) = 0;
     virtual radiotap_header_t get_radiotap_header(void) = 0;
+    uint8_t fragment_idx;
 protected:
     virtual void inject_packet(const uint8_t *buf, size_t size) = 0;
     virtual void set_mark(uint32_t idx) = 0;
@@ -95,8 +96,7 @@ private:
     fec_t* fec_p;
     int fec_k;  // RS number of primary fragments in block
     int fec_n;  // RS total number of fragments in block
-    uint64_t block_idx; // (block_idx << 8) + fragment_idx = nonce (64bit)
-    uint8_t fragment_idx;
+    uint64_t block_idx; // (block_idx << 8) + fragment_idx = nonce (64bit)    
     uint8_t** block;
     size_t max_packet_size;
     const uint64_t epoch; // Packets from old epoch will be discarded
