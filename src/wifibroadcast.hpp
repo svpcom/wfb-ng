@@ -177,7 +177,14 @@ static const uint8_t ieee80211_header[] __attribute__((unused)) = {
                             fec_type, fec_k, fec_n,  #
                             session_key,             #
                             optional TLV list }      # -- encrypted and signed using rx and tx keys
- */
+
+     3. OTA packet:
+          ota_hdr   { message type, byte:
+                              none, query firmware version, firmware version response, send OTA package segment, ACK OTA package segment, send OTA status;
+                      message data length: two bytes;
+                      message crc: 4 bytes }
+          ota_data: 0...N bytes, depending on message type; 
+*/
 
 // data nonce:  56bit block_idx + 8bit fragment_idx
 // session nonce: crypto_box_NONCEBYTES of random bytes
@@ -188,6 +195,7 @@ static const uint8_t ieee80211_header[] __attribute__((unused)) = {
 // packet types
 #define WFB_PACKET_DATA    0x1
 #define WFB_PACKET_SESSION 0x2
+#define WFB_PACKET_OTA     0x3
 
 // FEC types
 #define WFB_FEC_VDM_RS  0x1  //Reed-Solomon on Vandermonde matrix
@@ -249,6 +257,15 @@ typedef struct {
     uint8_t flags;
     uint16_t packet_size; // big endian
 }  __attribute__ ((packed)) wpacket_hdr_t;
+
+
+// OTA packet
+
+typedef struct {
+    uint8_t message_type;
+    uint16_t data_length;
+    uint32_t crc;
+}  __attribute__ ((packed)) ota_hdr_t;
 
 
 #define MAX_PAYLOAD_SIZE (WIFI_MTU - sizeof(ieee80211_header) - sizeof(wblock_hdr_t) - crypto_aead_chacha20poly1305_ABYTES - sizeof(wpacket_hdr_t))
