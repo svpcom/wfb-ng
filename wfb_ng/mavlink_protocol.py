@@ -243,7 +243,8 @@ class MavlinkTCPFactory(Factory):
         self.peer = peer
 
     def messageReceived(self, m):
-        self.peer.write(m)
+        if self.peer is not None:
+            self.peer.write(m)
 
     def write(self, data):
         for s in self.sessions:

@@ -293,11 +293,17 @@ def init_mavlink(service_name, cfg, wlans, link_id, ant_sel_f, is_cluster, rx_on
     log.msg('%s RX: %s' % (service_name, ' '.join(cmd_rx)))
     log.msg('%s TX: %s' % (service_name, ' '.join(cmd_tx)))
 
-    # Setup mavlink TCP proxy
+    # Setup mavlink incoming TCP proxy (two-way)
     if cfg.mavlink_tcp_port:
         mav_tcp_f = MavlinkTCPFactory(p_in)
         p_in.rx_hooks.append(mav_tcp_f.write)
         sockets += [ reactor.listenTCP(cfg.mavlink_tcp_port, mav_tcp_f) ]
+
+    # Setup mavlink outgoing TCP mirror (one-way)
+    if cfg.osd_tcp:
+        osd_tcp_f = MavlinkTCPFactory(None)
+        p_in.tx_hooks.append(osd_tcp_f.write)
+        sockets += [ reactor.listenTCP(cfg.osd_tcp, osd_tcp_f) ]
 
     tx_sockets_df = defer.Deferred()
     control_port_df = defer.Deferred() if cfg.control_port == 0 else None
