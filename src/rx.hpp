@@ -19,6 +19,7 @@
  */
 
 #include <unordered_map>
+#include <unordered_set>
 #include <stdint.h>
 #include <sys/socket.h>
 #include <sys/un.h>
@@ -60,6 +61,57 @@ public:
 };
 
 
+// Rotation interval of packet hash dedup sets.
+// Effective hash retention time is 1..2 intervals.
+#define DEDUP_ROTATE_MS 1000
+
+// Aggregation delay of dedup stats records in forwarder mode
+#define FWD_DEDUP_BATCH_MS 100
+
+// Set of recently seen packet hashes. Instead of storing timestamp for each entry
+// it keeps two hash sets and clears them in turn every DEDUP_ROTATE_MS,
+// so lookup and insert have O(1) amortized cost.
+class SeenPacketsSet
+{
+public:
+    SeenPacketsSet(void) : clear_idx(0), clear_ts(get_time_ms() + DEDUP_ROTATE_MS) {}
+
+    bool contains(uint64_t pkt_hash)
+    {
+        expire();
+        return hashes[0].count(pkt_hash) > 0 || hashes[1].count(pkt_hash) > 0;
+    }
+
+    void insert(uint64_t pkt_hash)
+    {
+        expire();
+        hashes[0].insert(pkt_hash);
+        hashes[1].insert(pkt_hash);
+    }
+
+private:
+    void expire(void)
+    {
+        uint64_t cur_ts = get_time_ms();
+
+        if (cur_ts < clear_ts) return;
+
+        if (cur_ts >= clear_ts + DEDUP_ROTATE_MS)
+        {
+            // More than one rotation was missed - clear both sets
+            hashes[clear_idx ^ 1].clear();
+        }
+
+        hashes[clear_idx].clear();
+        clear_idx ^= 1;
+        clear_ts = cur_ts + DEDUP_ROTATE_MS;
+    }
+
+    std::unordered_set<uint64_t> hashes[2];
+    int clear_idx;
+    uint64_t clear_ts;
+};
+
 class Forwarder : public BaseAggregator
 {
 public:
@@ -68,10 +120,16 @@ public:
     virtual void process_packet(const uint8_t *buf, size_t size, uint8_t wlan_idx, const uint8_t *antenna,
                                 const int8_t *rssi, const int8_t *noise, uint16_t freq, uint8_t mcs_index,
                                 uint8_t bandwidth,sockaddr_in *sockaddr);
-    virtual void dump_stats(void) {}
+    virtual void dump_stats(void);
 private:
+    void flush_dedup_batch(void);
+
     int sockfd;
     struct sockaddr_in saddr;
+    SeenPacketsSet seen_packets;
+    uint64_t dedup_batch_flush_ts;
+    size_t dedup_batch_size;
+    uint8_t dedup_batch[MAX_FORWARDER_PACKET_SIZE];
 };
 
 
@@ -203,7 +261,7 @@ public:
     uint32_t count_p_dec_err;
     uint32_t count_p_session;
     uint32_t count_p_data;
-    std::set<uint64_t> count_p_uniq;
+    std::set<uint64_t> count_p_uniq; // hashes of unique data packets
     uint32_t count_p_fec_recovered;
     uint32_t count_p_lost;
     uint32_t count_p_bad;
@@ -246,6 +304,9 @@ private:
     uint8_t rx_secretkey[crypto_box_SECRETKEYBYTES];
     uint8_t tx_publickey[crypto_box_PUBLICKEYBYTES];
     uint8_t session_key[crypto_aead_chacha20poly1305_KEYBYTES];
+
+    // Hashes of successfully decrypted packets to validate forwarder dedup stats
+    SeenPacketsSet decrypted_packets;
 
     // Packet loss listener for immediate notifications
     PacketLossListener* packet_loss_listener_ = nullptr;
