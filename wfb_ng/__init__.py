@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
 
-# Copyright (C) 2018-2024 Vasily Evseenko <svpcom@p2ptech.org>
+# Copyright (C) 2018-2026 Vasily Evseenko <svpcom@p2ptech.org>
 
 #
 #   This program is free software; you can redistribute it and/or modify
@@ -43,7 +43,7 @@ from twisted.python.logfile import LogFile
 
 version_msg = """\
 WFB-ng version %(common.version)s
-Copyright (C) 2018-2024 Vasily Evseenko <svpcom@p2ptech.org>
+Copyright (C) 2018-2026 Vasily Evseenko <svpcom@p2ptech.org>
 License GPLv3: GNU GPL version 3 <http://gnu.org/licenses/gpl.html>
 
 This is free software; you are free to change and redistribute it.

@@ -1,6 +1,6 @@
 /*
  * Copyright (C) 2008 Wim Taymans <wim.taymans at gmail.com>
- * Copyright (C) 2025 Vasily Evseenko <svpcom@p2ptech.org>
+ * Copyright (C) 2025 - 2026 Vasily Evseenko <svpcom@p2ptech.org>
 
  *   This program is free software; you can redistribute it and/or modify
  *   it under the terms of the GNU General Public License as published by

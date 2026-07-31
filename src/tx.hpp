@@ -1,7 +1,7 @@
 #pragma once
 // -*- C++ -*-
 //
-// Copyright (C) 2017 - 2024 Vasily Evseenko <svpcom@p2ptech.org>
+// Copyright (C) 2017 - 2026 Vasily Evseenko <svpcom@p2ptech.org>
 
 /*
  *   This program is free software; you can redistribute it and/or modify
