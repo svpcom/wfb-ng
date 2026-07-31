@@ -58,6 +58,11 @@ public:
                                 uint8_t bandwidth, sockaddr_in *sockaddr) = 0;
 
     virtual void dump_stats(void) = 0;
+
+    // Deadline of internally buffered data that must be sent
+    // even if no new packets arrive. UINT64_MAX if nothing is buffered.
+    virtual uint64_t get_flush_ts(void) { return UINT64_MAX; }
+    virtual void flush(void) {}
 };
 
 
@@ -121,6 +126,8 @@ public:
                                 const int8_t *rssi, const int8_t *noise, uint16_t freq, uint8_t mcs_index,
                                 uint8_t bandwidth,sockaddr_in *sockaddr);
     virtual void dump_stats(void);
+    virtual uint64_t get_flush_ts(void);
+    virtual void flush(void);
 private:
     void flush_dedup_batch(void);
 

@@ -505,6 +505,18 @@ void Forwarder::dump_stats(void)
 }
 
 
+uint64_t Forwarder::get_flush_ts(void)
+{
+    return dedup_batch_size > 1 ? dedup_batch_flush_ts : UINT64_MAX;
+}
+
+
+void Forwarder::flush(void)
+{
+    flush_dedup_batch();
+}
+
+
 Forwarder::~Forwarder()
 {
     close(sockfd);
@@ -1159,7 +1171,8 @@ void radio_loop(int argc, char* const *argv, int optind, uint32_t channel_id, un
     for(;;)
     {
         uint64_t cur_ts = get_time_ms();
-        int rc = poll(fds, nfds, log_send_ts > cur_ts ? log_send_ts - cur_ts : 0);
+        uint64_t deadline = min(log_send_ts, agg->get_flush_ts());
+        int rc = poll(fds, nfds, deadline > cur_ts ? deadline - cur_ts : 0);
 
         if (rc < 0){
             if (errno == EINTR || errno == EAGAIN) continue;
@@ -1171,6 +1184,11 @@ void radio_loop(int argc, char* const *argv, int optind, uint32_t channel_id, un
         {
             agg->dump_stats();
             log_send_ts = cur_ts + log_interval - ((cur_ts - log_send_ts) % log_interval);
+        }
+
+        if (cur_ts >= agg->get_flush_ts())
+        {
+            agg->flush();
         }
 
         if (rc == 0) continue; // timeout expired
