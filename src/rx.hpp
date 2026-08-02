@@ -68,18 +68,21 @@ public:
 
 // Rotation interval of packet hash dedup sets.
 // Effective hash retention time is 1..2 intervals.
-#define DEDUP_ROTATE_MS 1000
+#define FWD_ROTATE_MS 100
+#define AGG_ROTATE_MS 1000
 
 // Aggregation delay of dedup stats records in forwarder mode
 #define FWD_DEDUP_BATCH_MS 100
 
 // Set of recently seen packet hashes. Instead of storing timestamp for each entry
-// it keeps two hash sets and clears them in turn every DEDUP_ROTATE_MS,
+// it keeps two hash sets and clears them in turn every rotate_ms,
 // so lookup and insert have O(1) amortized cost.
 class SeenPacketsSet
 {
 public:
-    SeenPacketsSet(void) : clear_idx(0), clear_ts(get_time_ms() + DEDUP_ROTATE_MS) {}
+    SeenPacketsSet(uint64_t rotate_ms) : clear_idx(0), rotate_ms(rotate_ms), clear_ts(get_time_ms() + rotate_ms)
+    {
+    }
 
     bool contains(uint64_t pkt_hash)
     {
@@ -101,7 +104,7 @@ private:
 
         if (cur_ts < clear_ts) return;
 
-        if (cur_ts >= clear_ts + DEDUP_ROTATE_MS)
+        if (cur_ts >= clear_ts + rotate_ms)
         {
             // More than one rotation was missed - clear both sets
             hashes[clear_idx ^ 1].clear();
@@ -109,11 +112,12 @@ private:
 
         hashes[clear_idx].clear();
         clear_idx ^= 1;
-        clear_ts = cur_ts + DEDUP_ROTATE_MS;
+        clear_ts = cur_ts + rotate_ms;
     }
 
     std::unordered_set<uint64_t> hashes[2];
     int clear_idx;
+    const uint64_t rotate_ms;
     uint64_t clear_ts;
 };
 

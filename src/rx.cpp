@@ -283,7 +283,7 @@ Aggregator::Aggregator(const string &keypair, uint64_t epoch, uint32_t channel_i
     count_p_all(0), count_b_all(0), count_p_dec_err(0), count_p_session(0), count_p_data(0), count_p_fec_recovered(0),
     count_p_lost(0), count_p_bad(0), count_p_override(0), count_p_outgoing(0), count_b_outgoing(0),
     fec_p(NULL), fec_k(-1), fec_n(-1), seq(0), rx_ring{}, rx_ring_front(0), rx_ring_alloc(0),
-    last_known_block((uint64_t)-1), epoch(epoch), channel_id(channel_id)
+    last_known_block((uint64_t)-1), epoch(epoch), channel_id(channel_id), decrypted_packets(AGG_ROTATE_MS)
 {
     memset(session_key, '\0', sizeof(session_key));
     memset(session_hash, '\0', sizeof(session_hash));
@@ -374,7 +374,7 @@ void Aggregator::deinit_fec(void)
 }
 
 
-Forwarder::Forwarder(const string &client_addr, int client_port, int snd_buf_size) : dedup_batch_flush_ts(0), dedup_batch_size(1)
+Forwarder::Forwarder(const string &client_addr, int client_port, int snd_buf_size) : seen_packets(FWD_ROTATE_MS), dedup_batch_flush_ts(0), dedup_batch_size(1)
 {
     // Empty batch has size 1 because dedup_batch[0] is reserved for packet type header
     dedup_batch[0] = WFB_PACKET_DEDUP_STATS;
