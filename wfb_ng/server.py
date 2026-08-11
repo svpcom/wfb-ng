@@ -113,9 +113,11 @@ def init_wlans(max_bw, wlans):
                     yield call_and_check_rc('nmcli', 'device', 'set', wlan, 'managed', 'no')
                     yield df_sleep(1)
 
-            yield call_and_check_rc('ip', 'link', 'set', wlan, 'down')
-            yield call_and_check_rc('iw', 'dev', wlan, 'set', 'monitor', 'otherbss')
-            yield call_and_check_rc('ip', 'link', 'set', wlan, 'up')
+            monitor_mode_satus = yield call_and_check_rc('iw', 'dev', wlan, 'info', log_stdout=False)
+            if not b'type monitor' in monitor_mode_satus:
+                yield call_and_check_rc('ip', 'link', 'set', wlan, 'down')
+                yield call_and_check_rc('iw', 'dev', wlan, 'set', 'monitor', 'otherbss')
+                yield call_and_check_rc('ip', 'link', 'set', wlan, 'up')
 
             # You can set own frequency channel for each card
             if isinstance(settings.common.wifi_channel, dict):
