@@ -31,6 +31,9 @@
 #include <set>
 #include <string.h>
 #include <stdexcept>
+#include <algorithm>
+#include <limits.h>
+#include <math.h>
 
 #include "wifibroadcast.hpp"
 #include "zfex.h"
@@ -160,6 +163,33 @@ static inline int modN(int x, int base)
     return (base + (x % base)) % base;
 }
 
+// RSSI and SNR are logarithmic values, so they shall be averaged in the linear scale.
+// Use lookup table to avoid pow() call for every received packet.
+static inline double db_to_linear(int8_t db)
+{
+    static const struct db_lut_t
+    {
+        double v[256];
+        db_lut_t(void)
+        {
+            for(int i = 0; i < 256; i++)
+            {
+                v[i] = pow(10.0, (int8_t)i / 10.0);
+            }
+        }
+    } lut;
+
+    return lut.v[(uint8_t)db];
+}
+
+static inline int8_t linear_to_db(double linear)
+{
+    if (linear <= 0) return SCHAR_MIN;
+
+    long db = lround(10.0 * log10(linear));
+    return (int8_t)std::min(std::max(db, (long)SCHAR_MIN), (long)SCHAR_MAX);
+}
+
 class rxAntennaItem
 {
 public:
@@ -181,16 +211,26 @@ public:
             snr_min = std::min(snr, snr_min);
             snr_max = std::max(snr, snr_max);
         }
-        rssi_sum += rssi;
-        snr_sum += snr;
+        rssi_sum += db_to_linear(rssi);
+        snr_sum += db_to_linear(snr);
         count_all += 1;
     }
 
+    int8_t rssi_avg(void) const
+    {
+        return count_all > 0 ? linear_to_db(rssi_sum / count_all) : 0;
+    }
+
+    int8_t snr_avg(void) const
+    {
+        return count_all > 0 ? linear_to_db(snr_sum / count_all) : 0;
+    }
+
     int32_t count_all;
-    int32_t rssi_sum;
+    double rssi_sum;  // sum of rssi in linear scale
     int8_t rssi_min;
     int8_t rssi_max;
-    int32_t snr_sum;
+    double snr_sum;   // sum of snr in linear scale
     int8_t snr_min;
     int8_t snr_max;
 };

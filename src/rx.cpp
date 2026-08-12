@@ -598,8 +598,8 @@ void Aggregator::dump_stats(void)
     {
         IPC_MSG("%" PRIu64 "\tRX_ANT\t%u:%u:%u\t%" PRIx64 "\t%d" ":%d:%d:%d" ":%d:%d:%d\n",
                 ts, it->first.freq, it->first.mcs_index, it->first.bandwidth, it->first.antenna_id, it->second.count_all,
-                it->second.rssi_min, it->second.rssi_sum / it->second.count_all, it->second.rssi_max,
-                it->second.snr_min, it->second.snr_sum / it->second.count_all, it->second.snr_max);
+                it->second.rssi_min, it->second.rssi_avg(), it->second.rssi_max,
+                it->second.snr_min, it->second.snr_avg(), it->second.snr_max);
     }
 
     IPC_MSG("%" PRIu64 "\tPKT\t%u:%u:%u:%u:%u:%u:%u:%u:%u:%u:%u\n", ts,

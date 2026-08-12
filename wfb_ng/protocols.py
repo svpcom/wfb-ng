@@ -22,6 +22,7 @@ import msgpack
 import os
 import time
 import json
+import math
 
 from itertools import groupby
 from copy import deepcopy
@@ -43,6 +44,17 @@ class WFBFlags(object):
 
 
 fec_types = {1: 'VDM_RS'}
+
+
+# RSSI and SNR are logarithmic values, so they shall be averaged in the linear scale
+
+def db_to_linear(db):
+    return 10.0 ** (db / 10.0)
+
+
+def linear_to_db(linear):
+    return int(round(10.0 * math.log10(linear))) if linear > 0 else -128
+
 
 class StatisticsMsgPackProtocol(Int32StringReceiver):
     def connectionMade(self):
@@ -225,26 +237,29 @@ class AntStatsAndSelector(object):
                   rssi_min, rssi_avg, rssi_max,
                   snr_min, snr_avg, snr_max)) in ant_stats.items():
 
+                rssi_sum = db_to_linear(rssi_avg) * pkt_s
+                snr_sum = db_to_linear(snr_avg) * pkt_s
+
                 if ant_id not in stats_agg:
                     stats_agg[ant_id] = (pkt_s,
-                                         rssi_min, rssi_avg * pkt_s, rssi_max,
-                                         snr_min, snr_avg * pkt_s, snr_max)
+                                         rssi_min, rssi_sum, rssi_max,
+                                         snr_min, snr_sum, snr_max)
                 else:
                     tmp = stats_agg[ant_id]
                     stats_agg[ant_id] = (pkt_s + tmp[0],
                                         min(rssi_min, tmp[1]),
-                                        rssi_avg * pkt_s + tmp[2],
+                                        rssi_sum + tmp[2],
                                         max(rssi_max, tmp[3]),
                                         min(snr_min, tmp[4]),
-                                        snr_avg * pkt_s + tmp[5],
+                                        snr_sum + tmp[5],
                                         max(snr_max, tmp[6]))
 
         return dict((ant_id, (pkt_s,
-                              rssi_min, rssi_avg // pkt_s, rssi_max,
-                              snr_min, snr_avg // pkt_s, snr_max)) \
+                              rssi_min, linear_to_db(rssi_sum / pkt_s), rssi_max,
+                              snr_min, linear_to_db(snr_sum / pkt_s), snr_max)) \
                     for ant_id, (pkt_s,
-                                 rssi_min, rssi_avg, rssi_max,
-                                 snr_min, snr_avg, snr_max) in stats_agg.items())
+                                 rssi_min, rssi_sum, rssi_max,
+                                 snr_min, snr_sum, snr_max) in stats_agg.items())
 
     def select_tx_antenna(self, stats_agg):
         wlan_rssi_and_pkts = {}
