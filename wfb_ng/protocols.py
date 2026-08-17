@@ -26,8 +26,9 @@ import math
 
 from itertools import groupby
 from copy import deepcopy
+from zope.interface import implementer
 from twisted.python import log, failure
-from twisted.internet import reactor, defer, threads, task
+from twisted.internet import reactor, defer, threads, task, interfaces
 from twisted.internet.protocol import ProcessProtocol, Factory, ConnectedDatagramProtocol
 from twisted.protocols.basic import LineReceiver, Int32StringReceiver
 
@@ -56,6 +57,48 @@ def linear_to_db(linear):
     return int(round(10.0 * math.log10(linear))) if linear > 0 else -128
 
 
+def group_by_freq_and_rxid(ant_stats_by_rx):
+    stats_agg = {}
+    freqs = set()
+    mbw = set()
+
+    for ant_stats in ant_stats_by_rx.values():
+        for (((freq, mcs_index, bandwidth), ant_id),
+             (pkt_s,
+              rssi_min, rssi_avg, rssi_max,
+              snr_min, snr_avg, snr_max)) in ant_stats.items():
+
+            freqs.add(freq)
+            mbw.add((mcs_index, bandwidth))
+
+            rssi_sum = db_to_linear(rssi_avg) * pkt_s
+            snr_sum = db_to_linear(snr_avg) * pkt_s
+
+            if ant_id not in stats_agg:
+                stats_agg[ant_id] = (pkt_s,
+                                     rssi_min, rssi_sum, rssi_max,
+                                     snr_min, snr_sum, snr_max)
+            else:
+                tmp = stats_agg[ant_id]
+                stats_agg[ant_id] = (pkt_s + tmp[0],
+                                    min(rssi_min, tmp[1]),
+                                    rssi_sum + tmp[2],
+                                    max(rssi_max, tmp[3]),
+                                    min(snr_min, tmp[4]),
+                                    snr_sum + tmp[5],
+                                    max(snr_max, tmp[6]))
+
+    ant_stat = dict((ant_id, (pkt_s,
+                              rssi_min, linear_to_db(rssi_sum / pkt_s), rssi_max,
+                              snr_min, linear_to_db(snr_sum / pkt_s), snr_max)) \
+                    for ant_id, (pkt_s,
+                                 rssi_min, rssi_sum, rssi_max,
+                                 snr_min, snr_sum, snr_max) in stats_agg.items())
+
+    return ant_stat, freqs, mbw
+
+
+@implementer(interfaces.IPushProducer)
 class StatisticsMsgPackProtocol(Int32StringReceiver):
     def connectionMade(self):
         # Push all config values for CLI into session
@@ -71,16 +114,36 @@ class StatisticsMsgPackProtocol(Int32StringReceiver):
 
         self.factory.ui_sessions.append(self)
 
+        # setup push producer
+        self.paused = False
+        self.transport.registerProducer(self, True)
+
     def stringReceived(self, string):
         pass
 
     def connectionLost(self, reason):
         self.factory.ui_sessions.remove(self)
 
+        if reactor.running:
+            self.transport.unregisterProducer()
+
+    def pauseProducing(self):
+        self.paused = True
+        log.msg('Pause msgpack stat stream to %r' % (self.transport.getPeer(),))
+
+    def resumeProducing(self):
+        self.paused = False
+        log.msg('Resume msgpack stat stream to %r' % (self.transport.getPeer(),))
+
+    def stopProducing(self):
+        self.paused = True
+
     def send_stats(self, data):
-        self.sendString(msgpack.packb(data, use_bin_type=True))
+        if not self.paused:
+            self.sendString(msgpack.packb(data, use_bin_type=True))
 
 
+@implementer(interfaces.IPushProducer)
 class StatisticsJSONProtocol(LineReceiver):
     delimiter = b'\n'
 
@@ -95,13 +158,34 @@ class StatisticsJSONProtocol(LineReceiver):
         self.sendLine(msg.encode('utf-8'))
         self.factory.ui_sessions.append(self)
 
+        # setup push producer
+        self.paused = False
+        self.transport.registerProducer(self, True)
+
     def lineReceived(self, line):
         pass
 
     def connectionLost(self, reason):
         self.factory.ui_sessions.remove(self)
 
+        if reactor.running:
+            self.transport.unregisterProducer()
+
+    def pauseProducing(self):
+        self.paused = True
+        log.msg('Pause json stat stream to %r' % (self.transport.getPeer(),))
+
+    def resumeProducing(self):
+        self.paused = False
+        log.msg('Resume json stat stream to %r' % (self.transport.getPeer(),))
+
+    def stopProducing(self):
+        self.paused = True
+
     def send_stats(self, data):
+        if self.paused:
+            return
+
         data = dict(data)
 
         if data['type'] == 'rx':
@@ -228,39 +312,6 @@ class AntStatsAndSelector(object):
     def add_rssi_cb(self, rssi_cb):
         self.rssi_cb_l.append(rssi_cb)
 
-    def _stats_agg_by_freq_and_rxid(self, ant_stats_by_rx):
-        stats_agg = {}
-
-        for ant_stats in ant_stats_by_rx.values():
-            for (((freq, mcs_index, bandwidth), ant_id),
-                 (pkt_s,
-                  rssi_min, rssi_avg, rssi_max,
-                  snr_min, snr_avg, snr_max)) in ant_stats.items():
-
-                rssi_sum = db_to_linear(rssi_avg) * pkt_s
-                snr_sum = db_to_linear(snr_avg) * pkt_s
-
-                if ant_id not in stats_agg:
-                    stats_agg[ant_id] = (pkt_s,
-                                         rssi_min, rssi_sum, rssi_max,
-                                         snr_min, snr_sum, snr_max)
-                else:
-                    tmp = stats_agg[ant_id]
-                    stats_agg[ant_id] = (pkt_s + tmp[0],
-                                        min(rssi_min, tmp[1]),
-                                        rssi_sum + tmp[2],
-                                        max(rssi_max, tmp[3]),
-                                        min(snr_min, tmp[4]),
-                                        snr_sum + tmp[5],
-                                        max(snr_max, tmp[6]))
-
-        return dict((ant_id, (pkt_s,
-                              rssi_min, linear_to_db(rssi_sum / pkt_s), rssi_max,
-                              snr_min, linear_to_db(snr_sum / pkt_s), snr_max)) \
-                    for ant_id, (pkt_s,
-                                 rssi_min, rssi_sum, rssi_max,
-                                 snr_min, snr_sum, snr_max) in stats_agg.items())
-
     def select_tx_antenna(self, stats_agg):
         wlan_rssi_and_pkts = {}
         max_pkts = 0
@@ -327,7 +378,8 @@ class AntStatsAndSelector(object):
         ant_stats_by_rx = dict((rx_id, ant_stats) for rx_id, (ant_stats, packet_stats) in cur_stats.items())
         packet_stats_by_rx = dict((rx_id, packet_stats) for rx_id, (ant_stats, packet_stats) in cur_stats.items())
 
-        stats_agg = self._stats_agg_by_freq_and_rxid(ant_stats_by_rx)
+        stats_agg = group_by_freq_and_rxid(ant_stats_by_rx)[0]
+
         # (rssi,noise) tuples
         card_rssi_l = list((rssi_avg, rssi_avg - snr_avg)
                            for pkt_s,

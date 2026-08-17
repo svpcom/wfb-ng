@@ -28,11 +28,13 @@ import struct
 import fcntl
 import argparse
 
+from itertools import groupby
 from twisted.python import log
 from twisted.internet import reactor, defer
 from twisted.internet.protocol import ReconnectingClientFactory
 from twisted.protocols.basic import Int32StringReceiver
 from .server import parse_services
+from .protocols import group_by_freq_and_rxid
 from .common import abort_on_crash, exit_status
 from .conf import settings
 from . import version_msg
@@ -143,6 +145,10 @@ class AntennaStat(Int32StringReceiver):
     is_cluster = False
     log_interval = settings.common.log_interval
     temp_overheat_warning = settings.common.temp_overheat_warning
+    all_freqs = None
+
+    def __init__(self):
+        self.all_freqs = set()
 
     def stringReceived(self, string):
         attrs = msgpack.unpackb(string, strict_map_key=False, use_list=False, raw=False)
@@ -210,15 +216,31 @@ class AntennaStat(Int32StringReceiver):
                 lpad = ''
                 rpad = ''
 
-            addstr_markup(window, 2, 20, '{Freq MCS BW %s[ANT]%s pkt/s dloss}     {RSSI} [dBm]        {SNR} [dB]' % (lpad, rpad))
-            for y, (((freq, mcs_index, bandwidth), ant_id), v) in enumerate(sorted(stats_d.items()), 3):
+            ant_stats, freqs, mbw = group_by_freq_and_rxid({rx_id: stats_d})
+            self.all_freqs.update(freqs)
+
+            freqs_lines = []
+
+            for _, grp in groupby(enumerate(sorted(self.all_freqs)), key=lambda x: x[0] // 10):
+                freqs_lines.append(' '.join('{%4d}' % (freq,) if freq in freqs else '%4d' % (freq,)
+                                            for _, freq in grp))
+
+            addstr_markup(window, 1, 20, '{M/BW:} %s' % (' '.join('%d/%d' % (mcs, bw) for mcs, bw in sorted(mbw))))
+
+            y_off = 2
+            for fl in freqs_lines:
+                addstr_markup(window, y_off, 20, '{Freq:} %s' % (fl,))
+                y_off += 1
+
+            addstr_markup(window, y_off + 1, 20, '%s[ANT]%s pkt/s dloss}     {RSSI} [dBm]        {SNR} [dB]' % (lpad, rpad))
+
+            for y, (ant_id, v) in enumerate(sorted(ant_stats.items()), y_off + 2):
                 pkt_s, rssi_min, rssi_avg, rssi_max, snr_min, snr_avg, snr_max = v
                 if y < ymax:
                     active_tx = ((ant_id >> 8) == tx_wlan)
                     diff_loss = max(p['uniq'][0] - pkt_s, 0)
-                    addstr_markup(window, y, 20, '%04d %3d %2d %s%s%s  %4d  %s%4d%s  %3d < {%3d} < %3d  %3d < {%3d} < %3d' % \
-                           (freq, mcs_index, bandwidth,
-                            '{' if active_tx else '', format_ant(ant_id), '}' if active_tx else '',
+                    addstr_markup(window, y, 20, '%s%s%s  %4d  %s%4d%s  %3d < {%3d} < %3d  %3d < {%3d} < %3d' % \
+                           ('{' if active_tx else '', format_ant(ant_id), '}' if active_tx else '',
                             1000 * pkt_s // self.log_interval,
                             '{' if diff_loss else '', 1000 * diff_loss // self.log_interval, '}' if diff_loss else '',
                             rssi_min, rssi_avg, rssi_max,
