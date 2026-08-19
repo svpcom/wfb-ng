@@ -33,6 +33,7 @@ from twisted.python import log
 from twisted.internet import reactor, defer
 from twisted.internet.protocol import ReconnectingClientFactory
 from twisted.protocols.basic import Int32StringReceiver
+from twisted.protocols.policies import TimeoutMixin
 from .server import parse_services
 from .protocols import group_by_freq_and_rxid
 from .common import abort_on_crash, exit_status
@@ -140,7 +141,7 @@ def format_ant(ant_id):
         return '%08X:%X:%X' % (ant_id >> 32, (ant_id >> 8) & 0xff, ant_id & 0xff)
 
 
-class AntennaStat(Int32StringReceiver):
+class AntennaStat(Int32StringReceiver, TimeoutMixin):
     MAX_LENGTH = 1024 * 1024
     is_cluster = False
     log_interval = settings.common.log_interval
@@ -149,6 +150,25 @@ class AntennaStat(Int32StringReceiver):
 
     def __init__(self):
         self.all_freqs = set()
+
+    def stats_timeout(self):
+        # rx/tx stats arrive every log_interval; a server restart can leave
+        # the tcp connection open but silent, hanging the cli forever
+        return max(5.0, 5.0 * self.log_interval / 1000.0)
+
+    def connectionMade(self):
+        self.setTimeout(self.stats_timeout())
+
+    def dataReceived(self, data):
+        self.resetTimeout()
+        Int32StringReceiver.dataReceived(self, data)
+
+    def timeoutConnection(self):
+        set_window_title('No data from wifibroadcast@%s.service, reconnecting...' % (self.factory.profile,))
+        self.transport.abortConnection()
+
+    def connectionLost(self, reason):
+        self.setTimeout(None)
 
     def stringReceived(self, string):
         attrs = msgpack.unpackb(string, strict_map_key=False, use_list=False, raw=False)
@@ -161,6 +181,7 @@ class AntennaStat(Int32StringReceiver):
             # Fallbacks added for compatibility with old server versions
             self.is_cluster = attrs.get('is_cluster', False)
             self.log_interval = attrs.get('log_interval', settings.common.log_interval)
+            self.setTimeout(self.stats_timeout())
             self.temp_overheat_warning = attrs.get('temp_overheat_warning', settings.common.temp_overheat_warning)
             set_window_title(attrs['cli_title'])
 
