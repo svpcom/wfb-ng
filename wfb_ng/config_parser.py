@@ -56,6 +56,16 @@ class Section(object):
         return copy.deepcopy(self.__dict__, memo)
 
 
+def settings_from_dict(data):
+    # Reverse of __deepcopy__: rebuild Settings from settings pushed by a remote server
+    settings = Settings()
+    for section_name, section_dict in data.items():
+        section = Section()
+        section.__dict__.update(section_dict)
+        setattr(settings, section_name, section)
+    return settings
+
+
 def parse_config(basedir, cfg_patterns, interpolate=True):
     settings = Settings()
     settings.path = Section()

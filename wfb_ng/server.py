@@ -271,7 +271,7 @@ def init(profiles, wlans, cluster_mode):
         link_id = hash_link_domain(profile_cfg.link_domain)
 
         if profile_cfg.stats_port:
-            p_f = MsgPackAPIFactory(ant_sel_f.ui_sessions, is_cluster, cli_title)
+            p_f = MsgPackAPIFactory(ant_sel_f.ui_sessions, is_cluster, cli_title, profile)
             sockets.append(reactor.listenTCP(profile_cfg.stats_port, p_f))
 
         if profile_cfg.api_port:

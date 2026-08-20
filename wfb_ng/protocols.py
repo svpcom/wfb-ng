@@ -109,7 +109,9 @@ class StatisticsMsgPackProtocol(Int32StringReceiver):
                                            cli_title=self.factory.cli_title or "",
                                            is_cluster=self.factory.is_cluster,
                                            log_interval=settings.common.log_interval,
-                                           temp_overheat_warning=settings.common.temp_overheat_warning),
+                                           temp_overheat_warning=settings.common.temp_overheat_warning,
+                                           profile=self.factory.profile,
+                                           settings=deepcopy(settings)),
                                       use_bin_type=True))
 
         self.factory.ui_sessions.append(self)
@@ -255,10 +257,11 @@ class MsgPackAPIFactory(Factory):
     noisy = False
     protocol = StatisticsMsgPackProtocol
 
-    def __init__(self, ui_sessions, is_cluster=False, cli_title=None):
+    def __init__(self, ui_sessions, is_cluster=False, cli_title=None, profile=None):
         self.ui_sessions = ui_sessions
         self.is_cluster = is_cluster
         self.cli_title = cli_title
+        self.profile = profile
 
 
 class JSONAPIFactory(Factory):

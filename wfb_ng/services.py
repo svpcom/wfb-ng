@@ -54,16 +54,19 @@ def hash_link_domain(link_domain):
     return int.from_bytes(hashlib.sha1(link_domain.encode('utf-8')).digest()[:3], 'big')
 
 
-def parse_services(profile_name, udp_port_allocator):
+def parse_services(profile_name, udp_port_allocator, cfg_settings=None):
+    if cfg_settings is None:
+        cfg_settings = settings
+
     res = []
-    for stream in getattr(settings, profile_name).streams:
+    for stream in getattr(cfg_settings, profile_name).streams:
         cfg = Section()
         stream = dict(stream)
         name = stream.pop('name')
         service_type = stream.pop('service_type')
 
         for profile in stream.pop('profiles'):
-            cfg.__dict__.update(getattr(settings, profile).__dict__)
+            cfg.__dict__.update(getattr(cfg_settings, profile).__dict__)
 
         cfg.__dict__.update(stream)
 
