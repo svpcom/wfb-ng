@@ -741,6 +741,24 @@ uint32_t extract_rxq_overflow(struct msghdr *msg)
 
 void data_source(unique_ptr<Transmitter> &t, vector<int> &rx_fd, int control_fd, int fec_timeout, bool mirror, int log_interval)
 {
+    int FEC_K = 0, FEC_N = 0;
+    int max_tx_buffer_size=64;
+    int treshold = 32;
+    // --- SHARED MEMORY INIT to read TxBuffer free slots---
+    volatile int *shared_wifi_free_cnt = nullptr;
+    int stats_fd = open("/dev/wifi_tx_buffer_free_frames", O_RDONLY);
+    if (stats_fd >= 0) {
+        void* mmap_ptr = mmap(NULL, 4096, PROT_READ, MAP_SHARED, stats_fd, 0);
+        if (mmap_ptr != MAP_FAILED) {
+            shared_wifi_free_cnt = (volatile int *)mmap_ptr;            
+            WFB_INFO("TxBuffer Counter found!\r\n");
+            t->get_fec(FEC_K, FEC_N);
+        }
+        close(stats_fd); // The mapping persists after closing FD
+    }else
+        WFB_INFO(" NO TxBuffer Counter /dev/wifi_tx_buffer_free_frames\r\n");
+    // --- END SHARED MEMORY INIT ---
+
     int nfds = rx_fd.size();
     assert(nfds > 0);
 
@@ -767,6 +785,7 @@ void data_source(unique_ptr<Transmitter> &t, vector<int> &rx_fd, int control_fd,
     uint32_t count_b_injected = 0;  // successfully injected bytes (include additional fec packets)
     uint32_t count_p_dropped = 0;   // dropped due to rxq overflows or injection timeout
     uint32_t count_p_truncated = 0; // injected large packets that were truncated
+    uint32_t count_p_wait_tx_buffer = 0;     
     int start_fd_idx = 0;
 
     for(;;)
@@ -793,8 +812,8 @@ void data_source(unique_ptr<Transmitter> &t, vector<int> &rx_fd, int control_fd,
         {
             t->dump_stats(cur_ts, count_p_injected, count_p_dropped, count_b_injected);
 
-            IPC_MSG("%" PRIu64 "\tPKT\t%u:%u:%u:%u:%u:%u:%u\n",
-                    cur_ts, count_p_fec_timeouts, count_p_incoming, count_b_incoming, count_p_injected, count_b_injected, count_p_dropped, count_p_truncated);
+            IPC_MSG("%" PRIu64 "\tPKT\t%u:%u:%u:%u:%u:%u:%u:%u\n",
+                    cur_ts, count_p_fec_timeouts, count_p_incoming, count_b_incoming, count_p_injected, count_b_injected, count_p_dropped, count_p_truncated, count_p_wait_tx_buffer);
             IPC_MSG_SEND();
 
             if(count_p_dropped)
@@ -814,6 +833,7 @@ void data_source(unique_ptr<Transmitter> &t, vector<int> &rx_fd, int control_fd,
             count_b_injected = 0;
             count_p_dropped = 0;
             count_p_truncated = 0;
+            count_p_wait_tx_buffer=0;
 
             log_send_ts = cur_ts + log_interval - ((cur_ts - log_send_ts) % log_interval);
         }
@@ -1069,6 +1089,23 @@ void data_source(unique_ptr<Transmitter> &t, vector<int> &rx_fd, int control_fd,
                         session_key_announce_ts = cur_ts + SESSION_KEY_ANNOUNCE_MSEC;
                     }
 
+                    
+                    //Check TxBuffer only if exposed by the driver
+                    if (stats_fd>0 && t->fragment_idx == 0 && shared_wifi_free_cnt != nullptr) {                        
+                        //This can tune how aggressively we will control the encoder to slow down.
+                        //Higher possible treshold wil force it slow down and drop frames more often.
+                        //Lower treshold will increase jitter&delay, but with less dropped frames
+                        treshold=max_tx_buffer_size - 1 * FEC_N; //Force CBR aggressively
+                        //treshold= FEC_N;//max efficiency but more jitter
+
+                        max_tx_buffer_size = std::max(max_tx_buffer_size, (int)*shared_wifi_free_cnt);//adjust max_tx_buffer_size if bigger 
+                        while (*shared_wifi_free_cnt <= treshold) {//buffer is usually 64, so 32 is a good compromise
+                            // Driver is congested. Sleep for roughly 5-10ms. // This is long enough for the Linux scheduler to actually work and for the WiFi card to clear a chunk of its buffer.                                                            
+                            usleep(5000); 
+                            count_p_wait_tx_buffer++;
+                        }
+                    }
+
                     t->send_packet(buf, rsize, 0);
 
                     if (cur_ts >= log_send_ts)  // log timeout expired
@@ -1088,6 +1125,11 @@ void data_source(unique_ptr<Transmitter> &t, vector<int> &rx_fd, int control_fd,
         {
             fec_close_ts = get_time_ms() + fec_timeout;
         }
+    }
+    // Clean up shared memory link
+    if (shared_wifi_free_cnt != nullptr) {
+        munmap((void*)shared_wifi_free_cnt, 4096);
+        shared_wifi_free_cnt = nullptr;
     }
 }
 
