@@ -158,6 +158,8 @@ wfb_tx -I {{ attrs['tx_port_base'] }} -R {{ settings.common.tx_rcv_buf_size }} {
 {% endif %}
 
 echo "WFB-ng init done"
+# Type=notify unit: the cards are in monitor mode, dependents may start now
+[ -z "$NOTIFY_SOCKET" ] || systemd-notify --ready --pid=$$
 wait -n
 
 '''
