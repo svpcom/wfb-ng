@@ -1,6 +1,7 @@
 [Unit]
 Description=WFB-ng standalone server, profile %i
 Requires=wifibroadcast.service
+After=network.target wifibroadcast.service
 ReloadPropagatedFrom=wifibroadcast.service
 
 [Service]

@@ -29,7 +29,7 @@ import argparse
 import yaml
 
 from twisted.python import log, failure
-from twisted.internet import reactor, defer
+from twisted.internet import reactor, defer, utils
 
 from . import _log_msg, ConsoleObserver, ErrorSafeLogFile, call_and_check_rc, ExecError, version_msg, LogLevel, set_log_level
 from .common import abort_on_crash, exit_status, df_sleep, search_attr
@@ -107,8 +107,11 @@ def init_wlans(max_bw, wlans):
             log.msg('Interface %s has driver %s' % (wlan, driver))
 
             if settings.common.set_nm_unmanaged and os.path.exists('/usr/bin/nmcli'):
-                device_status = yield call_and_check_rc('nmcli', 'device', 'show', wlan, log_stdout=False)
-                if not b'(unmanaged)' in device_status:
+                # rc != 0: NetworkManager not running or unaware of the device
+                stdout, stderr, rc = yield utils.getProcessOutputAndValue('nmcli', ('-t', '-f', 'GENERAL.STATE', 'device', 'show', wlan), env=os.environ)
+                if rc != 0:
+                    log.msg('nmcli: %s' % (stderr.decode(errors='ignore').strip(),))
+                elif b'unmanaged' not in stdout:
                     log.msg('Switch %s to unmanaged state' % (wlan,))
                     yield call_and_check_rc('nmcli', 'device', 'set', wlan, 'managed', 'no')
                     yield df_sleep(1)

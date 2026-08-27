@@ -119,11 +119,15 @@ iw reg set {{ settings.common.wifi_region | quote }}
 {% for wlan in  wlans %}
 
 # init {{ wlan | quote }}
-if which nmcli > /dev/null && ! nmcli device show {{ wlan | quote }} | grep -q '(unmanaged)'
-then
-  nmcli device set {{ wlan | quote }} managed no
-  sleep 1
-fi
+# empty: no nmcli, NetworkManager not running or unaware of the device
+nm_state=$(nmcli -t -f GENERAL.STATE device show {{ wlan | quote }} 2>/dev/null || true)
+case "$nm_state" in
+  ''|*unmanaged*) ;;
+  *)
+    nmcli device set {{ wlan | quote }} managed no
+    sleep 1
+    ;;
+esac
 
 ip link set {{ wlan | quote }} down
 iw dev {{ wlan | quote }} set monitor otherbss

@@ -1,6 +1,7 @@
 [Unit]
 Description=WFB-ng cluster node
 Requires=wfb-cluster.service
+After=network.target wfb-cluster.service
 ReloadPropagatedFrom=wfb-cluster.service
 
 [Service]
