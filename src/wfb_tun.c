@@ -208,6 +208,14 @@ static void stream_send_batch(stream_t *s)
     assert(buf->data_size <= MTU);
 }
 
+// Room for another packet like the last one; without it the batch has
+// nothing to wait for: a stream of big packets never aggregates, the
+// timeout only delayed every packet by itself
+static bool stream_has_room(const stream_t *s, size_t size)
+{
+    return s->in_buf.data_size + sizeof(tun_packet_hdr_t) + size <= MTU;
+}
+
 static void stream_push(stream_t *s, const uint8_t *pkt, size_t size)
 {
     in_packet_buffer_t *buf = &s->in_buf;
@@ -227,7 +235,7 @@ static void stream_push(stream_t *s, const uint8_t *pkt, size_t size)
 
     WFB_DBG("%s: tun_read: packet_size=%zu, batch_size=%zu, data_size=%zu\n", s->name, size, buf->batch_size, buf->data_size);
 
-    if(buf->data_size < MTU && s->agg_timeout_ms > 0)
+    if(buf->data_size < MTU && s->agg_timeout_ms > 0 && stream_has_room(s, size))
     {
         // continue aggregation
         if(is_new_buffer)
@@ -244,7 +252,9 @@ static void stream_push(stream_t *s, const uint8_t *pkt, size_t size)
 
     stream_send_batch(s);
 
-    if(buf->data_size == MTU)
+    // the packet that did not fit is the next batch: out at once when
+    // nothing more would fit behind it either
+    if(buf->data_size > 0 && !stream_has_room(s, size))
     {
         stream_send_batch(s);
     }
