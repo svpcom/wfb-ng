@@ -35,8 +35,11 @@
 #include <linux/if.h>
 #include <linux/if_tun.h>
 
-// Must be equal to common.radio_mtu !
-#define MTU 1445
+// The batch (payload of one frame): -m, radio_mtu of wfb-ng by default,
+// MAX_PAYLOAD_SIZE of wifibroadcast.hpp (WIFI_MTU 4045) at most
+#define MTU_DEFAULT 1445
+#define MTU_MAX 3993
+static size_t mtu = MTU_DEFAULT;
 #define PING_INTERVAL_MS 500
 #define MAX_CTL_PORTS 16
 
@@ -46,14 +49,14 @@ static int tun_fd = -1;
 
 typedef struct
 {
-    char data[MTU * 2];
+    char data[MTU_MAX * 2];
     size_t data_size;  // size of packet buffer
-    size_t batch_size; // size of current ready-to-send batch <= MTU
+    size_t batch_size; // size of current ready-to-send batch <= mtu
 } in_packet_buffer_t;
 
 typedef struct
 {
-    char data[MTU];
+    char data[MTU_MAX];
     size_t data_size;  // size of packet buffer
     size_t offset; // offset of current packet for injection into tun
 } out_packet_buffer_t;
@@ -185,7 +188,7 @@ static void stream_send_batch(stream_t *s)
     in_packet_buffer_t *buf = &s->in_buf;
 
     assert(buf->batch_size > 0);
-    assert(buf->batch_size <= MTU);
+    assert(buf->batch_size <= mtu);
 
     // reset ping semaphore
     s->pkt_sem = 1;
@@ -205,7 +208,7 @@ static void stream_send_batch(stream_t *s)
         memset(buf, 0, sizeof(in_packet_buffer_t));
     }
 
-    assert(buf->data_size <= MTU);
+    assert(buf->data_size <= mtu);
 }
 
 // Room for another packet like the last one; without it the batch has
@@ -213,7 +216,7 @@ static void stream_send_batch(stream_t *s)
 // timeout only delayed every packet by itself
 static bool stream_has_room(const stream_t *s, size_t size)
 {
-    return s->in_buf.data_size + sizeof(tun_packet_hdr_t) + size <= MTU;
+    return s->in_buf.data_size + sizeof(tun_packet_hdr_t) + size <= mtu;
 }
 
 static void stream_push(stream_t *s, const uint8_t *pkt, size_t size)
@@ -221,21 +224,21 @@ static void stream_push(stream_t *s, const uint8_t *pkt, size_t size)
     in_packet_buffer_t *buf = &s->in_buf;
     bool is_new_buffer = (buf->data_size == 0);
 
-    assert(buf->data_size < MTU);
-    assert(size <= MTU - sizeof(tun_packet_hdr_t));
+    assert(buf->data_size < mtu);
+    assert(size <= mtu - sizeof(tun_packet_hdr_t));
 
     ((tun_packet_hdr_t*)(buf->data + buf->data_size))->packet_size = htons(size);
     memcpy(buf->data + buf->data_size + sizeof(tun_packet_hdr_t), pkt, size);
     buf->data_size += (sizeof(tun_packet_hdr_t) + size);
 
-    if (buf->data_size <= MTU)
+    if (buf->data_size <= mtu)
     {
         buf->batch_size = buf->data_size;
     }
 
     WFB_DBG("%s: tun_read: packet_size=%zu, batch_size=%zu, data_size=%zu\n", s->name, size, buf->batch_size, buf->data_size);
 
-    if(buf->data_size < MTU && s->agg_timeout_ms > 0 && stream_has_room(s, size))
+    if(buf->data_size < mtu && s->agg_timeout_ms > 0 && stream_has_room(s, size))
     {
         // continue aggregation
         if(is_new_buffer)
@@ -283,11 +286,11 @@ void ev_agg_timeout_cb(evutil_socket_t fd, short flags, void *arg)
 
 void ev_tun_read_cb(evutil_socket_t fd, short flags, void *arg)
 {
-    uint8_t pkt[MTU];
+    uint8_t pkt[MTU_MAX];
 
     assert((EV_READ & flags) != 0);
 
-    int nread = read(fd, pkt, MTU - sizeof(tun_packet_hdr_t));
+    int nread = read(fd, pkt, mtu - sizeof(tun_packet_hdr_t));
 
     if (nread <= 0)
     {
@@ -386,7 +389,7 @@ void ev_socket_read_cb(evutil_socket_t fd, short flags, void *arg)
 
     nread = recv(fd,
                  buf->data,
-                 MTU,
+                 mtu,
                  MSG_DONTWAIT);
 
     if (nread < 0)
@@ -400,7 +403,7 @@ void ev_socket_read_cb(evutil_socket_t fd, short flags, void *arg)
         return;
     }
 
-    assert(nread <= MTU);
+    assert(nread <= mtu);
 
     if(nread == 0)
     {
@@ -455,7 +458,7 @@ static int open_tun(char *dev, char *dev_addr)
     if(dev_addr != NULL)
     {
         char buf[256];
-        snprintf(buf, sizeof(buf), "ip link set up mtu %zu dev %s", MTU - sizeof(tun_packet_hdr_t), ifr.ifr_name);
+        snprintf(buf, sizeof(buf), "ip link set up mtu %zu dev %s", mtu - sizeof(tun_packet_hdr_t), ifr.ifr_name);
         if(system(buf) != 0)
         {
             close(fd);
@@ -635,7 +638,7 @@ int main (int argc, char *argv[])
     char *tun_addr = "10.5.0.2/24";
     int opt;
 
-    while ((opt = getopt(argc, argv, "t:c:u:l:a:T:C:L:F:U:h")) != -1)
+    while ((opt = getopt(argc, argv, "t:c:u:l:a:T:C:L:F:U:m:h")) != -1)
     {
         switch (opt)
         {
@@ -687,10 +690,19 @@ int main (int argc, char *argv[])
             unix_prefix = strdup(optarg);
             break;
 
+        case 'm':
+            mtu = atoi(optarg);
+            if (mtu < 2 * sizeof(tun_packet_hdr_t) + 64 || mtu > MTU_MAX)
+            {
+                fprintf(stderr, "invalid mtu %s: 68..%d\n", optarg, MTU_MAX);
+                return 1;
+            }
+            break;
+
         default: /* '?' */
-            fprintf(stderr, "Usage: %s [-t tun_name] [-a tun_addr] [-T agg_timeout_ms] [-F udp_port,...]\n"
+            fprintf(stderr, "Usage: %s [-t tun_name] [-a tun_addr] [-m mtu] [-T agg_timeout_ms] [-F udp_port,...]\n"
                             "          { [-c peer_addr] [-u peer_port] [-l listen_port] [-C ctl_peer_port -L ctl_listen_port] | -U unix_prefix }\n", argv[0]);
-            fprintf(stderr, "Default: tun_name=%s, tun_addr=%s, peer_addr=127.0.0.1, peer_port=%d, listen_port=%d, agg_timeout_ms=%u\n", tun_name, tun_addr, peer_port, bind_port, agg_timeout_ms);
+            fprintf(stderr, "Default: tun_name=%s, tun_addr=%s, mtu=%d (the batch; the tun gets 2 less), peer_addr=127.0.0.1, peer_port=%d, listen_port=%d, agg_timeout_ms=%u\n", tun_name, tun_addr, MTU_DEFAULT, peer_port, bind_port, agg_timeout_ms);
             fprintf(stderr, "Control stream: packets to the listed UDP destination ports go to ctl_peer_port one by one, without aggregation\n");
             fprintf(stderr, "-U: abstract unix sockets instead of UDP: wfb_rx -U <prefix>.data.in, wfb_tx -U <prefix>.data.out,\n"
                             "    with -F also <prefix>.ctl.in and <prefix>.ctl.out; raise net.unix.max_dgram_qlen (10 by default)\n");
