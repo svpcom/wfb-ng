@@ -42,6 +42,7 @@
 #define MTU_MAX 3993
 static size_t mtu = MTU_DEFAULT;
 #define PING_INTERVAL_MS 500
+static unsigned int ping_interval_ms = PING_INTERVAL_MS;  // -P, 0: no keepalive
 #define MAX_CTL_PORTS 16
 
 static struct event_base *ev_base;
@@ -560,8 +561,8 @@ static int create_unixsock(const char *bind_name)
 
 static int stream_start(stream_t *s, int fd, const struct sockaddr *peer, socklen_t peer_len, unsigned int agg_timeout_ms)
 {
-    struct timeval ping_tv = { .tv_sec = PING_INTERVAL_MS / 1000,
-                               .tv_usec = (PING_INTERVAL_MS % 1000) * 1000 };
+    struct timeval ping_tv = { .tv_sec = ping_interval_ms / 1000,
+                               .tv_usec = (ping_interval_ms % 1000) * 1000 };
 
     if (fd < 0) return -1;
     s->fd = fd;
@@ -581,7 +582,10 @@ static int stream_start(stream_t *s, int fd, const struct sockaddr *peer, sockle
     assert(s->ev_socket_read != NULL);
     assert(s->ev_tun_write != NULL);
 
-    event_add(s->ev_ping, &ping_tv);
+    if (ping_interval_ms > 0)
+    {
+        event_add(s->ev_ping, &ping_tv);
+    }
     event_add(s->ev_socket_read, NULL);
     return 0;
 }
@@ -652,7 +656,7 @@ int main (int argc, char *argv[])
     char *tun_addr = "10.5.0.2/24";
     int opt;
 
-    while ((opt = getopt(argc, argv, "t:c:u:l:a:T:C:L:F:U:m:h")) != -1)
+    while ((opt = getopt(argc, argv, "t:c:u:l:a:T:C:L:F:U:m:P:h")) != -1)
     {
         switch (opt)
         {
@@ -704,6 +708,10 @@ int main (int argc, char *argv[])
             unix_prefix = strdup(optarg);
             break;
 
+        case 'P':
+            ping_interval_ms = atoi(optarg);
+            break;
+
         case 'm':
             mtu = atoi(optarg);
             if (mtu < 2 * sizeof(tun_packet_hdr_t) + 64 || mtu > MTU_MAX)
@@ -714,9 +722,9 @@ int main (int argc, char *argv[])
             break;
 
         default: /* '?' */
-            fprintf(stderr, "Usage: %s [-t tun_name] [-a tun_addr] [-m mtu] [-T agg_timeout_ms] [-F udp_port,...]\n"
+            fprintf(stderr, "Usage: %s [-t tun_name] [-a tun_addr] [-m mtu] [-T agg_timeout_ms] [-P ping_ms] [-F udp_port,...]\n"
                             "          { [-c peer_addr] [-u peer_port] [-l listen_port] [-C ctl_peer_port -L ctl_listen_port] | -U unix_prefix }\n", argv[0]);
-            fprintf(stderr, "Default: tun_name=%s, tun_addr=%s, mtu=%d (the batch; the tun gets 2 less), peer_addr=127.0.0.1, peer_port=%d, listen_port=%d, agg_timeout_ms=%u\n", tun_name, tun_addr, MTU_DEFAULT, peer_port, bind_port, agg_timeout_ms);
+            fprintf(stderr, "Default: tun_name=%s, tun_addr=%s, mtu=%d (the batch; the tun gets 2 less), peer_addr=127.0.0.1, peer_port=%d, listen_port=%d, agg_timeout_ms=%u, ping_ms=%d (0: no keepalive of an idle stream)\n", tun_name, tun_addr, MTU_DEFAULT, peer_port, bind_port, agg_timeout_ms, PING_INTERVAL_MS);
             fprintf(stderr, "Control stream: packets to the listed UDP destination ports go to ctl_peer_port one by one, without aggregation\n");
             fprintf(stderr, "-U: abstract unix sockets instead of UDP: wfb_rx -U <prefix>.data.in, wfb_tx -U <prefix>.data.out,\n"
                             "    with -F also <prefix>.ctl.in and <prefix>.ctl.out; raise net.unix.max_dgram_qlen (10 by default)\n");
