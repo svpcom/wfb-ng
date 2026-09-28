@@ -387,9 +387,10 @@ void ev_socket_read_cb(evutil_socket_t fd, short flags, void *arg)
     assert((EV_TIMEOUT & flags) == 0);
     assert((EV_READ & flags) != 0);
 
+    // the peer's -m, not ours: it may send bigger batches
     nread = recv(fd,
                  buf->data,
-                 mtu,
+                 sizeof(buf->data),
                  MSG_DONTWAIT);
 
     if (nread < 0)
@@ -402,8 +403,6 @@ void ev_socket_read_cb(evutil_socket_t fd, short flags, void *arg)
         event_add(s->ev_socket_read, NULL);
         return;
     }
-
-    assert(nread <= mtu);
 
     if(nread == 0)
     {
