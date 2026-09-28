@@ -25,6 +25,7 @@
 #include <errno.h>
 #include <signal.h>
 #include <string.h>
+#include <time.h>
 #include <sys/ioctl.h>
 #include <sys/socket.h>
 #include <sys/un.h>
@@ -77,6 +78,7 @@ typedef struct {
     struct sockaddr_storage peer_addr;
     socklen_t peer_len;
     unsigned int agg_timeout_ms;   // 0: no aggregation
+    uint64_t last_push_us;         // the previous packet from the tun
     int pkt_sem;
     struct event *ev_ping;
     struct event *ev_agg_timeout;
@@ -211,6 +213,14 @@ static void stream_send_batch(stream_t *s)
     assert(buf->data_size <= mtu);
 }
 
+static uint64_t monotonic_us(void)
+{
+    struct timespec ts;
+
+    clock_gettime(CLOCK_MONOTONIC, &ts);
+    return (uint64_t)ts.tv_sec * 1000000 + ts.tv_nsec / 1000;
+}
+
 // Room for another packet like the last one; without it the batch has
 // nothing to wait for: a stream of big packets never aggregates, the
 // timeout only delayed every packet by itself
@@ -223,7 +233,12 @@ static void stream_push(stream_t *s, const uint8_t *pkt, size_t size)
 {
     in_packet_buffer_t *buf = &s->in_buf;
     bool is_new_buffer = (buf->data_size == 0);
+    uint64_t now = monotonic_us();
+    // nothing came within the timeout before it: nothing is likely to come
+    // within the timeout after it either, the wait only delays it
+    bool alone = is_new_buffer && now - s->last_push_us > (uint64_t)s->agg_timeout_ms * 1000;
 
+    s->last_push_us = now;
     assert(buf->data_size < mtu);
     assert(size <= mtu - sizeof(tun_packet_hdr_t));
 
@@ -238,7 +253,7 @@ static void stream_push(stream_t *s, const uint8_t *pkt, size_t size)
 
     WFB_DBG("%s: tun_read: packet_size=%zu, batch_size=%zu, data_size=%zu\n", s->name, size, buf->batch_size, buf->data_size);
 
-    if(buf->data_size < mtu && s->agg_timeout_ms > 0 && stream_has_room(s, size))
+    if(buf->data_size < mtu && s->agg_timeout_ms > 0 && !alone && stream_has_room(s, size))
     {
         // continue aggregation
         if(is_new_buffer)
