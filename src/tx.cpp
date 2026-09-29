@@ -645,6 +645,9 @@ void Transmitter::send_block_fragment(size_t packet_size)
 void Transmitter::send_session_key(void)
 {
     WFB_DBG("Announce session key\n");
+    // with the mark of the data it goes before, not the fwmark + 1 of the
+    // last FEC packets: a qdisc class of its own would send it after them
+    set_mark(0);
     inject_packet((uint8_t*)session_packet, session_packet_size);
 }
 
