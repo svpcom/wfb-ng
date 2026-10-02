@@ -23,6 +23,7 @@
 #define CMD_GET_FEC   3
 #define CMD_GET_RADIO 4
 #define CMD_SET_FEC_TIMEOUT 5
+#define CMD_SET_BATCH 6     // wfb_tun
 
 typedef struct {
     uint32_t req_id;
@@ -50,6 +51,12 @@ typedef struct {
         {
             uint32_t timeout_ms;        // network order; 0: no timeout
         } __attribute__ ((packed)) cmd_set_fec_timeout;
+
+        struct
+        {
+            uint16_t mtu;               // network order: the batch
+            uint16_t agg_timeout_ms;    // network order; 0: no aggregation
+        } __attribute__ ((packed)) cmd_set_batch;
     } __attribute__ ((packed)) u;
 } __attribute__ ((packed)) cmd_req_t;
 

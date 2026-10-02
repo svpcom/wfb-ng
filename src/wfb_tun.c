@@ -36,11 +36,16 @@
 #include <linux/if.h>
 #include <linux/if_tun.h>
 
+#include "tx_cmd.h"
+
 // The batch (payload of one frame): -m, radio_mtu of wfb-ng by default,
-// MAX_PAYLOAD_SIZE of wifibroadcast.hpp (WIFI_MTU 4045) at most
+// MAX_PAYLOAD_SIZE of wifibroadcast.hpp (WIFI_MTU 4045) at most; on the fly
+// by CMD_SET_BATCH on the management socket (-M)
 #define MTU_DEFAULT 1445
+#define MTU_MIN 68
 #define MTU_MAX 3993
 static size_t mtu = MTU_DEFAULT;
+static char tun_ifname[IFNAMSIZ];
 #define PING_INTERVAL_MS 500
 static unsigned int ping_interval_ms = PING_INTERVAL_MS;  // -P, 0: no keepalive
 #define MAX_CTL_PORTS 16
@@ -306,7 +311,7 @@ void ev_tun_read_cb(evutil_socket_t fd, short flags, void *arg)
 
     assert((EV_READ & flags) != 0);
 
-    int nread = read(fd, pkt, mtu - sizeof(tun_packet_hdr_t));
+    int nread = read(fd, pkt, sizeof(pkt));
 
     if (nread <= 0)
     {
@@ -315,6 +320,13 @@ void ev_tun_read_cb(evutil_socket_t fd, short flags, void *arg)
         {
             fprintf(stderr, "tun read error: %s\n", strerror(errno));
         }
+        return;
+    }
+
+    // queued under the MTU of a bigger batch before CMD_SET_BATCH
+    if ((size_t)nread > mtu - sizeof(tun_packet_hdr_t))
+    {
+        fprintf(stderr, "tun read: a packet of %d bytes over the batch %zu, dropped\n", nread, mtu);
         return;
     }
 
@@ -436,6 +448,79 @@ void ev_socket_read_cb(evutil_socket_t fd, short flags, void *arg)
     event_add(s->ev_tun_write, NULL);
 }
 
+// The batch and the aggregation timeout of the data stream on the fly: what
+// it gathered goes first, the tun gets the MTU of the new batch
+static int set_batch(const cmd_req_t *req, ssize_t rsize)
+{
+    struct ifreq ifr;
+    int fd, rc = 0;
+
+    if (req->cmd_id != CMD_SET_BATCH || rsize != (ssize_t)(offsetof(cmd_req_t, u) + sizeof(req->u.cmd_set_batch)))
+    {
+        return EINVAL;
+    }
+
+    size_t new_mtu = ntohs(req->u.cmd_set_batch.mtu);
+
+    if (new_mtu < MTU_MIN || new_mtu > MTU_MAX) return EINVAL;
+
+    if (data_stream.fd >= 0 && data_stream.agg_timeout_ms > 0)
+    {
+        event_del(data_stream.ev_agg_timeout);
+    }
+
+    while (data_stream.fd >= 0 && data_stream.in_buf.data_size > 0)
+    {
+        stream_send_batch(&data_stream);
+    }
+
+    memset(&ifr, 0, sizeof(ifr));
+    memcpy(ifr.ifr_name, tun_ifname, IFNAMSIZ);
+    ifr.ifr_mtu = new_mtu - sizeof(tun_packet_hdr_t);
+
+    if ((fd = socket(AF_INET, SOCK_DGRAM | SOCK_CLOEXEC, 0)) < 0) return errno;
+    if (ioctl(fd, SIOCSIFMTU, &ifr) < 0) rc = errno;
+    close(fd);
+
+    if (rc != 0) return rc;
+
+    mtu = new_mtu;
+    data_stream.agg_timeout_ms = ntohs(req->u.cmd_set_batch.agg_timeout_ms);
+    fprintf(stderr, "batch %zu, aggregation timeout %u ms\n", mtu, data_stream.agg_timeout_ms);
+    return 0;
+}
+
+void ev_cmd_read_cb(evutil_socket_t fd, short flags, void *arg)
+{
+    for (;;)
+    {
+        cmd_req_t req;
+        cmd_resp_t resp;
+        struct sockaddr_storage from;
+        socklen_t from_len = sizeof(from);
+
+        memset(&req, 0, sizeof(req));
+        memset(&resp, 0, sizeof(resp));
+
+        ssize_t rsize = recvfrom(fd, &req, sizeof(req), MSG_DONTWAIT, (struct sockaddr*)&from, &from_len);
+
+        if (rsize < 0)
+        {
+            if (errno != EAGAIN && errno != EWOULDBLOCK && errno != EINTR)
+            {
+                fprintf(stderr, "command socket recv error: %s\n", strerror(errno));
+            }
+            return;
+        }
+
+        if (rsize < (ssize_t)offsetof(cmd_req_t, u)) continue;
+
+        resp.req_id = req.req_id;
+        resp.rc = htonl(set_batch(&req, rsize));
+        sendto(fd, &resp, offsetof(cmd_resp_t, u), MSG_DONTWAIT, (struct sockaddr*)&from, from_len);
+    }
+}
+
 static int open_tun(char *dev, char *dev_addr)
 {
     struct ifreq ifr;
@@ -469,6 +554,9 @@ static int open_tun(char *dev, char *dev_addr)
         close(fd);
         return err;
     }
+
+    memcpy(tun_ifname, ifr.ifr_name, IFNAMSIZ);
+    tun_ifname[IFNAMSIZ - 1] = '\0';
 
     if(dev_addr != NULL)
     {
@@ -644,6 +732,9 @@ int main (int argc, char *argv[])
     struct event_config *ev_cfg = NULL;
     struct event *ev_sigint = NULL;
     struct event *ev_sigterm = NULL;
+    struct event *ev_cmd_read = NULL;
+    char *cmd_name = NULL;
+    int cmd_fd = -1;
 
     uint16_t bind_port = 5800;
     uint16_t peer_port = 5801;
@@ -656,7 +747,7 @@ int main (int argc, char *argv[])
     char *tun_addr = "10.5.0.2/24";
     int opt;
 
-    while ((opt = getopt(argc, argv, "t:c:u:l:a:T:C:L:F:U:m:P:h")) != -1)
+    while ((opt = getopt(argc, argv, "t:c:u:l:a:T:C:L:F:U:m:P:M:h")) != -1)
     {
         switch (opt)
         {
@@ -712,9 +803,13 @@ int main (int argc, char *argv[])
             ping_interval_ms = atoi(optarg);
             break;
 
+        case 'M':
+            cmd_name = strdup(optarg);
+            break;
+
         case 'm':
             mtu = atoi(optarg);
-            if (mtu < 2 * sizeof(tun_packet_hdr_t) + 64 || mtu > MTU_MAX)
+            if (mtu < MTU_MIN || mtu > MTU_MAX)
             {
                 fprintf(stderr, "invalid mtu %s: 68..%d\n", optarg, MTU_MAX);
                 return 1;
@@ -722,12 +817,14 @@ int main (int argc, char *argv[])
             break;
 
         default: /* '?' */
-            fprintf(stderr, "Usage: %s [-t tun_name] [-a tun_addr] [-m mtu] [-T agg_timeout_ms] [-P ping_ms] [-F udp_port,...]\n"
+            fprintf(stderr, "Usage: %s [-t tun_name] [-a tun_addr] [-m mtu] [-T agg_timeout_ms] [-P ping_ms] [-F udp_port,...] [-M cmd_socket]\n"
                             "          { [-c peer_addr] [-u peer_port] [-l listen_port] [-C ctl_peer_port -L ctl_listen_port] | -U unix_prefix }\n", argv[0]);
             fprintf(stderr, "Default: tun_name=%s, tun_addr=%s, mtu=%d (the batch; the tun gets 2 less), peer_addr=127.0.0.1, peer_port=%d, listen_port=%d, agg_timeout_ms=%u, ping_ms=%d (0: no keepalive of an idle stream)\n", tun_name, tun_addr, MTU_DEFAULT, peer_port, bind_port, agg_timeout_ms, PING_INTERVAL_MS);
             fprintf(stderr, "Control stream: packets to the listed UDP destination ports go to ctl_peer_port one by one, without aggregation\n");
             fprintf(stderr, "-U: abstract unix sockets instead of UDP: wfb_rx -U <prefix>.data.in, wfb_tx -U <prefix>.data.out,\n"
                             "    with -F also <prefix>.ctl.in and <prefix>.ctl.out; raise net.unix.max_dgram_qlen (10 by default)\n");
+            fprintf(stderr, "-M: abstract unix socket of the commands: the batch and the aggregation timeout on the fly\n"
+                            "    (wfb_tx_cmd -U cmd_socket set_batch -m mtu -T agg_timeout_ms)\n");
             fprintf(stderr, "WFB-ng version %s\n", WFB_VERSION);
             fprintf(stderr, "WFB-ng home page: <http://wfb-ng.org>\n");
             return 1;
@@ -780,6 +877,14 @@ int main (int argc, char *argv[])
     assert(ev_tun_read != NULL);
     event_add(ev_tun_read, NULL);
 
+    if (cmd_name != NULL)
+    {
+        if ((cmd_fd = create_unixsock(cmd_name)) < 0) return 1;
+        ev_cmd_read = event_new(ev_base, cmd_fd, EV_READ | EV_PERSIST, &ev_cmd_read_cb, NULL);
+        assert(ev_cmd_read != NULL);
+        event_add(ev_cmd_read, NULL);
+    }
+
     event_base_dispatch(ev_base);
 
     stream_stop(&ctl_stream);
@@ -789,6 +894,8 @@ int main (int argc, char *argv[])
     if(ev_sigint) event_free(ev_sigint);
     if(ev_sigterm) event_free(ev_sigterm);
     if(ev_tun_read) event_free(ev_tun_read);
+    if(ev_cmd_read) event_free(ev_cmd_read);
+    if(cmd_fd >= 0) close(cmd_fd);
 
     event_base_free (ev_base);
     event_config_free (ev_cfg);
