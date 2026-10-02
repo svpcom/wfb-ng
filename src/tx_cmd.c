@@ -128,6 +128,7 @@ int send_command(int port, cmd_req_t req, size_t req_size, cmd_resp_t *resp)
     {
     case CMD_SET_FEC:
     case CMD_SET_RADIO:
+    case CMD_SET_FEC_TIMEOUT:
         resp_payload_size = 0;
         break;
 
@@ -279,6 +280,35 @@ int set_radio(char *progname, int port, int argc, char **argv)
     return send_command(port, req, offsetof(cmd_req_t, u) + sizeof(req.u.cmd_set_radio), &resp);
 }
 
+int set_fec_timeout(char *progname, int port, int argc, char **argv)
+{
+    int opt;
+    int timeout_ms = 0;
+    cmd_req_t req = { .req_id = htonl(rand()), .cmd_id = CMD_SET_FEC_TIMEOUT };
+    cmd_resp_t resp;
+
+    while ((opt = getopt(argc, argv, "T:h")) != -1)
+    {
+        switch (opt)
+        {
+        case 'T':
+            timeout_ms = atoi(optarg);
+            break;
+
+        default: /* '?' */
+            fprintf(stderr, "Usage: %s { port | -U unix_socket } %s [-T fec_timeout_ms]\n", progname, argv[0]);
+            fprintf(stderr, "Default: fec_timeout=%d (no timeout)\n", timeout_ms);
+            fprintf(stderr, "WFB-ng version %s\n", WFB_VERSION);
+            fprintf(stderr, "WFB-ng home page: <http://wfb-ng.org>\n");
+            return 1;
+        }
+    }
+
+    req.u.cmd_set_fec_timeout.timeout_ms = htonl(timeout_ms);
+
+    return send_command(port, req, offsetof(cmd_req_t, u) + sizeof(req.u.cmd_set_fec_timeout), &resp);
+}
+
 int get_fec(char *progname, int port, int argc, char **argv)
 {
     cmd_req_t req = { .req_id = htonl(rand()), .cmd_id = CMD_GET_FEC };
@@ -352,7 +382,7 @@ int main(int argc, char **argv)
 
     if (argc < 3)
     {
-        fprintf(stderr, "Usage: %s { port | -U unix_socket } {set_fec | set_radio | get_fec | get_radio } ...\n", argv[0]);
+        fprintf(stderr, "Usage: %s { port | -U unix_socket } {set_fec | set_radio | set_fec_timeout | get_fec | get_radio } ...\n", argv[0]);
         fprintf(stderr, "WFB-ng version %s\n", WFB_VERSION);
         fprintf(stderr, "WFB-ng home page: <http://wfb-ng.org>\n");
         return 1;
@@ -369,6 +399,10 @@ int main(int argc, char **argv)
     else if (strcmp(command, "set_radio") == 0)
     {
         return set_radio(argv[0], port, argc - 2, argv + 2);
+    }
+    else if (strcmp(command, "set_fec_timeout") == 0)
+    {
+        return set_fec_timeout(argv[0], port, argc - 2, argv + 2);
     }
     else if (strcmp(command, "get_fec") == 0)
     {

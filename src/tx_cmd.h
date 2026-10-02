@@ -22,6 +22,7 @@
 #define CMD_SET_RADIO 2
 #define CMD_GET_FEC   3
 #define CMD_GET_RADIO 4
+#define CMD_SET_FEC_TIMEOUT 5
 
 typedef struct {
     uint32_t req_id;
@@ -44,6 +45,11 @@ typedef struct {
             uint8_t vht_nss;
             uint8_t subch;
         } __attribute__ ((packed)) cmd_set_radio;
+
+        struct
+        {
+            uint32_t timeout_ms;        // network order; 0: no timeout
+        } __attribute__ ((packed)) cmd_set_fec_timeout;
     } __attribute__ ((packed)) u;
 } __attribute__ ((packed)) cmd_req_t;
 

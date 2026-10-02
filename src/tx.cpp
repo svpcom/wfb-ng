@@ -34,6 +34,7 @@
 #include <linux/if_ether.h>
 #include <linux/random.h>
 #include <inttypes.h>
+#include <climits>
 
 #include <string>
 #include <memory>
@@ -928,6 +929,25 @@ void data_source(unique_ptr<Transmitter> &t, vector<int> &rx_fd, int control_fd,
                             req.u.cmd_set_radio.vht_mode,
                             req.u.cmd_set_radio.vht_nss,
                             req.u.cmd_set_radio.subch);
+                }
+                break;
+
+                case CMD_SET_FEC_TIMEOUT:
+                {
+                    uint32_t timeout_ms = ntohl(req.u.cmd_set_fec_timeout.timeout_ms);
+
+                    if (rsize != offsetof(cmd_req_t, u) + sizeof(req.u.cmd_set_fec_timeout) || timeout_ms > INT_MAX)
+                    {
+                        resp.rc = htonl(EINVAL);
+                        sendto(fd, &resp, offsetof(cmd_resp_t, u), MSG_DONTWAIT, (sockaddr*)&from_addr, addr_size);
+                        continue;
+                    }
+
+                    fec_timeout = timeout_ms;
+                    fec_close_ts = fec_timeout > 0 ? get_time_ms() + fec_timeout : 0;
+
+                    sendto(fd, &resp, offsetof(cmd_resp_t, u), MSG_DONTWAIT, (sockaddr*)&from_addr, addr_size);
+                    WFB_INFO("FEC timeout %d ms\n", fec_timeout);
                 }
                 break;
 
