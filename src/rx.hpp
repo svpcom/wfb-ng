@@ -18,6 +18,7 @@
  *   51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
  */
 
+#include <bitset>
 #include <unordered_map>
 #include <unordered_set>
 #include <stdint.h>
@@ -304,6 +305,8 @@ public:
         count_p_override = 0;
         count_p_outgoing = 0;
         count_b_outgoing = 0;
+        count_p_frags = 0;
+        count_p_frags_lost = 0;
     }
 
     rx_antenna_stat_t antenna_stat;
@@ -319,6 +322,11 @@ public:
     uint32_t count_p_override;
     uint32_t count_p_outgoing;
     uint32_t count_b_outgoing;
+    // the fragments of the blocks done, data and FEC, and those of them never
+    // received: the loss of the channel, which fec_rec and lost (data alone)
+    // do not tell
+    uint32_t count_p_frags;
+    uint32_t count_p_frags_lost;
 
 protected:
     virtual void send_to_socket(const uint8_t *payload, uint16_t packet_size) = 0;
@@ -335,6 +343,8 @@ private:
                   const int8_t *noise, uint16_t freq, uint8_t mcs_index, uint8_t bandwidth);
     int get_block_ring_idx(uint64_t block_idx);
     int rx_ring_push(void);
+    void count_block(int received);
+    void close_block(int ring_idx);
     // cppcheck-suppress unusedPrivateFunction
     static int get_tag(const void *buf, size_t size, uint8_t tag_id, void *value, size_t value_size);
 
@@ -348,6 +358,12 @@ private:
     int rx_ring_front; // current packet
     int rx_ring_alloc; // number of allocated entries
     uint64_t last_known_block;  //id of last known block
+
+    // The block closed last (K fragments, its data out): it counts the
+    // fragments that come after (its FEC ones go after the data of the next
+    // block) until a later block closes
+    uint64_t pending_block;
+    std::bitset<256> pending_fragments;
     uint64_t epoch; // current epoch
     const uint32_t channel_id; // (link_id << 8) + port_number
 

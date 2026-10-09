@@ -20,7 +20,7 @@
 
 from twisted.trial import unittest
 from twisted.internet import defer, error
-from ..protocols import SSHClientProtocol, TXProtocol
+from ..protocols import RXAntennaProtocol, SSHClientProtocol, TXProtocol
 from ..services import make_ant_sel_cb
 
 
@@ -61,3 +61,15 @@ class AntSelCallbackTestCase(unittest.TestCase):
         self.assertEqual(p_in.peer, 'tx2')
         cb(3)
         self.assertEqual(p_in.peer, 'tx2')
+
+
+class RXAntennaProtocolTestCase(unittest.TestCase):
+    def test_pkt_counters_with_the_fragments_of_the_blocks(self):
+        # the fragments of the blocks done, data and FEC, and those of them lost
+        got = []
+        cb = type('CB', (), dict(update_rx_stats=lambda self, rx_id, stats, ant, session: got.append(stats)))()
+        p = RXAntennaProtocol(cb, 'video rx')
+        p.lineReceived(b'1000\tPKT\t30:39000:0:1:29:29:3:1:0:20:26000:24:8\n')
+        p.lineReceived(b'2000\tPKT\t30:39000:0:1:29:29:3:1:0:20:26000:24:8\n')
+        self.assertEqual((got[-1]['out'], got[-1]['frags'], got[-1]['frags_lost']), ((20, 40), (24, 48), (8, 16)))
+

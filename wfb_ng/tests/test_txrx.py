@@ -239,6 +239,37 @@ class TXRXTestCase(unittest.TestCase):
         self.assertEqual(self.ap.rx_stats['data'][1], 0)
         self.assertEqual(self.ap.rx_stats['dec_err'][1], 1)
 
+    @defer.inlineCallbacks
+    def test_the_fragments_lost_of_the_blocks_done_count_the_fec_ones_too(self):
+        # block 1 closes with its data alone, its FEC packets lost; block 2
+        # gets 5 fragments of 12, it does not close; block 3 closes them both:
+        # their counters go
+        for i in range(24):
+            self.txp.send_msg(b'm%d' % (i + 1,))
+        yield df_sleep(0.1)
+        self.assertEqual(len(self.txp.rxq), 37) # 1 session + (8 data packets + 4 fec packets) * 3
+        for i in list(range(9)) + [13, 14, 15, 21, 22] + list(range(25, 37)):
+            self.rxp.send_msg(self.txp.rxq[i])
+        yield df_sleep(1.1)  # wait stats refresh
+        self.assertEqual([b'm%d' % (i + 1,) for i in list(range(11)) + list(range(16, 24))], self.rxp.rxq)
+        self.assertEqual((self.ap.rx_stats['frags'][1], self.ap.rx_stats['frags_lost'][1]), (24, 11))
+
+    @defer.inlineCallbacks
+    def test_the_fec_packets_of_a_closed_block_in_the_gaps_of_the_next_one_count(self):
+        # block 1 closes with its data alone, its FEC packets come between
+        # the data of block 2 (the data go first in the queue of the sender):
+        # it waits for its counters until block 2 closes
+        for i in range(24):
+            self.txp.send_msg(b'm%d' % (i + 1,))
+        yield df_sleep(0.1)
+        self.assertEqual(len(self.txp.rxq), 37)
+        order = list(range(9)) + list(range(13, 17)) + list(range(9, 13)) + list(range(17, 37))
+        for i in order:
+            self.rxp.send_msg(self.txp.rxq[i])
+        yield df_sleep(1.1)  # wait stats refresh
+        self.assertEqual([b'm%d' % (i + 1,) for i in range(24)], self.rxp.rxq)
+        self.assertEqual((self.ap.rx_stats['frags'][1], self.ap.rx_stats['frags_lost'][1]), (24, 0))
+
     def test_keys(self):
         keys = [open(k, 'rb').read() for k in ('gs.key', 'drone.key')]
         self.assertEqual(len(keys), 2)

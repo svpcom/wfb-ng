@@ -281,9 +281,10 @@ void Receiver::loop_iter(void)
 
 Aggregator::Aggregator(const string &keypair, uint64_t epoch, uint32_t channel_id) : \
     count_p_all(0), count_b_all(0), count_p_dec_err(0), count_p_session(0), count_p_data(0), count_p_fec_recovered(0),
-    count_p_lost(0), count_p_bad(0), count_p_override(0), count_p_outgoing(0), count_b_outgoing(0),
+    count_p_lost(0), count_p_bad(0), count_p_override(0), count_p_outgoing(0), count_b_outgoing(0), count_p_frags(0),
+    count_p_frags_lost(0),
     fec_p(NULL), fec_k(-1), fec_n(-1), seq(0), rx_ring{}, rx_ring_front(0), rx_ring_alloc(0),
-    last_known_block((uint64_t)-1), epoch(epoch), channel_id(channel_id), decrypted_packets(AGG_ROTATE_MS)
+    last_known_block((uint64_t)-1), pending_block((uint64_t)-1), epoch(epoch), channel_id(channel_id), decrypted_packets(AGG_ROTATE_MS)
 {
     memset(session_key, '\0', sizeof(session_key));
     memset(session_hash, '\0', sizeof(session_hash));
@@ -332,6 +333,7 @@ void Aggregator::init_fec(int k, int n)
     rx_ring_front = 0;
     rx_ring_alloc = 0;
     last_known_block = (uint64_t)-1;
+    pending_block = (uint64_t)-1;
     seq = 0;
 
     for(int ring_idx = 0; ring_idx < RX_RING_SIZE; ring_idx++)
@@ -542,6 +544,7 @@ int Aggregator::rx_ring_push(void)
     WFB_DBG("AGG: Override block 0x%" PRIx64 " flush %d fragments\n", rx_ring[rx_ring_front].block_idx, rx_ring[rx_ring_front].has_fragments);
 
     count_p_override += 1;
+    count_block(rx_ring[rx_ring_front].has_fragments);
 
     for(int f_idx=rx_ring[rx_ring_front].fragment_to_send_idx; f_idx < fec_k; f_idx++)
     {
@@ -555,6 +558,35 @@ int Aggregator::rx_ring_push(void)
     int ring_idx = rx_ring_front;
     rx_ring_front = modN(rx_ring_front + 1, RX_RING_SIZE);
     return ring_idx;
+}
+
+
+void Aggregator::count_block(int received)
+{
+    count_p_frags += fec_n;
+    count_p_frags_lost += fec_n - received;
+}
+
+
+void Aggregator::close_block(int ring_idx)
+{
+    // the block closed before it gives its counters: older ones are out
+    // of the ring by now
+    if (pending_block != (uint64_t)-1)
+    {
+        count_block(pending_fragments.count());
+    }
+
+    pending_block = rx_ring[ring_idx].block_idx;
+    pending_fragments.reset();
+
+    for(int f_idx = 0; f_idx < fec_n; f_idx++)
+    {
+        if(rx_ring[ring_idx].fragment_map[f_idx])
+        {
+            pending_fragments.set(f_idx);
+        }
+    }
 }
 
 
@@ -572,8 +604,13 @@ int Aggregator::get_block_ring_idx(uint64_t block_idx)
         return -1;
     }
 
-    int new_blocks = (int)min(last_known_block != (uint64_t)-1 ? block_idx - last_known_block : 1, (uint64_t)RX_RING_SIZE);
+    uint64_t gap = last_known_block != (uint64_t)-1 ? block_idx - last_known_block : 1;
+    int new_blocks = (int)min(gap, (uint64_t)RX_RING_SIZE);
     assert (new_blocks > 0);
+
+    // blocks lost whole past the ring
+    count_p_frags += (uint32_t)((gap - new_blocks) * fec_n);
+    count_p_frags_lost += (uint32_t)((gap - new_blocks) * fec_n);
 
     last_known_block = block_idx;
     int ring_idx = -1;
@@ -602,14 +639,15 @@ void Aggregator::dump_stats(void)
                 it->second.snr_min, it->second.snr_avg(), it->second.snr_max);
     }
 
-    IPC_MSG("%" PRIu64 "\tPKT\t%u:%u:%u:%u:%u:%u:%u:%u:%u:%u:%u\n", ts,
+    IPC_MSG("%" PRIu64 "\tPKT\t%u:%u:%u:%u:%u:%u:%u:%u:%u:%u:%u:%u:%u\n", ts,
             count_p_all, count_b_all,                    // incoming
             count_p_dec_err,                             // decryption
             count_p_session, count_p_data,               // classification
             (uint32_t)count_p_uniq.size(),               // unique check
             count_p_fec_recovered, count_p_lost,         // fec recovering
             count_p_bad,                                 // internal errors
-            count_p_outgoing, count_b_outgoing);         // outgoing
+            count_p_outgoing, count_b_outgoing,          // outgoing
+            count_p_frags, count_p_frags_lost);          // the channel: the fragments of the blocks done
     IPC_MSG_SEND();
 
     if(count_p_override)
@@ -911,8 +949,15 @@ void Aggregator::process_packet(const uint8_t *buf, size_t size, uint8_t wlan_id
 
     int ring_idx = get_block_ring_idx(block_idx);
 
-    //ignore already processed blocks
-    if (ring_idx < 0) return;
+    //ignore already processed blocks, the one closed last counts its fragments still
+    if (ring_idx < 0)
+    {
+        if (block_idx == pending_block)
+        {
+            pending_fragments.set(fragment_idx);
+        }
+        return;
+    }
 
     rx_ring_item_t *p = &rx_ring[ring_idx];
 
@@ -941,6 +986,7 @@ void Aggregator::process_packet(const uint8_t *buf, size_t size, uint8_t wlan_id
         // remove block if all K elements (without gaps) were sent
         if(p->fragment_to_send_idx == fec_k)
         {
+            close_block(ring_idx);
             rx_ring_front = modN(rx_ring_front + 1, RX_RING_SIZE);
             rx_ring_alloc -= 1;
             assert(rx_ring_alloc >= 0);
@@ -964,6 +1010,7 @@ void Aggregator::process_packet(const uint8_t *buf, size_t size, uint8_t wlan_id
                     send_packet(rx_ring_front, f_idx);
                 }
             }
+            count_block(rx_ring[rx_ring_front].has_fragments);
             rx_ring_front = modN(rx_ring_front + 1, RX_RING_SIZE);
             rx_ring_alloc -= 1;
             nrm -= 1;
@@ -1007,6 +1054,7 @@ void Aggregator::process_packet(const uint8_t *buf, size_t size, uint8_t wlan_id
         }
 
         // remove block
+        close_block(ring_idx);
         rx_ring_front = modN(rx_ring_front + 1, RX_RING_SIZE);
         rx_ring_alloc -= 1;
         assert(rx_ring_alloc >= 0);
