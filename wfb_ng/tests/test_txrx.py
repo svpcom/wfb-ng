@@ -100,6 +100,14 @@ class FakeAntennaProtocol(object):
 
 
 
+@defer.inlineCallbacks
+def wait_for(cond, timeout=5.0):
+    """until cond() holds, a slow host given the time it takes"""
+    t0 = time.time()
+    while not cond() and time.time() - t0 < timeout:
+        yield df_sleep(0.01)
+
+
 class TXCommandClient(DatagramProtocol):
     noisy = False
 
@@ -107,10 +115,12 @@ class TXCommandClient(DatagramProtocol):
     CMD_SET_RADIO = 2
     CMD_GET_FEC = 3
     CMD_GET_RADIO = 4
+    CMD_SET_FEC_TIMEOUT = 5
 
     resp_map = {
         CMD_SET_FEC: lambda x: None,
         CMD_SET_RADIO: lambda x: None,
+        CMD_SET_FEC_TIMEOUT: lambda x: None,
         CMD_GET_FEC: lambda x: struct.unpack('!BB', x),
         CMD_GET_RADIO: lambda x: struct.unpack('!B??BB?BB', x)
     }
@@ -149,6 +159,11 @@ class TXCommandClient(DatagramProtocol):
 
         return self._do_cmd(req_id, struct.pack('!IBBB', req_id, self.CMD_SET_FEC, k, n))\
                    .addCallback(_got_response)
+
+    @gen_req_id
+    def set_fec_timeout(self, req_id, timeout_ms):
+        return self._do_cmd(req_id, struct.pack('!IBI', req_id, self.CMD_SET_FEC_TIMEOUT, timeout_ms))\
+                   .addCallback(lambda data: None)
 
     @gen_req_id
     def set_radio(self, req_id, stbc, ldpc, short_gi, bandwidth, mcs_index, vht_mode, vht_nss, subch=0):
@@ -206,11 +221,11 @@ class TXRXTestCase(unittest.TestCase):
         self.rx_pp = RXProtocol(self.ap, cmd_rx, 'debug rx')
         self.tx_pp = TXProtocol(self.ap, cmd_tx, 'debug tx')
 
-        self.rx_pp.start().addErrback(lambda f: f.trap('twisted.internet.error.ProcessTerminated'))
-        self.tx_pp.start().addErrback(lambda f: f.trap('twisted.internet.error.ProcessTerminated'))
+        self.rx_df = self.rx_pp.start().addErrback(lambda f: f.trap('twisted.internet.error.ProcessTerminated'))
+        self.tx_df = self.tx_pp.start().addErrback(lambda f: f.trap('twisted.internet.error.ProcessTerminated'))
 
         # Wait for tx/rx processes to initialize
-        yield df_sleep(0.1)
+        yield self.wait_ready()
 
     @defer.inlineCallbacks
     def tearDown(self):
@@ -224,7 +239,19 @@ class TXRXTestCase(unittest.TestCase):
         self.tx_ep.stopListening()
         self.cmd_ep.stopListening()
         # Wait for tx/rx processes to die
-        yield df_sleep(0.1)
+        yield defer.DeferredList([self.rx_df, self.tx_df])
+
+    @defer.inlineCallbacks
+    def wait_ready(self, timeout=5.0):
+        # wfb_tx answers a command once its sockets are up
+        ready = []
+        t0 = time.time()
+        while not ready and time.time() - t0 < timeout:
+            try:
+                self.cmdp.get_fec().addCallback(ready.append)
+            except OSError:  # no unix socket of wfb_tx yet
+                pass
+            yield df_sleep(0.05)
 
     @defer.inlineCallbacks
     def test_data_before_session_is_rejected(self):
@@ -232,10 +259,10 @@ class TXRXTestCase(unittest.TestCase):
         zero_key_pkt = bytes.fromhex('010000000000000000'
                                      '9f07e2d6303d54156b13bcdbdb22d533e1eddb611885edcb')
         self.txp.send_msg(b'm1')
-        yield df_sleep(0.1)
+        yield wait_for(lambda: len(self.txp.rxq) >= 1)
         fwd_hdr = self.txp.rxq[0][:17]  # wrxfwd_t of the real session packet
         self.rxp.send_msg(fwd_hdr + zero_key_pkt)
-        yield df_sleep(1.1)  # wait stats refresh
+        yield wait_for(lambda: self.ap.rx_stats is not None and self.ap.rx_stats['dec_err'][1] >= 1)
         self.assertEqual(self.ap.rx_stats['data'][1], 0)
         self.assertEqual(self.ap.rx_stats['dec_err'][1], 1)
 
@@ -243,14 +270,16 @@ class TXRXTestCase(unittest.TestCase):
     def test_the_fragments_lost_of_the_blocks_done_count_the_fec_ones_too(self):
         # block 1 closes with its data alone, its FEC packets lost; block 2
         # gets 5 fragments of 12, it does not close; block 3 closes them both:
-        # their counters go
+        # their counters go.  No FEC timeout: a slow host would close a
+        # block with empty packets between the messages
+        yield self.cmdp.set_fec_timeout(0)
         for i in range(24):
             self.txp.send_msg(b'm%d' % (i + 1,))
-        yield df_sleep(0.1)
+        yield wait_for(lambda: len(self.txp.rxq) >= 37)
         self.assertEqual(len(self.txp.rxq), 37) # 1 session + (8 data packets + 4 fec packets) * 3
         for i in list(range(9)) + [13, 14, 15, 21, 22] + list(range(25, 37)):
             self.rxp.send_msg(self.txp.rxq[i])
-        yield df_sleep(1.1)  # wait stats refresh
+        yield wait_for(lambda: self.ap.rx_stats is not None and self.ap.rx_stats['frags'][1] >= 24)
         self.assertEqual([b'm%d' % (i + 1,) for i in list(range(11)) + list(range(16, 24))], self.rxp.rxq)
         self.assertEqual((self.ap.rx_stats['frags'][1], self.ap.rx_stats['frags_lost'][1]), (24, 11))
 
@@ -259,14 +288,15 @@ class TXRXTestCase(unittest.TestCase):
         # block 1 closes with its data alone, its FEC packets come between
         # the data of block 2 (the data go first in the queue of the sender):
         # it waits for its counters until block 2 closes
+        yield self.cmdp.set_fec_timeout(0)
         for i in range(24):
             self.txp.send_msg(b'm%d' % (i + 1,))
-        yield df_sleep(0.1)
+        yield wait_for(lambda: len(self.txp.rxq) >= 37)
         self.assertEqual(len(self.txp.rxq), 37)
         order = list(range(9)) + list(range(13, 17)) + list(range(9, 13)) + list(range(17, 37))
         for i in order:
             self.rxp.send_msg(self.txp.rxq[i])
-        yield df_sleep(1.1)  # wait stats refresh
+        yield wait_for(lambda: self.ap.rx_stats is not None and self.ap.rx_stats['frags'][1] >= 24)
         self.assertEqual([b'm%d' % (i + 1,) for i in range(24)], self.rxp.rxq)
         self.assertEqual((self.ap.rx_stats['frags'][1], self.ap.rx_stats['frags_lost'][1]), (24, 0))
 
@@ -278,10 +308,11 @@ class TXRXTestCase(unittest.TestCase):
     @defer.inlineCallbacks
     def test_txrx(self):
         self.assertEqual(len(self.txp.rxq), 0)
+        yield self.cmdp.set_fec_timeout(0)
         for i in range(16):
             self.txp.send_msg(b'm%d' % (i + 1,))
 
-        yield df_sleep(0.1)
+        yield wait_for(lambda: len(self.txp.rxq) >= 25)
         self.assertEqual(len(self.txp.rxq), 25) # 1 session + (8 data packets + 4 fec packets) * 2
 
         # Check FEC fail and recovery
@@ -291,7 +322,7 @@ class TXRXTestCase(unittest.TestCase):
             if i not in (4, 9, 10, 11, 12, 11 + 4, 11 + 5, 11 + 6):
                 self.rxp.send_msg(pkt)
 
-        yield df_sleep(1.1)
+        yield wait_for(lambda: len(self.rxp.rxq) >= 15)
         self.assertEqual([b'm%d' % (i + 1,) for i in range(16) if i + 1 != 4], self.rxp.rxq)
 
 
@@ -305,7 +336,7 @@ class TXRXTestCase(unittest.TestCase):
             # We have 3ms fec timeout after each fec packet so limit input packet speed
             yield df_sleep(0.003)
 
-        yield df_sleep(1.1) # wait stats refresh
+        yield wait_for(lambda: len(self.txp.rxq) >= 32 * 12 + 1)
         self.assertGreaterEqual(len(self.txp.rxq), 32 * 12 + 1) # session(s) + 32 blocks
 
         # Always send session packet first
@@ -325,7 +356,7 @@ class TXRXTestCase(unittest.TestCase):
                     self.rxp.send_msg(pkt)
                     yield df_sleep(0.003)
 
-        yield df_sleep(2.1) # wait stats refresh
+        yield wait_for(lambda: len(self.rxp.rxq) > 200)
         self.assertGreater(len(self.rxp.rxq), 200)
         self.assertLessEqual(len(self.rxp.rxq), 256)
         log.msg('Lost: %d/256' % (256 - len(self.rxp.rxq),))
@@ -345,7 +376,7 @@ class TXRXTestCase(unittest.TestCase):
         for i in range(6):
             self.txp.send_msg(b'm%d' % (i + 1,))
 
-        yield df_sleep(0.1)
+        yield wait_for(lambda: len(self.txp.rxq) >= 13)
         self.assertEqual(len(self.txp.rxq), 13) # 1 session + 8 data packets + 4 fec packets
 
         # Check FEC recovery
@@ -353,17 +384,18 @@ class TXRXTestCase(unittest.TestCase):
             if i not in (2, 4):
                 self.rxp.send_msg(pkt)
 
-        yield df_sleep(0.1)
+        yield wait_for(lambda: len(self.rxp.rxq) >= 6)
         self.assertEqual([b'm%d' % (i + 1,) for i in range(6)], self.rxp.rxq)
 
 
     @defer.inlineCallbacks
     def test_cmd_fec(self):
         self.assertEqual(len(self.txp.rxq), 0)
+        yield self.cmdp.set_fec_timeout(0)
         for i in range(6):
             self.txp.send_msg(b'm%d' % (i + 1,))
 
-        yield df_sleep(0.02) # don't wait for first fec timeout
+        yield wait_for(lambda: len(self.txp.rxq) >= 7)
         self.assertEqual(len(self.txp.rxq), 7) # 1 session + (6 data packets)
 
         res = yield self.cmdp.get_fec()
@@ -376,9 +408,10 @@ class TXRXTestCase(unittest.TestCase):
         self.assertEqual(res['k'], 1)
         self.assertEqual(res['n'], 2)
 
+        yield wait_for(lambda: len(self.txp.rxq) >= 15)
         self.assertEqual(len(self.txp.rxq), 15) # 1 session + (8 data packets + 4 fec packets) + 2 session
         self.txp.send_msg(b'm%d' % (7,))
-        yield df_sleep(0.1)
+        yield wait_for(lambda: len(self.txp.rxq) >= 17)
 
         self.assertEqual(len(self.txp.rxq), 17) # 1 session + (8 data packets + 4 fec packets) + 2 session + (1 data packet + 1 fec packet)
 
@@ -387,7 +420,7 @@ class TXRXTestCase(unittest.TestCase):
             if i not in (2, 4, 15):
                 self.rxp.send_msg(pkt)
 
-        yield df_sleep(0.1)
+        yield wait_for(lambda: len(self.rxp.rxq) >= 7)
         self.assertEqual([b'm%d' % (i + 1,) for i in range(7)], self.rxp.rxq)
 
 
@@ -397,28 +430,31 @@ class TXRXTestCase(unittest.TestCase):
         # FEC packets come after the key of the new session (a qdisc that
         # sends the data before the FEC): they do not decrypt, the data of
         # the block go out with the holes
+        yield self.cmdp.set_fec_timeout(0)
         for i in range(6):
             self.txp.send_msg(b'm%d' % (i + 1,))
 
-        yield df_sleep(0.02) # don't wait for first fec timeout
+        # the command goes before the data waiting to be read
+        yield wait_for(lambda: len(self.txp.rxq) >= 7)
         yield self.cmdp.set_fec(1, 2)
         self.txp.send_msg(b'm%d' % (7,))
-        yield df_sleep(0.1)
+        yield wait_for(lambda: len(self.txp.rxq) >= 17)
         self.assertEqual(len(self.txp.rxq), 17) # 1 session + (8 data packets + 4 fec packets) + 2 session + (1 data packet + 1 fec packet)
 
         for i in [0, 1, 3, 5, 6, 7, 8, 13, 14, 9, 10, 11, 12, 15, 16]:
             self.rxp.send_msg(self.txp.rxq[i])
 
-        yield df_sleep(0.1)
+        yield wait_for(lambda: len(self.rxp.rxq) >= 5)
         self.assertEqual([b'm1', b'm3', b'm5', b'm6', b'm7'], self.rxp.rxq)
 
     @defer.inlineCallbacks
     def test_cmd_fec_invalid_args(self):
         self.assertEqual(len(self.txp.rxq), 0)
+        yield self.cmdp.set_fec_timeout(0)
         for i in range(6):
             self.txp.send_msg(b'm%d' % (i + 1,))
 
-        yield df_sleep(0.02) # don't wait for first fec timeout
+        yield wait_for(lambda: len(self.txp.rxq) >= 7)
         self.assertEqual(len(self.txp.rxq), 7) # 1 session + (6 data packets)
 
         try:
@@ -428,10 +464,13 @@ class TXRXTestCase(unittest.TestCase):
             self.assertEqual(str(v), 'Error: EINVAL')
 
         self.assertEqual(len(self.txp.rxq), 7) # command should be ignored
-        yield df_sleep(0.1)
 
+        # the FEC timeout closes the block, then none for the next packet
+        yield self.cmdp.set_fec_timeout(30)
+        yield wait_for(lambda: len(self.txp.rxq) >= 13)
+        yield self.cmdp.set_fec_timeout(0)
         self.txp.send_msg(b'm%d' % (7,))
-        yield df_sleep(0.02)  # don't wait for first fec timeout
+        yield wait_for(lambda: len(self.txp.rxq) >= 14)
 
         self.assertEqual(len(self.txp.rxq), 14) # 1 session + (8 data packets + 4 fec packets) + 1 data packet
 
@@ -440,16 +479,17 @@ class TXRXTestCase(unittest.TestCase):
             if i not in (2, 4):
                 self.rxp.send_msg(pkt)
 
-        yield df_sleep(0.1)
+        yield wait_for(lambda: len(self.rxp.rxq) >= 7)
         self.assertEqual([b'm%d' % (i + 1,) for i in range(7)], self.rxp.rxq)
 
     @defer.inlineCallbacks
     def test_cmd_radio(self):
         self.assertEqual(len(self.txp.rxq), 0)
+        yield self.cmdp.set_fec_timeout(0)
         for i in range(6):
             self.txp.send_msg(b'm%d' % (i + 1,))
 
-        yield df_sleep(0.02) # don't wait for first fec timeout
+        yield wait_for(lambda: len(self.txp.rxq) >= 7)
         self.assertEqual(len(self.txp.rxq), 7) # 1 session + (6 data packets)
 
         res = yield self.cmdp.get_radio()
@@ -475,7 +515,10 @@ class TXRXTestCase(unittest.TestCase):
         self.assertEqual(res['subch'], 3)
 
         self.txp.send_msg(b'm%d' % (7,))
-        yield df_sleep(0.1)
+        yield wait_for(lambda: len(self.txp.rxq) >= 8)
+        # the FEC timeout closes the block
+        yield self.cmdp.set_fec_timeout(30)
+        yield wait_for(lambda: len(self.txp.rxq) >= 13)
 
         self.assertEqual(len(self.txp.rxq), 13) # 1 session + (8 data packets + 4 fec packets)
 
@@ -484,16 +527,17 @@ class TXRXTestCase(unittest.TestCase):
             if i not in (2, 4):
                 self.rxp.send_msg(pkt)
 
-        yield df_sleep(0.1)
+        yield wait_for(lambda: len(self.rxp.rxq) >= 7)
         self.assertEqual([b'm%d' % (i + 1,) for i in range(7)], self.rxp.rxq)
 
     @defer.inlineCallbacks
     def test_cmd_radio_invalid_args(self):
         self.assertEqual(len(self.txp.rxq), 0)
+        yield self.cmdp.set_fec_timeout(0)
         for i in range(6):
             self.txp.send_msg(b'm%d' % (i + 1,))
 
-        yield df_sleep(0.02) # don't wait for first fec timeout
+        yield wait_for(lambda: len(self.txp.rxq) >= 7)
         self.assertEqual(len(self.txp.rxq), 7) # 1 session + (6 data packets)
 
         try:
@@ -510,7 +554,10 @@ class TXRXTestCase(unittest.TestCase):
             self.assertEqual(str(v), 'Error: EINVAL')
 
         self.txp.send_msg(b'm%d' % (7,))
-        yield df_sleep(0.1)
+        yield wait_for(lambda: len(self.txp.rxq) >= 8)
+        # the FEC timeout closes the block
+        yield self.cmdp.set_fec_timeout(30)
+        yield wait_for(lambda: len(self.txp.rxq) >= 13)
 
         self.assertEqual(len(self.txp.rxq), 13) # 1 session + (8 data packets + 4 fec packets)
 
@@ -519,7 +566,7 @@ class TXRXTestCase(unittest.TestCase):
             if i not in (2, 4):
                 self.rxp.send_msg(pkt)
 
-        yield df_sleep(0.1)
+        yield wait_for(lambda: len(self.rxp.rxq) >= 7)
         self.assertEqual([b'm%d' % (i + 1,) for i in range(7)], self.rxp.rxq)
 
 
@@ -567,11 +614,11 @@ class UNIXTXRXTestCase(TXRXTestCase):
         self.rx_pp = RXProtocol(self.ap, cmd_rx, 'debug rx')
         self.tx_pp = TXProtocol(self.ap, cmd_tx, 'debug tx')
 
-        self.rx_pp.start().addErrback(lambda f: f.trap('twisted.internet.error.ProcessTerminated'))
-        self.tx_pp.start().addErrback(lambda f: f.trap('twisted.internet.error.ProcessTerminated'))
+        self.rx_df = self.rx_pp.start().addErrback(lambda f: f.trap('twisted.internet.error.ProcessTerminated'))
+        self.tx_df = self.tx_pp.start().addErrback(lambda f: f.trap('twisted.internet.error.ProcessTerminated'))
 
         # Wait for tx/rx processes to initialize
-        yield df_sleep(0.1)
+        yield self.wait_ready()
 
     @defer.inlineCallbacks
     def tearDown(self):
@@ -587,4 +634,4 @@ class UNIXTXRXTestCase(TXRXTestCase):
         self.tx_rx_ep.stopListening()
         self.cmd_ep.stopListening()
         # Wait for tx/rx processes to die
-        yield df_sleep(0.1)
+        yield defer.DeferredList([self.rx_df, self.tx_df])
