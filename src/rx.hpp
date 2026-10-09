@@ -345,6 +345,7 @@ private:
     int rx_ring_push(void);
     void count_block(int received);
     void close_block(int ring_idx);
+    void flush_ring(void);
     // cppcheck-suppress unusedPrivateFunction
     static int get_tag(const void *buf, size_t size, uint8_t tag_id, void *value, size_t value_size);
 

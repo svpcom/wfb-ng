@@ -392,6 +392,27 @@ class TXRXTestCase(unittest.TestCase):
 
 
     @defer.inlineCallbacks
+    def test_the_data_of_a_block_unfinished_go_out_at_a_new_session(self):
+        # the block closed by the change of FEC lost two data packets and its
+        # FEC packets come after the key of the new session (a qdisc that
+        # sends the data before the FEC): they do not decrypt, the data of
+        # the block go out with the holes
+        for i in range(6):
+            self.txp.send_msg(b'm%d' % (i + 1,))
+
+        yield df_sleep(0.02) # don't wait for first fec timeout
+        yield self.cmdp.set_fec(1, 2)
+        self.txp.send_msg(b'm%d' % (7,))
+        yield df_sleep(0.1)
+        self.assertEqual(len(self.txp.rxq), 17) # 1 session + (8 data packets + 4 fec packets) + 2 session + (1 data packet + 1 fec packet)
+
+        for i in [0, 1, 3, 5, 6, 7, 8, 13, 14, 9, 10, 11, 12, 15, 16]:
+            self.rxp.send_msg(self.txp.rxq[i])
+
+        yield df_sleep(0.1)
+        self.assertEqual([b'm1', b'm3', b'm5', b'm6', b'm7'], self.rxp.rxq)
+
+    @defer.inlineCallbacks
     def test_cmd_fec_invalid_args(self):
         self.assertEqual(len(self.txp.rxq), 0)
         for i in range(6):

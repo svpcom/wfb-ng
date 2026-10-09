@@ -561,6 +561,25 @@ int Aggregator::rx_ring_push(void)
 }
 
 
+void Aggregator::flush_ring(void)
+{
+    // The data of the blocks left unfinished go out with their holes at a new
+    // session: their FEC packets may come after its key (a qdisc that sends
+    // the data before the FEC) and do not decrypt. Their fragments are not
+    // counted: they are still on the way.
+    for(int i = rx_ring_front, c = rx_ring_alloc; c > 0; i = modN(i + 1, RX_RING_SIZE), c--)
+    {
+        for(int f_idx = rx_ring[i].fragment_to_send_idx; f_idx < fec_k; f_idx++)
+        {
+            if(rx_ring[i].fragment_map[f_idx])
+            {
+                send_packet(i, f_idx);
+            }
+        }
+    }
+}
+
+
 void Aggregator::count_block(int received)
 {
     count_p_frags += fec_n;
@@ -844,6 +863,7 @@ void Aggregator::process_packet(const uint8_t *buf, size_t size, uint8_t wlan_id
 
             if (fec_p != NULL)
             {
+                flush_ring();
                 deinit_fec();
             }
 
