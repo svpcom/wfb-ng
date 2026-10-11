@@ -589,8 +589,28 @@ class BlockTimeoutTestCase(TXRXTestCase):
                 self.rxp.send_msg(self.txp.rxq[i])
         yield wait_for(lambda: len(self.rxp.rxq) >= 7)
         self.assertEqual([b'm%d' % i for i in (1, 2, 3, 5, 6, 7, 8)], self.rxp.rxq)
+
+    @defer.inlineCallbacks
+    def test_a_fragment_after_the_timeout_counts_received_its_data_do_not_go_out(self):
+        # the data packet 4 of block 1 comes after the timeout let the block
+        # go: as for a block closed, the air brought it (the frags of the
+        # block count when block 2 closes), its data are late and stay
+        yield self.cmdp.set_fec_timeout(0)
+        for i in range(16):
+            self.txp.send_msg(b'm%d' % (i + 1,))
+        yield wait_for(lambda: len(self.txp.rxq) >= 25)
+        for i in range(9):
+            if i != 4:
+                self.rxp.send_msg(self.txp.rxq[i])
+        yield wait_for(lambda: len(self.rxp.rxq) >= 7)
+        self.rxp.send_msg(self.txp.rxq[4])
+        for i in range(13, 25):
+            self.rxp.send_msg(self.txp.rxq[i])
+        yield wait_for(lambda: len(self.rxp.rxq) >= 15)
+        self.assertEqual([b'm%d' % i for i in (1, 2, 3, 5, 6, 7, 8)] + [b'm%d' % i for i in range(9, 17)],
+                         self.rxp.rxq)
         yield wait_for(lambda: self.ap.rx_stats is not None and self.ap.rx_stats['frags'][1] >= 12)
-        self.assertEqual((self.ap.rx_stats['frags'][1], self.ap.rx_stats['frags_lost'][1]), (12, 5))
+        self.assertEqual((self.ap.rx_stats['frags'][1], self.ap.rx_stats['frags_lost'][1]), (12, 4))
 
 
 class KeyDerivationTestCase(TXRXTestCase):

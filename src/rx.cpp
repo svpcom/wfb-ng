@@ -591,7 +591,8 @@ void Aggregator::flush(void)
 {
     // A block that waits for fragments no one sends any more (the stream
     // stopped or went another way with its FEC lost) would hold its data
-    // until the next traffic, for minutes
+    // until the next traffic, for minutes.  It closes as a whole one does:
+    // its fragments that come later count received, their data stay
     uint64_t ts = get_time_ms();
 
     while(block_timeout > 0 && rx_ring_alloc > 0 && ts >= rx_ring[rx_ring_front].alloc_ts + block_timeout)
@@ -603,7 +604,7 @@ void Aggregator::flush(void)
                 send_packet(rx_ring_front, f_idx);
             }
         }
-        count_block(rx_ring[rx_ring_front].has_fragments);
+        close_block(rx_ring_front);
         rx_ring_front = modN(rx_ring_front + 1, RX_RING_SIZE);
         rx_ring_alloc -= 1;
     }
