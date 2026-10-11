@@ -193,6 +193,8 @@ class TXCommandClient(DatagramProtocol):
 
 
 class TXRXTestCase(unittest.TestCase):
+    rx_opts = ()
+
     def setup_keys(self, bindir):
         return  call_and_check_rc(os.path.join(bindir, 'wfb_keygen'))
 
@@ -212,7 +214,7 @@ class TXRXTestCase(unittest.TestCase):
         link_id = int.from_bytes(os.urandom(3), 'big')
         epoch = int(time.time())
         cmd_rx = [os.path.join(bindir, 'wfb_rx'), '-K', 'drone.key', '-a', '10001', '-u', '10002',
-                  '-i', str(link_id), '-e', str(epoch), '-R', str(512 * 1024), '-s', str(512 * 1024), 'wlan0']
+                  '-i', str(link_id), '-e', str(epoch), '-R', str(512 * 1024), '-s', str(512 * 1024)] + list(self.rx_opts) + ['wlan0']
         cmd_tx = [os.path.join(bindir, 'wfb_tx'), '-K', 'gs.key', '-u', '10003', '-D', '10004', '-T', '30', '-F', '3000', '-C', '7003',
                   # '-Q', '-P 1',  ## requires root priv
                   '-i', str(link_id), '-e', str(epoch), '-R', str(512 * 1024), '-s', str(512 * 1024), 'wlan0']
@@ -568,6 +570,27 @@ class TXRXTestCase(unittest.TestCase):
 
         yield wait_for(lambda: len(self.rxp.rxq) >= 7)
         self.assertEqual([b'm%d' % (i + 1,) for i in range(7)], self.rxp.rxq)
+
+
+class BlockTimeoutTestCase(TXRXTestCase):
+    rx_opts = ('-T', '300')
+
+    @defer.inlineCallbacks
+    def test_a_block_that_cannot_be_recovered_goes_out_after_the_timeout(self):
+        # block 1 loses its data packet 4 and all its FEC packets and no
+        # block comes after it: its data 5-8 go out with the gap after the
+        # timeout, not with the next block whenever that comes
+        yield self.cmdp.set_fec_timeout(0)
+        for i in range(8):
+            self.txp.send_msg(b'm%d' % (i + 1,))
+        yield wait_for(lambda: len(self.txp.rxq) >= 13)
+        for i in range(9):
+            if i != 4:
+                self.rxp.send_msg(self.txp.rxq[i])
+        yield wait_for(lambda: len(self.rxp.rxq) >= 7)
+        self.assertEqual([b'm%d' % i for i in (1, 2, 3, 5, 6, 7, 8)], self.rxp.rxq)
+        yield wait_for(lambda: self.ap.rx_stats is not None and self.ap.rx_stats['frags'][1] >= 12)
+        self.assertEqual((self.ap.rx_stats['frags'][1], self.ap.rx_stats['frags_lost'][1]), (12, 5))
 
 
 class KeyDerivationTestCase(TXRXTestCase):

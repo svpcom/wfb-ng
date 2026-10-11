@@ -154,6 +154,7 @@ typedef struct {
     size_t *fragment_map;
     uint8_t fragment_to_send_idx;
     uint8_t has_fragments;
+    uint64_t alloc_ts;  // ms the block came into the ring
 } rx_ring_item_t;
 
 
@@ -285,9 +286,15 @@ public:
                                 const int8_t *rssi, const int8_t *noise, uint16_t freq, uint8_t mcs_index,
                                 uint8_t bandwidth, sockaddr_in *sockaddr);
     virtual void dump_stats(void);
+    virtual uint64_t get_flush_ts(void);
+    virtual void flush(void);
 
     // Packet loss listener for immediate notifications
     void set_packet_loss_listener(PacketLossListener* listener) { packet_loss_listener_ = listener; }
+
+    // A block held in the ring for its missing fragments longer than this
+    // (ms) goes out with the gaps; 0 - until a later block is whole
+    void set_block_timeout(int timeout_ms) { block_timeout = timeout_ms; }
 
     // Make stats public for android userspace receiver
     void clear_stats(void)
@@ -359,6 +366,7 @@ private:
     int rx_ring_front; // current packet
     int rx_ring_alloc; // number of allocated entries
     uint64_t last_known_block;  //id of last known block
+    int block_timeout;
 
     // The block closed last (K fragments, its data out): it counts the
     // fragments that come after (its FEC ones go after the data of the next

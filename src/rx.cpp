@@ -284,7 +284,8 @@ Aggregator::Aggregator(const string &keypair, uint64_t epoch, uint32_t channel_i
     count_p_lost(0), count_p_bad(0), count_p_override(0), count_p_outgoing(0), count_b_outgoing(0), count_p_frags(0),
     count_p_frags_lost(0),
     fec_p(NULL), fec_k(-1), fec_n(-1), seq(0), rx_ring{}, rx_ring_front(0), rx_ring_alloc(0),
-    last_known_block((uint64_t)-1), pending_block((uint64_t)-1), epoch(epoch), channel_id(channel_id), decrypted_packets(AGG_ROTATE_MS)
+    last_known_block((uint64_t)-1), block_timeout(0), pending_block((uint64_t)-1), epoch(epoch), channel_id(channel_id),
+    decrypted_packets(AGG_ROTATE_MS)
 {
     memset(session_key, '\0', sizeof(session_key));
     memset(session_hash, '\0', sizeof(session_hash));
@@ -580,6 +581,35 @@ void Aggregator::flush_ring(void)
 }
 
 
+uint64_t Aggregator::get_flush_ts(void)
+{
+    return block_timeout > 0 && rx_ring_alloc > 0 ? rx_ring[rx_ring_front].alloc_ts + block_timeout : UINT64_MAX;
+}
+
+
+void Aggregator::flush(void)
+{
+    // A block that waits for fragments no one sends any more (the stream
+    // stopped or went another way with its FEC lost) would hold its data
+    // until the next traffic, for minutes
+    uint64_t ts = get_time_ms();
+
+    while(block_timeout > 0 && rx_ring_alloc > 0 && ts >= rx_ring[rx_ring_front].alloc_ts + block_timeout)
+    {
+        for(int f_idx = rx_ring[rx_ring_front].fragment_to_send_idx; f_idx < fec_k; f_idx++)
+        {
+            if(rx_ring[rx_ring_front].fragment_map[f_idx])
+            {
+                send_packet(rx_ring_front, f_idx);
+            }
+        }
+        count_block(rx_ring[rx_ring_front].has_fragments);
+        rx_ring_front = modN(rx_ring_front + 1, RX_RING_SIZE);
+        rx_ring_alloc -= 1;
+    }
+}
+
+
 void Aggregator::count_block(int received)
 {
     count_p_frags += fec_n;
@@ -633,6 +663,7 @@ int Aggregator::get_block_ring_idx(uint64_t block_idx)
 
     last_known_block = block_idx;
     int ring_idx = -1;
+    uint64_t ts = get_time_ms();
 
     for(int i = 0; i < new_blocks; i++)
     {
@@ -640,6 +671,7 @@ int Aggregator::get_block_ring_idx(uint64_t block_idx)
         rx_ring[ring_idx].block_idx = block_idx + i + 1 - new_blocks;
         rx_ring[ring_idx].fragment_to_send_idx = 0;
         rx_ring[ring_idx].has_fragments = 0;
+        rx_ring[ring_idx].alloc_ts = ts;
         memset(rx_ring[ring_idx].fragment_map, '\0', fec_n * sizeof(size_t));
     }
     return ring_idx;
@@ -1299,7 +1331,8 @@ void network_loop(int srv_port, unique_ptr<BaseAggregator> &agg, int log_interva
     for(;;)
     {
         uint64_t cur_ts = get_time_ms();
-        int rc = poll(fds, 1, log_send_ts > cur_ts ? log_send_ts - cur_ts : 0);
+        uint64_t deadline = min(log_send_ts, agg->get_flush_ts());
+        int rc = poll(fds, 1, deadline > cur_ts ? deadline - cur_ts : 0);
 
         if (rc < 0){
             if (errno == EINTR || errno == EAGAIN) continue;
@@ -1311,6 +1344,11 @@ void network_loop(int srv_port, unique_ptr<BaseAggregator> &agg, int log_interva
         {
             agg->dump_stats();
             log_send_ts = cur_ts + log_interval - ((cur_ts - log_send_ts) % log_interval);
+        }
+
+        if (cur_ts >= agg->get_flush_ts())
+        {
+            agg->flush();
         }
 
         if (rc == 0) continue; // timeout expired
@@ -1375,11 +1413,12 @@ int main(int argc, char* const *argv)
     rx_mode_t rx_mode = LOCAL;
     int rcv_buf = 0;
     int snd_buf = 0;
+    int block_timeout = 0;
 
     string keypair = "rx.key";
     string unix_socket = "";
 
-    while ((opt = getopt(argc, argv, "K:fa:c:u:U:p:l:i:e:R:s:")) != -1) {
+    while ((opt = getopt(argc, argv, "K:fa:c:u:U:p:l:i:e:R:s:T:")) != -1) {
         switch (opt) {
         case 'K':
             keypair = optarg;
@@ -1419,15 +1458,21 @@ int main(int argc, char* const *argv)
         case 'e':
             epoch = atoll(optarg);
             break;
+        case 'T':
+            block_timeout = atoi(optarg);
+            if (block_timeout < 0) goto show_usage;
+            break;
         default: /* '?' */
         show_usage:
             WFB_INFO("Local RX: %s [-K rx_key] { [-c client_addr] [-u client_port] | [-U unix_socket] } [-p radio_port]\n"
-                     "             [-R rcv_buf] [-s snd_buf] [-l log_interval] [-e epoch] [-i link_id] interface1 [interface2] ...\n", argv[0]);
+                     "             [-R rcv_buf] [-s snd_buf] [-l log_interval] [-e epoch] [-i link_id] [-T block_timeout]\n"
+                     "             interface1 [interface2] ...\n", argv[0]);
             WFB_INFO("RX forwarder: %s -f [-c client_addr] [-u client_port] [-p radio_port]  [-R rcv_buf] [-s snd_buf]\n"
                      "                    [-i link_id] interface1 [interface2] ...\n", argv[0]);
             WFB_INFO("RX aggregator: %s -a server_port [-K rx_key] { [-c client_addr] [-u client_port] | [-U unix_socket] } [-R rcv_buf]\n"
-                     "                                 [-s snd_buf] [-l log_interval] [-p radio_port] [-e epoch] [-i link_id]\n", argv[0]);
-            WFB_INFO("Default: K='%s', connect=%s:%d, link_id=0x%06x, radio_port=%u, epoch=%" PRIu64 ", log_interval=%d, rcv_buf=system_default, snd_buf=system_default\n", keypair.c_str(), client_addr.c_str(), client_port, link_id, radio_port, epoch, log_interval);
+                     "                                 [-s snd_buf] [-l log_interval] [-p radio_port] [-e epoch] [-i link_id] [-T block_timeout]\n", argv[0]);
+            WFB_INFO("Default: K='%s', connect=%s:%d, link_id=0x%06x, radio_port=%u, epoch=%" PRIu64 ", log_interval=%d, block_timeout=%d, rcv_buf=system_default, snd_buf=system_default\n", keypair.c_str(), client_addr.c_str(), client_port, link_id, radio_port, epoch, log_interval, block_timeout);
+            WFB_INFO("Block timeout: ms a block waits for its missing fragments before its data go out with the gaps, 0 - until a later block is whole\n");
             WFB_INFO("WFB-ng version %s, FEC: %s\n", WFB_VERSION, zfex_opt);
             WFB_INFO("WFB-ng home page: <http://wfb-ng.org>\n");
             exit(1);
@@ -1475,15 +1520,21 @@ int main(int argc, char* const *argv)
         {
         case LOCAL:
         case AGGREGATOR:
+        {
+            unique_ptr<Aggregator> a;
+
             if(unix_socket.length() > 0)
             {
-                agg = unique_ptr<AggregatorUNIX>(new AggregatorUNIX(unix_socket, keypair, epoch, channel_id, snd_buf));
+                a.reset(new AggregatorUNIX(unix_socket, keypair, epoch, channel_id, snd_buf));
             }
             else
             {
-                agg = unique_ptr<AggregatorUDPv4>(new AggregatorUDPv4(client_addr, client_port, keypair, epoch, channel_id, snd_buf));
+                a.reset(new AggregatorUDPv4(client_addr, client_port, keypair, epoch, channel_id, snd_buf));
             }
+            a->set_block_timeout(block_timeout);
+            agg = std::move(a);
             break;
+        }
 
         case FORWARDER:
             agg = unique_ptr<Forwarder>(new Forwarder(client_addr, client_port, snd_buf));
