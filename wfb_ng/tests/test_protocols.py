@@ -20,7 +20,7 @@
 
 from twisted.trial import unittest
 from twisted.internet import defer, error
-from ..protocols import RXAntennaProtocol, SSHClientProtocol, TXProtocol
+from ..protocols import AntStatsAndSelector, RXAntennaProtocol, SSHClientProtocol, TXProtocol
 from ..services import make_ant_sel_cb
 
 
@@ -61,6 +61,27 @@ class AntSelCallbackTestCase(unittest.TestCase):
         self.assertEqual(p_in.peer, 'tx2')
         cb(3)
         self.assertEqual(p_in.peer, 'tx2')
+
+
+class StatsSession(object):
+    def __init__(self, sessions, leaves=False):
+        self.sessions, self.leaves, self.got = sessions, leaves, []
+
+    def send_stats(self, data):
+        self.got.append(data['type'])
+        if self.leaves:
+            self.sessions.remove(self)
+
+
+class AntStatsAndSelectorTestCase(unittest.TestCase):
+    def test_a_session_that_leaves_while_the_stats_go_out_does_not_skip_the_next(self):
+        # a connection closed during its send drops the session from the list being walked
+        ant = AntStatsAndSelector(None)
+        self.addCleanup(ant._cleanup)
+        first, second = StatsSession(ant.ui_sessions, leaves=True), StatsSession(ant.ui_sessions)
+        ant.ui_sessions.extend([first, second])
+        ant.update_rx_stats('video rx', {}, {}, None)
+        self.assertEqual((first.got, second.got), (['rx'], ['rx']))
 
 
 class RXAntennaProtocolTestCase(unittest.TestCase):

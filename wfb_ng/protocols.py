@@ -426,7 +426,7 @@ class AntStatsAndSelector(object):
         self.cur_stats[rx_id] = (ant_stats, packet_stats)
 
         # Send stats to CLI sessions and logger
-        for s in self.ui_sessions:
+        for s in list(self.ui_sessions):
             s.send_stats(dict(type='rx',
                               timestamp = time.time(),
                               id=rx_id, tx_wlan=self.tx_sel,
@@ -438,7 +438,7 @@ class AntStatsAndSelector(object):
             log.msg("%s %r %r" % (tx_id, packet_stats, ant_latency))
 
         # Send stats to CLI sessions and logger
-        for s in self.ui_sessions:
+        for s in list(self.ui_sessions):
             rf_temperature = dict(self.rf_temp_meter.rf_temperature) if self.rf_temp_meter is not None else {}
             s.send_stats(dict(type='tx',
                               timestamp = time.time(),

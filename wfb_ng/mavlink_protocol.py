@@ -280,7 +280,7 @@ class MavlinkTCPFactory(Factory):
             self.peer.write(m)
 
     def write(self, data):
-        for s in self.sessions:
+        for s in list(self.sessions):
             try:
                 s.send(data)
             except Exception as v:
