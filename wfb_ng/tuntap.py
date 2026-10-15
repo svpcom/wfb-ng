@@ -153,18 +153,24 @@ class TUNTAPProtocol(Protocol, ProxyProtocol):
                                agg_max_size=mtu,
                                agg_timeout=agg_timeout)
 
-        # Sent keepalive packets
+        # Sent keepalive packets while the tun is up
         self.lc = task.LoopingCall(self.send_keepalive)
-        self.lc.start(self.keepalive_interval, now=False).addErrback(abort_on_crash)
         self.pkt_in_sem = 0
         self.pkt_out_sem = 0
+
+    def connectionMade(self):
+        self.lc.start(self.keepalive_interval, now=False).addErrback(abort_on_crash)
+
+    def connectionLost(self, reason=connectionDone):
+        self._cleanup()
 
     def _send_to_all_peers(self, data):
         for peer in self.all_peers:
             peer.write(data)
 
     def _cleanup(self):
-        self.lc.stop()
+        if self.lc.running:
+            self.lc.stop()
         return ProxyProtocol._cleanup(self)
 
     # call from peer only!

@@ -25,7 +25,7 @@ from twisted.trial import unittest
 from twisted.internet import reactor, defer
 from twisted.internet.protocol import DatagramProtocol
 from ..mavlink import MAVLink_heartbeat_message, MAVLink
-from ..proxy import ProxyProtocol, UDPProxyProtocol, MavlinkUDPProxyProtocol
+from ..proxy import ProxyProtocol, UDPProxyProtocol, MavlinkUDPProxyProtocol, MavlinkSerialProxyProtocol
 from ..mavlink_protocol import MavlinkARMProtocol
 from ..common import df_sleep
 
@@ -178,3 +178,15 @@ class AggregationTestCase(unittest.TestCase):
         self.p.messageReceived(b'new')
         self.p.flush_queue()
         self.assertEqual(self.peer.sent, [b'new'])
+
+
+class MavlinkProxyStopTestCase(unittest.TestCase):
+    def test_a_stopped_proxy_leaves_no_flush_behind(self):
+        udp = MavlinkUDPProxyProtocol(addr=None, mirror=None, agg_max_size=1445, agg_timeout=1, inject_rssi=False,
+                                      mavlink_sys_id=3, mavlink_comp_id=242)
+        serial = MavlinkSerialProxyProtocol(agg_max_size=1445, agg_timeout=1, inject_rssi=False,
+                                            mavlink_sys_id=3, mavlink_comp_id=242)
+        for p, stop in ((udp, udp.stopProtocol), (serial, lambda: serial.connectionLost(None))):
+            p.messageReceived(b'x')
+            stop()
+            self.assertIsNone(p.agg_queue_timer)

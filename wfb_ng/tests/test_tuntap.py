@@ -74,3 +74,13 @@ class TUNTAPTestCase(unittest.TestCase):
         return getProcessOutputAndValue('bash', env=os.environ, stdinBytes=test_script.encode())\
             .addCallback(_got_rc)
 
+
+class TUNTAPProtocolTestCase(unittest.TestCase):
+    def test_the_keepalive_runs_only_while_the_tun_is_up(self):
+        # a start that failed before the tun came up, and a tun gone down, leave no timer behind
+        p = TUNTAPProtocol(mtu=1400)
+        self.assertFalse(p.lc.running)
+        p.makeConnection(None)
+        self.assertTrue(p.lc.running)
+        p.connectionLost(None)
+        self.assertFalse(p.lc.running)

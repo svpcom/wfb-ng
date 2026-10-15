@@ -38,8 +38,9 @@ class ProxyProtocol:
         self.agg_queue_timer = None
 
     def _cleanup(self):
-        if(self.agg_queue_timer):
+        if self.agg_queue_timer is not None and self.agg_queue_timer.active():
             self.agg_queue_timer.cancel()
+        self.agg_queue_timer = None
 
     def flush_queue(self):
         if self.agg_queue_timer is not None:
@@ -156,6 +157,9 @@ class MavlinkUDPProxyProtocol(DatagramProtocol, MavlinkProxyProtocol):
         self.rx_hooks = list(rx_hooks) if rx_hooks is not None else []
         self.tx_hooks = list(tx_hooks) if tx_hooks is not None else []
 
+    def stopProtocol(self):
+        self._cleanup()
+
     def datagramReceived(self, data, addr):
         if settings.common.debug:
             log.msg('Got a message from %s' % (addr,))
@@ -224,6 +228,9 @@ class MavlinkSerialProxyProtocol(Protocol, MavlinkProxyProtocol):
         self.mavlink_fsm.send(None)
         self.rx_hooks = rx_hooks or []
         self.tx_hooks = tx_hooks or []
+
+    def connectionLost(self, reason):
+        self._cleanup()
 
     def write(self, msg):
         for hook in self.tx_hooks:
