@@ -238,12 +238,11 @@ class RFTempMeter(object):
 
                                 ant_id = (idx << 8) + d['rf_path']
                                 res[ant_id] = d['temperature']
-                                break
                     except FileNotFoundError:
                         continue
                     except Exception as v:
                         reactor.callFromThread(log.err, v, 'Unable to parse %s:' % (fname,))
-                        break
+                    break
             return res
 
         def _got_temp(temp_d):

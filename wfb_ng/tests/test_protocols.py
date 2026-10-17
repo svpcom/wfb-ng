@@ -18,10 +18,31 @@
 #   51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
 #
 
+import io
+from unittest import mock
+
 from twisted.trial import unittest
 from twisted.internet import defer, error
+from .. import protocols
 from ..protocols import AntStatsAndSelector, RXAntennaProtocol, SSHClientProtocol, TXProtocol
 from ..services import make_ant_sel_cb
+
+
+class RFTempMeterTestCase(unittest.TestCase):
+    @defer.inlineCallbacks
+    def test_every_rf_path_of_the_card_is_read(self):
+        # the driver prints a line per RF path; the status shows the hottest
+        def fake_open(name, *args, **kwargs):
+            if '/rtl88x2eu/' not in name:
+                raise FileNotFoundError(name)
+            return io.StringIO('rf_path: 0, temperature: 41\nrf_path: 1, temperature: 47\n')
+
+        # no LoopingCall: its first read would race the one of the test
+        meter = protocols.RFTempMeter.__new__(protocols.RFTempMeter)
+        meter.wlans, meter.rf_temperature = ('wlan0',), {}
+        with mock.patch.object(protocols, 'open', fake_open, create=True):
+            yield meter.read_temperature()
+        self.assertEqual(meter.rf_temperature, {0: 41, 1: 47})
 
 
 class SSHClientProtocolTestCase(unittest.TestCase):
