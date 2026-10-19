@@ -37,6 +37,19 @@ See https://github.com/svpcom/wfb-ng/wiki for additional info
 Telegram group: (**wfb-ng support**) https://t.me/wfb_ng
 Please note, that it is only one official group.
 
+## Commercial support:
+Please consider subscribing for paid commercial support if you intend to use wfb-ng for business.
+As a paid customer, you will get technical support and maintenance services directly from our skilled team.
+Your bug reports and feature requests will get prioritized attention and expedited solutions.
+It's a win-win strategy for both parties, that would contribute to the stability your business,
+and help core developers to work on the project full-time.
+
+Support will **NOT be provided** for:
+ - Military usage
+ - Any affiliation to Ukraine
+
+If you have any specific questions, feel free to [contact us](mailto:wfb-ng@p2ptech.org).
+
 ## WFB-ng Data Transport Standard
 [RFC draft](doc/wfb-ng-std-draft.md)
 
