@@ -625,6 +625,26 @@ class KeyDerivationTestCase(TXRXTestCase):
         self.assertEqual(hashlib.sha1(keys[1]).hexdigest(), '7a6ffb44cebc53b4538d20bdcaba8d70c9cf4095')
 
 
+class KeygenTestCase(unittest.TestCase):
+    @defer.inlineCallbacks
+    def test_replaced_keys_are_private(self):
+        keys = ('gs.key', 'drone.key')
+        old_fds = []
+        for k in keys:
+            with open(k, 'wb') as fd:
+                fd.write(b'old')
+            os.chmod(k, 0o644)
+            old_fds.append(open(k, 'rb'))
+
+        yield call_and_check_rc(os.path.join(os.path.dirname(__file__), '../..', 'wfb_keygen'))
+
+        for k, fd in zip(keys, old_fds):
+            with fd:
+                self.assertEqual(fd.read(), b'old')
+            st = os.stat(k)
+            self.assertEqual((st.st_mode & 0o777, st.st_size), (0o600, 64))
+
+
 class UNIXTXRXTestCase(TXRXTestCase):
     @defer.inlineCallbacks
     def setUp(self):

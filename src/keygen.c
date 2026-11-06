@@ -19,7 +19,9 @@
 
 
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
+#include <errno.h>
 #include <sodium.h>
 #include <fcntl.h>
 #include <unistd.h>
@@ -27,13 +29,44 @@
 #include <sys/ioctl.h>
 #include <linux/random.h>
 
+// A new 0600 inode: a descriptor opened on an old world-readable key file must not read the new key
+static int write_key(char *tmp_path, const unsigned char *seckey, const unsigned char *pubkey)
+{
+    int fd, ok, err;
+
+    if ((fd = mkstemp(tmp_path)) < 0)
+    {
+        return -1;
+    }
+
+    ok = write(fd, seckey, crypto_box_SECRETKEYBYTES) == (ssize_t)crypto_box_SECRETKEYBYTES &&
+         write(fd, pubkey, crypto_box_PUBLICKEYBYTES) == (ssize_t)crypto_box_PUBLICKEYBYTES &&
+         fsync(fd) == 0;
+
+    if (close(fd) != 0)
+    {
+        ok = 0;
+    }
+
+    if (!ok)
+    {
+        err = errno;
+        unlink(tmp_path);
+        errno = err;
+        return -1;
+    }
+
+    return 0;
+}
+
 int main(int argc, char** argv)
 {
     unsigned char drone_publickey[crypto_box_PUBLICKEYBYTES];
     unsigned char drone_secretkey[crypto_box_SECRETKEYBYTES];
     unsigned char gs_publickey[crypto_box_PUBLICKEYBYTES];
     unsigned char gs_secretkey[crypto_box_SECRETKEYBYTES];
-    FILE *fp;
+    char drone_tmp[] = "drone.key.XXXXXX";
+    char gs_tmp[] = "gs.key.XXXXXX";
     char *password = NULL;
 
     if(argc == 2)
@@ -105,28 +138,28 @@ int main(int argc, char** argv)
         fprintf(stderr, "Keypair generated from random seed\n");
     }
 
-    if((fp = fopen("drone.key", "w")) == NULL)
+    if (write_key(drone_tmp, drone_secretkey, gs_publickey) != 0)
     {
         perror("Unable to save drone.key");
         return 1;
     }
 
-    fwrite(drone_secretkey, crypto_box_SECRETKEYBYTES, 1, fp);
-    fwrite(gs_publickey, crypto_box_PUBLICKEYBYTES, 1, fp);
-    fclose(fp);
-
-    fprintf(stderr, "Drone keypair (drone sec + gs pub) saved to drone.key\n");
-
-    if((fp = fopen("gs.key", "w")) == NULL)
+    if (write_key(gs_tmp, gs_secretkey, drone_publickey) != 0)
     {
         perror("Unable to save gs.key");
+        unlink(drone_tmp);
         return 1;
     }
 
-    fwrite(gs_secretkey, crypto_box_SECRETKEYBYTES, 1, fp);
-    fwrite(drone_publickey, crypto_box_PUBLICKEYBYTES, 1, fp);
-    fclose(fp);
+    if (rename(drone_tmp, "drone.key") != 0 || rename(gs_tmp, "gs.key") != 0)
+    {
+        perror("Unable to save keys");
+        unlink(drone_tmp);
+        unlink(gs_tmp);
+        return 1;
+    }
 
+    fprintf(stderr, "Drone keypair (drone sec + gs pub) saved to drone.key\n");
     fprintf(stderr, "GS keypair (gs sec + drone pub) saved to gs.key\n");
     return 0;
 }

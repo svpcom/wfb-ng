@@ -72,7 +72,17 @@ then
 fi
 
 # Create key and copy to right location
-(cd /etc && wfb_keygen)
+if ! [ -f /etc/gs.key ]
+then
+    (cd /etc && wfb_keygen)
+else
+    echo "Using existing /etc/gs.key"
+    chmod 600 /etc/gs.key
+    if [ -f /etc/drone.key ]
+    then
+        chmod 600 /etc/drone.key
+    fi
+fi
 
 if [ $auto_nics -eq 0 ]
 then

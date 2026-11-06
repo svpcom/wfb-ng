@@ -1,2 +1,10 @@
 #!/bin/bash
 systemctl daemon-reload
+
+for i in /etc/gs.key /etc/drone.key
+do
+    if [ -f $i ]
+    then
+        chmod 600 $i
+    fi
+done

@@ -92,5 +92,6 @@ Config is layered, parsed by `config_parser.py` (each section is a `Section` obj
 
 - The control plane is **async Twisted**, not blocking: use deferreds/`@defer.inlineCallbacks` and reactor calls; don't add blocking I/O on the reactor thread.
 - `CONTRIBUTING.md` states maintainers **do not accept AI-generated code** and reject purely cosmetic/whitespace patches - keep changes minimal, substantive, and explainable line by line, matching existing style.
+- Key files (`*.key`) hold secret keys. Create them as a new 0600 file renamed over the target (`write_key()` in `src/keygen.c`), copy them with `install -m 600`. `fopen(..., "w")`, `cp` or `>` onto an existing key keeps its old mode, and a descriptor opened earlier reads the new key. Never regenerate an existing key in scripts: the other side of the link is paired with it.
 - Installed entry points come from `setup.py` `console_scripts`; systemd units and `/etc` data files are listed there too (`scripts/systemd/`, `scripts/default/`, etc.).
 - Many loose files in the repo root (`*.key`, `perf.data`, `gmon.out`, `callgrind.out.*`, `flamegraph.html`, `test*.c`, notebooks, `infer-out/`) are local artifacts, not part of the project - don't treat them as source.

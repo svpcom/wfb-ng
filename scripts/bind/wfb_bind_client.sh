@@ -19,6 +19,7 @@ echo "Drone firmware: $version" 1>&2
 ##
 
 tmpdir=$(mktemp -d)
+trap 'rm -rf "$tmpdir"' EXIT
 
 for i in /etc/wifibroadcast.cfg /etc/drone.key /etc/bind.yaml
 do

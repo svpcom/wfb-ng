@@ -21,6 +21,7 @@ do_bind()
     trap report_err ERR
 
     tmpdir=$(mktemp -d)
+    trap 'rm -rf "$tmpdir"' EXIT
     echo "$1" | base64 -d | tar xz -C "$tmpdir"
 
     cd "$tmpdir"
@@ -31,13 +32,18 @@ do_bind()
         exit 0
     fi
 
-    for i in wifibroadcast.cfg drone.key bind.yaml
+    for i in wifibroadcast.cfg bind.yaml
     do
         if [ -f $i ]
         then
             cp $i /etc/
         fi
     done
+
+    if [ -f drone.key ]
+    then
+        install -m 600 drone.key /etc/
+    fi
 
     rm -r "$tmpdir"
     echo "OK"

@@ -13,6 +13,12 @@ then
     (cd $tmpdir && wfb_keygen)
     mv $tmpdir/{gs,drone}.key /etc
     rmdir $tmpdir
+else
+    chmod 600 /etc/gs.key
+    if [ -f /etc/drone.key ]
+    then
+        chmod 600 /etc/drone.key
+    fi
 fi
 
 if ! [ -f /etc/bind.key ]

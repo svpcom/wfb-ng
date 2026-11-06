@@ -226,5 +226,10 @@ You need to generate encryption keys for gs(ground station) and drone:
 ```
 wfb_keygen
 ```
-Leave them in place for development build or copy to `/etc` for binary install.
-Put `drone.key` to drone and `gs.key` to gs.
+Leave them in place for development build or install to `/etc` for binary install.
+Put `drone.key` to drone and `gs.key` to gs:
+```
+sudo install -m 600 drone.key /etc/   # on the drone
+sudo install -m 600 gs.key /etc/      # on the gs
+```
+Key files contain secret keys and are created with mode 0600. Don't use `cp` to replace an existing key: it keeps the old file mode.
