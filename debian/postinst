@@ -11,3 +11,5 @@ do
         chmod 600 $i
     fi
 done
+
+#DEBHELPER#

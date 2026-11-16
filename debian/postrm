@@ -3,3 +3,5 @@ if [ "$1" == "remove" ]
 then
     systemctl daemon-reload
 fi
+
+#DEBHELPER#

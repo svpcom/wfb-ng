@@ -4,3 +4,5 @@ then
     systemctl stop wifibroadcast
     systemctl stop wfb-cluster
 fi
+
+#DEBHELPER#
