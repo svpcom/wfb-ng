@@ -30,13 +30,17 @@ def main():
     for f in sys.argv[1:]:
         with gzip.GzipFile(f, 'rb') as fd:
             while True:
-                hdr = fd.read(4)
+                try:
+                    hdr = fd.read(4)
 
-                if len(hdr) < 4:
+                    if len(hdr) < 4:
+                        break
+
+                    data_len = struct.unpack('!I', hdr)[0]
+                    data = fd.read(data_len)
+                except EOFError:
+                    print('%s: unexpected end of file, the log was not closed' % (f,), file=sys.stderr)
                     break
-
-                data_len = struct.unpack('!I', hdr)[0]
-                data = fd.read(data_len)
 
                 if len(data) < data_len:
                     break
