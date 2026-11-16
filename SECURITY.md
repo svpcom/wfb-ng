@@ -7,8 +7,8 @@ WFB-ng versions being supported with security updates:
 | Version | Supported          |
 | ------- | ------------------ |
 | master  | :white_check_mark: |
-| 25.01   | :white_check_mark: |
-| < 25.01 | :x:                |
+| 26.11   | :white_check_mark: |
+| < 26.11 | :x:                |
 
 ## Reporting a Vulnerability
 
