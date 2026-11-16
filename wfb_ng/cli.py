@@ -207,15 +207,19 @@ class AntennaStat(Int32StringReceiver, TimeoutMixin):
         def _norm(l):
             return (1000 * l[0] // self.log_interval, l[1])
 
-        diversity = p['data'][0] / p['uniq'][0] if p['uniq'][0] > 0 else 0
+        # A 25.01 server sends dec_ok in place of session, data and uniq
+        has_uniq = 'uniq' in p
 
-        msg_l = (('{recv}  %4d$ (%d)' % _norm(p['all']),     0),
-                 ('{udp}   %4d$ (%d)' % _norm(p['out']),     0),
-                 ('sess  %4d$ (%d)' % _norm(p['session']),  0),
-                 ('fec_r %4d$ (%d)' % _norm(p['fec_rec']), curses.A_REVERSE if p['fec_rec'][0] else 0),
-                 ('lost  %4d$ (%d)' % _norm(p['lost']),    curses.A_REVERSE if p['lost'][0] else 0),
-                 ('d_err %4d$ (%d)' % _norm(p['dec_err']), curses.A_REVERSE if p['dec_err'][0] else 0),
-                 ('bad   %4d$ (%d)' % _norm(p['bad']),     curses.A_REVERSE if p['bad'][0] else 0))
+        msg_l = [('{recv}  %4d$ (%d)' % _norm(p['all']),     0),
+                 ('{udp}   %4d$ (%d)' % _norm(p['out']),     0)]
+
+        if has_uniq:
+            msg_l.append(('sess  %4d$ (%d)' % _norm(p['session']),  0))
+
+        msg_l += [('fec_r %4d$ (%d)' % _norm(p['fec_rec']), curses.A_REVERSE if p['fec_rec'][0] else 0),
+                  ('lost  %4d$ (%d)' % _norm(p['lost']),    curses.A_REVERSE if p['lost'][0] else 0),
+                  ('d_err %4d$ (%d)' % _norm(p['dec_err']), curses.A_REVERSE if p['dec_err'][0] else 0),
+                  ('bad   %4d$ (%d)' % _norm(p['bad']),     curses.A_REVERSE if p['bad'][0] else 0)]
 
         ymax = window.getmaxyx()[0]
         for y, (msg, attr) in enumerate(msg_l, 1):
@@ -230,7 +234,8 @@ class AntennaStat(Int32StringReceiver, TimeoutMixin):
         if session_d:
             flow_str += '{FEC:} %(fec_k)d/%(fec_n)d  ' % (session_d)
 
-        flow_str += '{Diversity:} %.2f' % (diversity,)
+        if has_uniq:
+            flow_str += '{Diversity:} %.2f' % (p['data'][0] / p['uniq'][0] if p['uniq'][0] > 0 else 0,)
 
         addstr_markup(window, 0, 20, flow_str)
 
@@ -264,11 +269,15 @@ class AntennaStat(Int32StringReceiver, TimeoutMixin):
                 pkt_s, rssi_min, rssi_avg, rssi_max, snr_min, snr_avg, snr_max = v
                 if y < ymax:
                     active_tx = ((ant_id >> 8) == tx_wlan)
-                    diff_loss = max(p['uniq'][0] - pkt_s, 0)
-                    addstr_markup(window, y, 20, '%s%s%s  %4d  %s%4d%s  %3d < {%3d} < %3d  %3d < {%3d} < %3d' % \
+                    if has_uniq:
+                        diff_loss = max(p['uniq'][0] - pkt_s, 0)
+                        dloss = ('{%4d}' if diff_loss else '%4d') % (1000 * diff_loss // self.log_interval,)
+                    else:
+                        dloss = '   -'
+                    addstr_markup(window, y, 20, '%s%s%s  %4d  %s  %3d < {%3d} < %3d  %3d < {%3d} < %3d' % \
                            ('{' if active_tx else '', format_ant(ant_id), '}' if active_tx else '',
                             1000 * pkt_s // self.log_interval,
-                            '{' if diff_loss else '', 1000 * diff_loss // self.log_interval, '}' if diff_loss else '',
+                            dloss,
                             rssi_min, rssi_avg, rssi_max,
                             snr_min, snr_avg, snr_max), 0 if active_tx else curses.A_DIM)
         else:
