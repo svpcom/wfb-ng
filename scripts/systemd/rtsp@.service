@@ -3,6 +3,8 @@ Description=WFB-ng %i RTSP server
 After=network-online.target
 
 [Service]
+# For /etc/default/wifibroadcast without them: kept from 25.01 or written by install_gs.sh
+Environment=RTP_MTU=1400 RTP_JITTER=0 RTSP_PORT=8554 RTSP_URI=/wfb
 EnvironmentFile=/etc/default/wifibroadcast
 ExecStart=/usr/bin/wfb_rtsp -m $RTP_MTU -p $RTSP_PORT -u $RTSP_URI -l $RTP_JITTER %i
 Type=simple
