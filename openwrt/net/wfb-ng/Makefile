@@ -1,13 +1,13 @@
 include $(TOPDIR)/rules.mk
 
 PKG_NAME:=wfb-ng
-PKG_VERSION:=24.9.7
-PKG_RELEASE:=2
+PKG_VERSION:=26.11
+PKG_RELEASE:=1
 
-PKG_SOURCE_PROTO:=git
-PKG_SOURCE_URL:=https://github.com/svpcom/wfb-ng.git
-PKG_SOURCE_VERSION:=3a053040442174e6c1ce76866c6da4b12c19dbb4
-#PKG_MIRROR_HASH:=afa8bd06d3119e3fa8edc10d4a205e8b9ad21d0157e151aecba4dc24329a0d76
+PKG_SOURCE:=$(PKG_NAME)-$(PKG_VERSION).tar.gz
+PKG_SOURCE_URL:=https://codeload.github.com/svpcom/wfb-ng/tar.gz/$(PKG_NAME)-$(PKG_VERSION)?
+PKG_HASH:=92c1937ecdcd548c29deb8017f726ce179fc3687b37e93965047f44c464be7a8
+PKG_BUILD_DIR:=$(BUILD_DIR)/$(PKG_NAME)-$(PKG_NAME)-$(PKG_VERSION)
 
 PKG_LICENSE:=GPL-3.0-only
 PKG_LICENSE_FILES:=LICENSE
@@ -18,7 +18,7 @@ PKG_BUILD_DEPENDS:=libevent2
 
 include $(INCLUDE_DIR)/package.mk
 
-MAKE_FLAGS += VERSION=$(PKG_VERSION) COMMIT=$(PKG_SOURCE_VERSION) all_bin
+MAKE_FLAGS += VERSION=$(PKG_VERSION)-$(PKG_RELEASE) COMMIT=openwrt all_bin
 
 define Package/wfb-ng
   SECTION:=net
@@ -49,6 +49,7 @@ define Package/wfb-ng/install
 	$(INSTALL_DIR) $(1)/usr/bin
 	$(INSTALL_BIN) $(PKG_BUILD_DIR)/wfb_rx $(1)/usr/bin/
 	$(INSTALL_BIN) $(PKG_BUILD_DIR)/wfb_tx $(1)/usr/bin/
+	$(INSTALL_BIN) $(PKG_BUILD_DIR)/wfb_tx_cmd $(1)/usr/bin/
 	$(INSTALL_DIR) $(1)/etc/init.d
 	$(INSTALL_BIN) ./files/wfb-ng.init $(1)/etc/init.d/wfb-ng
 endef

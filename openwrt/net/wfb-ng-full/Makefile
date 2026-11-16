@@ -1,13 +1,12 @@
 include $(TOPDIR)/rules.mk
 
 PKG_NAME:=wfb-ng-full
-PKG_VERSION:=24.9.7
-PKG_RELEASE:=2
+PKG_VERSION:=26.11
+PKG_RELEASE:=1
 
 PKG_SOURCE_PROTO:=git
 PKG_SOURCE_URL:=https://github.com/svpcom/wfb-ng.git
-PKG_SOURCE_VERSION:=3a053040442174e6c1ce76866c6da4b12c19dbb4
-#PKG_MIRROR_HASH:=2451a64be61a5052c2625c859548adcea141afece7ad297e0043bb911035dcdd
+PKG_SOURCE_VERSION:=5ebc4926c50c819ae887665b7c2dc9fb843044f0
 
 PKG_LICENSE:=GPL-3.0-only
 PKG_LICENSE_FILES:=LICENSE
@@ -37,7 +36,7 @@ define Package/wfb-ng-full
   CONFLICTS:=wfb-ng
   TITLE:=Long-range packet radio link using raw WiFi
   URL:=https://github.com/svpcom/wfb-ng
-  DEPENDS:=+bash +iw +kmod-tun +openssh-client +libpcap +libsodium +libstdcpp +python3-twisted +python3-pyserial +python3-msgpack +python3-jinja2 +python3-pyroute2
+  DEPENDS:=+bash +iw +kmod-tun +openssh-client +libpcap +libsodium +libstdcpp +python3-twisted +python3-pyserial +python3-msgpack +python3-jinja2 +python3-pyroute2 +python3-yaml
 endef
 
 define Package/wfb-ng-full/description
