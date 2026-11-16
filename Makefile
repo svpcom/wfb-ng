@@ -91,7 +91,7 @@ test: all_bin fec_test libsodium_test radiotap_test
 
 rpm:  all_bin wfb_rtsp $(ENV)
 	rm -rf dist
-	$$(PATH=$(ENV)/bin:$(ENV)/local/bin:$(PATH) which python3) ./setup.py bdist_rpm --force-arch $(ARCH) --requires python3-twisted,python3-pyroute2,python3-pyserial,python3-msgpack,python3-jinja2,python3-yaml,socat,iw
+	$$(PATH=$(ENV)/bin:$(ENV)/local/bin:$(PATH) which python3) ./setup.py bdist_rpm --force-arch $(ARCH) --install-script scripts/rpm/install --post-install debian/postinst --requires python3-twisted,python3-pyroute2,python3-pyserial,python3-msgpack,python3-jinja2,python3-yaml,socat,iw
 	rm -rf wfb_ng.egg-info/
 
 deb:  all_bin wfb_rtsp $(ENV)
