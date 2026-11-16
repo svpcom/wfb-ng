@@ -40,16 +40,19 @@
 - RSSI and SNR are averaged in the linear scale, not in dB
 - Startup race with NetworkManager. Monitor mode is not set again if already set (#457).
 - `ENETUNREACH` / `EHOSTUNREACH` on UDP send are ignored
+- `wfb-log-parser` reads a log that was not closed (power loss)
+- deb: Python modules are byte-compiled on install and cleaned on remove
 - Python < 3.11 (#445), GNU make 4.4+ and Ubuntu 20.04 build fixes
 - Control-plane robustness: the daemon stops on internal errors instead of hanging, cluster `ssh_port` is honored, timers are stopped with their services
 
 ### Compatibility:
 - Radio protocol and keys are compatible with 25.01.
-- Distributed mode: 25.01 nodes work with a 26.11 server. A 26.11 RX node with a 25.01 server loses antenna stats of duplicated packets and logs `Unknown packet type 0x3`, so upgrade the server first.
+- Distributed mode: 25.01 nodes work with a 26.11 server. A 25.01 server counts dedup records of a 26.11 RX node as bad packets: it reports `LINK_JAMMED` in RADIO_STATUS to the GCS and loses antenna stats of duplicated packets, so upgrade the server first.
 - Manual cluster mode: regenerate node init scripts (`wfb-server --profiles <profile> --gen-init <node>`). Old scripts never report readiness and are killed by systemd at start timeout.
 - JSON/msgpack API: RX counter `dec_ok` is replaced by `session` and `data`, new counters `uniq`, `frags`, `frags_lost`. Session packets are not counted in per-antenna `pkt_recv`.
 - `wfb-cli` 26.11 works with a 25.01 server (without `sess`, diversity and `dloss`) and vice versa.
-- `net.unix.max_dgram_qlen` is raised to 4096 for the unix socket IPC. The deb package applies it on install, for RPM run `sudo systemctl restart systemd-sysctl` or reboot.
+- `wfb_tx` control protocol: `set_radio` and `get_radio` got a `subch` byte. Own clients of the protocol need an update (25.01 `set_radio` gets `EINVAL`), `wfb_tx_cmd get_radio` fails with a 25.01 `wfb_tx` still running: restart services after the upgrade.
+- `net.unix.max_dgram_qlen` is raised to 4096 for the unix socket IPC, deb and rpm packages apply it on install.
 
 ### Supported WiFi hardware:
 - **RTL8812au**. (stable) 802.11ac capable. [**Requires external patched driver!**](https://github.com/svpcom/rtl8812au) System was tested with ALPHA AWUS036ACH on both sides in 5GHz mode.
