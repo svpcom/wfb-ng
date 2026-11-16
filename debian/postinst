@@ -1,6 +1,9 @@
 #!/bin/bash
 systemctl daemon-reload
 
+# Not sysctl -p: all sysctl.d files in their order keep a local override of these keys
+systemctl restart systemd-sysctl.service
+
 for i in /etc/gs.key /etc/drone.key
 do
     if [ -f $i ]
